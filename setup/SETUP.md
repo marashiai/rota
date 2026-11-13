@@ -1,7 +1,7 @@
 # Set up rota: instructions for Claude Code
 
 You are Claude Code, setting up rota for the person you are talking to. Follow these steps in order. Talk
-briefly, ask a few questions at a time, and always offer a recommended answer.
+briefly, and ask as "How to ask" below says.
 
 rota runs a team of Claude Code agents on this machine, in shifts, also while the person sleeps. Scouts
 look for problems and open GitHub issues, a developer turns issues into draft pull requests, and the
@@ -11,6 +11,11 @@ lives in a team folder of Markdown files (`~/.rota`).
 **This version works only with Claude Code.** Every agent is a `claude -p` session, and the team's budget
 is read from the person's Claude subscription. If they want to run their agents on another AI tool
 (Codex, Gemini, Cursor, Copilot or anything else), stop and tell them rota cannot do that.
+
+This setup runs in Claude Code in a terminal on the machine that will run the team. If you are running
+in claude.ai/code or another cloud session, stop: you can't install anything on their computer from
+there. If you are in the Claude desktop app, tell them the terminal is the supported way, since rota
+needs the `claude` command there anyway.
 
 ## Rules for you during setup
 
@@ -23,6 +28,26 @@ is read from the person's Claude subscription. If they want to run their agents 
   into a temporary folder and delete it at the end.
 - Every agent you create starts disabled. The person enables them at the end.
 
+## How to ask
+
+Every question you ask follows these rules, so the person can set up a whole team mostly by pressing
+Enter:
+
+- **Ask with your question tool** (AskUserQuestion in Claude Code): a few related questions at a time,
+  at most four, each with two to four answers to choose from. The person can always type their own.
+- **Recommend an answer for every question, and make it the default.** Work it out from what you found
+  in the repositories and from the guide's advice, put it first, and end its label with
+  "(Recommended)", so taking it is the quickest choice. Say in one line why you recommend it.
+- If a question closes without an answer (a question can time out), ask it again: silence is never a
+  yes.
+- **Never ask what you can find out yourself**, but do ask the person to confirm what you found: your
+  findings are the recommended answers.
+- **Keep every answer.** Before you create anything (step 5), show all the answers in one summary and ask
+  for the final confirmation described at the end of step 4. Nothing is written until they confirm, and
+  they can change any answer before they do.
+- Without a question tool, ask in plain text in the same shape: numbered answers, the recommended one
+  first and marked, and "ok" takes every recommendation.
+
 ## 1. Check what's needed
 
 Check each item yourself and report the result in one short list.
@@ -30,7 +55,7 @@ Check each item yourself and report the result in one short list.
 | Needed | Check | If it's missing |
 |---|---|---|
 | macOS or Linux | `uname` | Windows is not supported |
-| Claude Code, logged in with a Claude subscription (Pro or Max) | `claude --version`, `claude auth status` | `claude` to log in. With an API key only, rota still works but nothing limits spending: set `usage: off` later, and warn them about the cost |
+| The Claude Code CLI (the `claude` command), logged in with a Claude subscription such as Pro or Max | `claude --version`, and `claude auth status` shows `"loggedIn": true` and `"authMethod": "claude.ai"` | Install it: `curl -fsSL https://claude.ai/install.sh \| bash` (or `brew install --cask claude-code`), then `claude auth login`. The Claude desktop app does not install this command, and its login may not carry over: rota runs `claude -p` for every shift, so the CLI must work in a terminal. With an API key instead of a subscription, rota still works but nothing limits spending: set `usage: off` later, and warn them about the cost |
 | Go | `go version` | macOS: `brew install go`; Linux: the distribution's package or go.dev/dl. Go fetches the exact version this repository needs by itself |
 | git | `git --version` | `brew install git` or the distribution's package |
 | GitHub CLI, logged in | `gh auth status` | `brew install gh`, then `gh auth login` |
@@ -96,11 +121,21 @@ Write a profile for each repository and show all of them in one short table:
 | Errors and logs | PostHog, Sentry, Datadog, CloudWatch, plain logs, nothing; and whether Claude Code can read them (a plugin, an MCP server, a CLI) |
 | Sensitive | user data, payments, secrets, anything irreversible |
 
-Then ask only what you could not find out. Typical questions: "How does `shop-api` get to production?",
-"Is there a staging environment the QA agent may use, and with which test account?", "Where do you see
-errors from the app?" Always ask: "Is there anything the agents must never run or touch?" (deploy
-scripts, production servers, paid APIs). Each answer becomes a `disallowed_tools` entry in step 5, such
-as `Bash(./deploy.sh *)` or `Bash(ssh *)`, not only a sentence in a role.
+Then ask about each repository, with what you found as the recommended answers:
+
+1. **Profile:** is the table right? ("Yes, it's right (Recommended)", or which field to correct.)
+2. **Running it:** how it runs locally, such as `npm ci && npm start`, `docker compose up`, or "it
+   can't run locally".
+3. **Testing it:** the test commands, which suites matter, which are slow or flaky, and whether the
+   agents may run them all.
+4. **What a run needs:** environment variables, services (a database, Docker), test accounts and
+   secrets. Secrets go in `~/.rota/secrets/<agent>/<repository name>.env`, which rota copies into the
+   agent's checkout as `.env` before each shift; the person fills in the values.
+5. **Deployment:** how and where it reaches production, and whether that is automatic on merge.
+6. **Off limits:** anything the agents must never run or touch, such as deploy scripts, production
+   servers or paid APIs. Recommend what you found (for example `./deploy.sh` and `ssh`). Each answer
+   becomes a `disallowed_tools` entry in step 5, such as `Bash(./deploy.sh *)` or `Bash(ssh *)`, not
+   only a sentence in a role.
 
 ## 4. Decide on the team together
 
@@ -120,9 +155,10 @@ in, and how to adjust it when another role is left out.
 | `rollout` | coordinator | Lists the manual steps of changes and releases, and follows them up with the person |
 | `reviewer` | coordinator | Weekly: recommends how the budget is divided between the agents |
 
-Recommend a team from the profiles, smallest first, and explain each choice in one line. A good start
-for most people is **security, stack and developer**: the scouts open issues, the developer opens draft
-pull requests, and the person reviews and merges everything. Then add:
+Recommend a team from the profiles, smallest first, and explain each choice in one line. Ask with the
+recommended team as the default answer, and a smaller and a larger team as the others. A good start for
+most people is **security, stack and developer**: the scouts open issues, the developer opens draft pull
+requests, and the person reviews and merges everything. Then add:
 
 - `errors` when an app's errors are collected somewhere Claude Code can read;
 - `seo` when a repository serves public pages found through search;
@@ -137,7 +173,7 @@ Leave out a role whose blueprint needs a fact you don't have: `seo` without a li
 environment it may use, `errors` without an error tracker Claude Code can read. Tell the person what
 would make it possible, so they can add it later.
 
-Then ask about these, with your recommendation for each:
+Then ask about these, each with the recommended answer as the default:
 
 1. **Autonomy.** Issues only (scouts alone), draft pull requests the person merges (recommended to
    start), or also merges of low-risk pull requests by the triage.
@@ -146,13 +182,24 @@ Then ask about these, with your recommendation for each:
    them in the morning, for example `05:00-07:00`, and a second one in the afternoon if they want two
    rounds a day. Claude's 5-hour usage window starts with the first request after the last one ran out,
    so a team that starts at 05:00 also gives them a fresh window around 10:00.
-3. **Budget.** `team_pct` is the share of each day's seventh of their weekly Claude window that the
-   agents may use together. The default is 20. That is the only limit on the team.
+3. **Budget.** How much of their Claude limit the agents may use: `team_pct`, a share of each day's
+   seventh of their weekly window, for all agents together. Their own use of Claude stays theirs, and
+   rota stops a shift when the share is used up. Run `rota usage` and show where they stand this week.
+   Offer "20% (Recommended)", "10%" and "35%", and recommend less when `rota usage` shows they already
+   use most of their week. That is the only limit on the team, and they can change it any time.
 4. **Account and author.** Which `gh` login the agents act as (`default_gh_user`). The agents' commits
    carry this machine's git identity (`git config user.name` and `user.email`); if they should carry
    another, step 5 sets it.
 5. **Phone.** Whether they want notifications and the inbox on their phone. That needs Tailscale and
    `web: tailscale`; it can be added later.
+
+### Confirm before you create anything
+
+Show one summary of every answer: each repository's profile with how to run, test and deploy it and
+what is off limits; the team, each agent with its repositories and when it runs; the autonomy, schedule,
+budget, GitHub account and phone. Then ask one question: "Create it (Recommended)" or "Change an
+answer". To change one, ask which, ask that question again with their previous answer as the default,
+and show the summary again. Go on to step 5 only when they choose to create it.
 
 ## 5. Create the team
 

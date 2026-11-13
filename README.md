@@ -13,13 +13,25 @@ Everything runs on your own machine: one command, a team folder of Markdown file
 the GitHub CLI.
 
 > [!IMPORTANT]
-> **rota works only with Claude Code.** Every agent is a Claude Code session, and the team's budget is
-> a share of your Claude subscription (Pro or Max). It does not work with Codex, Gemini, Cursor, Copilot
-> or any other AI tool.
+> **rota works only with Claude Code.** Every agent is a session of the Claude Code CLI (`claude -p`),
+> and the team's budget is a share of your Claude subscription (such as Pro or Max). It does not work
+> with Codex, Gemini, Cursor, Copilot or any other AI tool.
 
 ## Install with one prompt
 
-You need macOS or Linux, Claude Code logged in with a Claude subscription, and a GitHub account.
+You need:
+
+- macOS or Linux;
+- **the Claude Code CLI**, the `claude` command in a terminal, logged in with a Claude subscription such
+  as Pro or Max. rota runs `claude -p` for every shift, so the CLI is required even if you use the Claude
+  desktop app. Install it with `curl -fsSL https://claude.ai/install.sh | bash` (or
+  `brew install --cask claude-code`), then log in with `claude auth login`;
+- a GitHub account. The setup installs anything else that's missing (Go, git, the GitHub CLI) after
+  asking you.
+
+Run the setup in that terminal. The Claude desktop app and claude.ai/code are not supported for it:
+claude.ai/code runs in the cloud and can't install anything on your computer, and the desktop app
+doesn't provide the `claude` command that rota needs.
 
 1. Get the code and open Claude Code in it:
 
@@ -36,9 +48,12 @@ You need macOS or Linux, Claude Code logged in with a Claude subscription, and a
    ```
 
 Claude Code checks what's missing and installs rota. Then it asks which repositories the team should
-look after, studies each one (what it is, how it's tested, how and where it's deployed), asks you what
-it couldn't find out, and builds a team that fits from [proven blueprints](setup/blueprints/). It changes
-nothing in your repositories while it does this. Expect 10 to 20 minutes.
+look after and studies each one: what it is, how it runs and is tested, and how and where it's deployed.
+Every question comes with its recommended answer first, worked out from your code, so most of the time
+you just accept it. It asks about your schedule and how much of your Claude limit the agents may use,
+then shows a summary of all your answers. You can change any of them before you confirm, and nothing is
+created until you do. Then it builds a team that fits from [proven blueprints](setup/blueprints/). It
+changes nothing in your repositories while it does this. Expect 10 to 20 minutes.
 
 ## A tour
 
