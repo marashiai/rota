@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>{{.PR}} · {{.Title}}</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body data-pr="{{.PR}}">
+<header>
+  <button id="menubtn" class="icon" aria-label="Files" aria-controls="side" aria-expanded="false" title="Files (f)">☰</button>
+  <a id="pr" target="_blank" rel="noopener"></a>
+  <span id="title"></span>
+  <button id="where" aria-haspopup="listbox" aria-controls="pick" aria-expanded="false" title="The whole change, or a commit (v)"><span class="lbl"></span></button>
+  <span class="grow"></span>
+  <span id="status" role="status"></span>
+  <button id="send" title="Send your drafts as one review (S), or approve (A)">Send</button>
+  <button id="helpbtn" title="Keys (?)">?</button>
+</header>
+<nav id="side" aria-label="Files">
+  <div class="filter"><input id="filter" type="search" placeholder="Filter files" aria-label="Filter files" autocomplete="off" spellcheck="false"></div>
+  <div id="tree" role="tree"></div>
+  <div id="resize" title="Drag to resize"></div>
+</nav>
+<div id="pick" hidden role="listbox" aria-label="The whole change, or a commit"></div>
+<div id="scrim" hidden></div>
+<main id="main" tabindex="-1"><p class="loading">Loading…</p></main>
+<div id="tools" role="toolbar" aria-label="Move and write">
+  <div class="grp"><div class="pair"><button data-do="prevCommit" title="Previous commit (K)" aria-label="Previous commit">‹</button><button data-do="nextCommit" title="Next commit (J)" aria-label="Next commit">›</button></div><small>commit</small></div>
+  <div class="grp"><div class="pair"><button data-do="prevHunk" title="Previous hunk ([)" aria-label="Previous hunk">↑</button><button data-do="nextHunk" title="Next hunk (])" aria-label="Next hunk">↓</button></div><small>hunk</small></div>
+  <div class="grp"><div class="pair"><button data-do="prevNote" title="Previous note ({)" aria-label="Previous note">↑</button><button data-do="nextNote" title="Next note (})" aria-label="Next note">↓</button></div><small>note</small></div>
+  <button id="act" data-do="act" class="primary" title="Note here (c), reply (r) or edit your draft (e)">+ Note</button>
+</div>
+<div id="help" hidden>
+  <h2>Keys</h2>
+  <table>
+    <tr><td><kbd>j</kbd> <kbd>k</kbd></td><td>next, previous line or note</td></tr>
+    <tr><td><kbd>]</kbd> <kbd>[</kbd></td><td>next, previous hunk</td></tr>
+    <tr><td><kbd>}</kbd> <kbd>{</kbd></td><td>next, previous note</td></tr>
+    <tr><td><kbd>z</kbd></td><td>fold the note here, or open a folded one (<kbd>Enter</kbd> opens one too)</td></tr>
+    <tr><td><kbd>Z</kbd></td><td>fold every note: you have read them all</td></tr>
+    <tr><td><kbd>.</kbd> <kbd>,</kbd></td><td>next, previous file</td></tr>
+    <tr><td><kbd>J</kbd> <kbd>K</kbd></td><td>next, previous commit</td></tr>
+    <tr><td><kbd>o</kbd></td><td>the whole change</td></tr>
+    <tr><td><kbd>v</kbd></td><td>pick the whole change or a commit</td></tr>
+    <tr><td><kbd>f</kbd></td><td>show or hide the files</td></tr>
+    <tr><td><kbd>gg</kbd> <kbd>G</kbd></td><td>top, bottom</td></tr>
+    <tr><td><kbd>Ctrl</kbd>+<kbd>d</kbd> <kbd>Ctrl</kbd>+<kbd>u</kbd></td><td>half a page down, up</td></tr>
+    <tr><td><kbd>c</kbd></td><td>note here: on the line, hunk, file or commit</td></tr>
+    <tr><td><kbd>C</kbd></td><td>note on the whole change</td></tr>
+    <tr><td><kbd>r</kbd></td><td>reply to the note here</td></tr>
+    <tr><td><kbd>e</kbd></td><td>edit your draft</td></tr>
+    <tr><td><kbd>x</kbd> or <kbd>dd</kbd></td><td>delete your draft</td></tr>
+    <tr><td><kbd>Esc</kbd> <kbd>Ctrl</kbd>+<kbd>Enter</kbd></td><td>close the editor: drafts save as you type</td></tr>
+    <tr><td><kbd>S</kbd></td><td>send your drafts as one review</td></tr>
+    <tr><td><kbd>A</kbd></td><td>approve: the team may merge it (with your drafts)</td></tr>
+    <tr><td><kbd>R</kbd></td><td>reload notes from GitHub</td></tr>
+  </table>
+  <p>The whole change is the diff from the base to the head, with every note in it; each commit shows its own diff and notes the same way. Drafts are saved to your pending review on GitHub as you type; only you see them until you send. With no drafts, the Send button approves: the team may then merge the pull request. A note you have read shows folded, on one line, the next time you open the review, and the read notes on the whole change or a commit fold into a single line: you have read a note once it was on the screen, or once you fold it. New ones say new. On a phone, tap a line or a note, then use the buttons at the bottom.</p>
+</div>
+<div id="modal" hidden><div role="dialog" aria-modal="true" aria-labelledby="modaltext"><p id="modaltext"></p><p class="btns"><button id="no">Cancel</button><button id="also" hidden></button><button id="yes" class="primary">Yes</button></p><p class="hint keys"><kbd>Enter</kbd> the green button · <kbd>Esc</kbd> cancel</p></div></div>
+<script src="app.js"></script>
+</body>
+</html>

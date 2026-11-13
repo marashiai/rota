@@ -1,0 +1,515 @@
+package core
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"slices"
+	"strconv"
+	"strings"
+	"sync"
+	"syscall"
+	"time"
+)
+
+// A shift runs as a child process: claude -p in the agent's work folder, its repositories
+// synced first. Every child runs in a process group of its own, so stopping it stops
+// everything it started, and every wait on the outside world is bounded.
+
+// Job is one shift as handed to whoever executes it: the organizer itself for a
+// local agent, or a joined host. It carries everything the executor needs except
+// secrets, which stay on the executing machine.
+type Job struct {
+	ID         string   `json:"id"`
+	Agent      string   `json:"agent"`
+	Repos      []string `json:"repos,omitempty"`
+	Args       []string `json:"args"`
+	Prompt     string   `json:"prompt"`
+	RunMinutes int      `json:"run_minutes"`
+	WorkDir    string   `json:"work_dir,omitempty"` // relative to the executor's root; default work/<agent>
+	EnvFile    string   `json:"env_file,omitempty"` // relative to the executor's root; default secrets/<agent>.env
+	GhUser     string   `json:"gh_user,omitempty"`  // GH_TOKEN comes from this account's gh login on the executor
+	LiveLog    string   `json:"live_log,omitempty"` // off | tools | all: what the executor reports live
+}
+
+// Result is what comes back: claude's raw stdout plus how the shift ended.
+type Result struct {
+	ID      string `json:"id"`
+	Output  string `json:"output"`
+	Status  string `json:"status"` // done | failed | stopped | timeout | lost | busy
+	Seconds int    `json:"seconds"`
+	Started bool   `json:"started"`        // claude was actually launched (so some of the pool may have been used)
+	Disk    *int64 `json:"disk,omitempty"` // the work folder's size in bytes once claude ended; nil: not measured
+}
+
+// execShift runs one shift on this machine, calling onLine for every line claude
+// prints. Cancelling ctx kills claude and everything it started and reports the
+// shift as stopped. Each message from notes reaches claude after its current step,
+// until it gives its result.
+func execShift(ctx context.Context, c *Config, job Job, onLine func(string), notes <-chan string) Result {
+	res := Result{ID: job.ID}
+	dir, envFile := job.WorkDir, job.EnvFile
+	if dir == "" { // a job from the organizer for this host: its own work folder and secrets
+		dir = filepath.Join(workDir, job.Agent)
+	}
+	if envFile == "" {
+		envFile = filepath.Join(secretsDir, job.Agent+".env")
+	}
+	work := c.Path(dir)
+	if err := os.MkdirAll(work, 0o755); err != nil {
+		return failed(res, err)
+	}
+	env, err := loadEnv(c, envFile)
+	if err != nil {
+		return failed(res, err)
+	}
+	if job.WorkDir != "" { // a shift on the organizer's machine: rota ask and rota wait reach its team
+		env = append(env, "ROTA_AGENT="+job.Agent, "ROTA_ROOT="+c.Root, "ROTA_CONFIG="+c.File,
+			"ROTA_PARK_BY="+time.Now().Add(time.Duration(job.RunMinutes)*time.Minute-parkMinutes*time.Minute).Format(time.RFC3339)) // rota wait stops waiting then
+	}
+	if job.GhUser != "" && !hasEnv(env, "GH_TOKEN") {
+		out, err := probe(c, work, env, "gh", "auth", "token", "--user", job.GhUser)
+		if err != nil || len(strings.TrimSpace(string(out))) == 0 {
+			return failed(res, fmt.Errorf("gh is not logged in as %s on this machine (gh auth login): %v", job.GhUser, err))
+		}
+		env = append(env, "GH_TOKEN="+strings.TrimSpace(string(out)))
+	}
+	env = append(env, "GLOSS_AUTHOR="+job.Agent) // the name on the notes it writes on pull requests with gloss
+	if c.SyncRepos && len(job.Repos) > 0 {
+		sctx, cancel := context.WithTimeout(ctx, syncTimeout)
+		for _, repo := range job.Repos {
+			if err := syncRepo(sctx, c, env, work, repo); err != nil {
+				cancel()
+				if ctx.Err() != nil {
+					res.Status = "stopped"
+					return res
+				}
+				if sctx.Err() == context.DeadlineExceeded {
+					err = fmt.Errorf("timed out after %s", syncTimeout)
+				}
+				res.Status, res.Output = "failed", "repository sync failed, claude was not started: "+err.Error()
+				return res
+			}
+		}
+		cancel()
+	}
+	if ctx.Err() != nil {
+		res.Status = "stopped"
+		return res
+	}
+	for _, repo := range job.Repos {
+		if err := placeRepoEnv(c, job.Agent, work, repo); err != nil {
+			fmt.Fprintln(os.Stderr, "warn:", err)
+		}
+	}
+	// Claude Code's auto memory keeps what the agent learns in the team folder, beside its work,
+	// not under ~/.claude, where the human's own sessions live
+	memory := c.Path(filepath.Join(memoryDir, job.Agent))
+	if err := os.MkdirAll(memory, 0o755); err != nil {
+		return failed(res, err)
+	}
+	settings, _ := json.Marshal(map[string]string{"autoMemoryDirectory": memory})
+	args := append([]string{"--settings", string(settings)}, job.Args...) // first: the flags at the end take every word after them
+	cctx, cancel := context.WithTimeout(ctx, time.Duration(job.RunMinutes)*time.Minute)
+	defer cancel()
+	cmd := command(cctx, c, work, env, c.ClaudeBin, args...)
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return failed(res, err)
+	}
+	in := &shiftInput{w: stdin}
+	go func() { // the prompt first, then the notes
+		in.send(job.Prompt)
+		for {
+			select {
+			case text := <-notes:
+				in.send(text)
+			case <-cctx.Done():
+				return
+			}
+		}
+	}()
+	var out bytes.Buffer
+	lw := newLineWriter(&out, func(line string) {
+		if isResult(line) { // claude has finished: with its input closed it exits
+			in.close()
+		}
+		if onLine != nil {
+			onLine(line)
+		}
+	})
+	cmd.Stdout, cmd.Stderr = lw, os.Stderr
+	start := time.Now()
+	runErr := runTracked(cmd)
+	in.close()
+	res.Started = cmd.Process != nil // claude was launched
+	lw.flush()
+	res.Seconds = int(time.Since(start).Seconds())
+	res.Output = out.String()
+	switch {
+	case ctx.Err() != nil:
+		res.Status = "stopped"
+	case cctx.Err() == context.DeadlineExceeded:
+		res.Status = "timeout"
+	default:
+		res.Status = "done"
+		if runErr != nil && out.Len() == 0 {
+			res.Output = fmt.Sprintf("claude exited: %v", runErr)
+		}
+	}
+	if res.Started && ctx.Err() == nil { // a shift being stopped does not wait for the measurement
+		if n, err := folderSize(ctx, c, work); err != nil {
+			fmt.Fprintf(os.Stderr, "warn: %s's work folder could not be measured: %v\n", job.Agent, err)
+		} else {
+			res.Disk = &n
+		}
+	}
+	return res
+}
+
+// folderSize is what dir takes on disk, in bytes, as du counts it: each hard link once.
+func folderSize(ctx context.Context, c *Config, dir string) (int64, error) {
+	ctx, cancel := context.WithTimeout(ctx, diskTimeout)
+	defer cancel()
+	cmd := command(ctx, c, dir, nil, "du", "-sk", ".")
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	err := runTracked(cmd)
+	if ctx.Err() == context.DeadlineExceeded {
+		return 0, fmt.Errorf("du timed out after %s", diskTimeout)
+	}
+	f := strings.Fields(out.String())
+	if len(f) == 0 {
+		return 0, fmt.Errorf("du: %v", err)
+	}
+	kb, perr := strconv.ParseInt(f[0], 10, 64)
+	if perr != nil {
+		return 0, fmt.Errorf("du printed %q: %v", strings.TrimSpace(out.String()), err)
+	}
+	return kb * 1024, nil // du's exit status also reports files it could not read; what it counted stands
+}
+
+// shiftInput is a running claude's input: one stream-json user message per line, from one
+// writer, until it is closed. Closing does not wait for a write: a blocked one fails.
+type shiftInput struct {
+	mu     sync.Mutex
+	w      io.WriteCloser
+	closed bool
+}
+
+// send writes a message, unless the input is closed; a claude that has exited reads nothing.
+func (in *shiftInput) send(text string) {
+	in.mu.Lock()
+	closed := in.closed
+	in.mu.Unlock()
+	if closed {
+		return
+	}
+	b, _ := json.Marshal(map[string]any{"type": "user", "message": map[string]any{"role": "user",
+		"content": []map[string]string{{"type": "text", "text": text}}}})
+	in.w.Write(append(b, '\n'))
+}
+
+func (in *shiftInput) close() {
+	in.mu.Lock()
+	closed := in.closed
+	in.closed = true
+	in.mu.Unlock()
+	if !closed {
+		in.w.Close()
+	}
+}
+
+// isResult says whether a line of claude's output is its result.
+func isResult(line string) bool {
+	var e struct {
+		Type string `json:"type"`
+	}
+	return strings.Contains(line, `"result"`) && json.Unmarshal([]byte(line), &e) == nil && e.Type == "result"
+}
+
+// lineWriter stores everything written and hands each complete line to onLine.
+type lineWriter struct {
+	buf    *bytes.Buffer
+	part   []byte
+	onLine func(string)
+}
+
+func newLineWriter(buf *bytes.Buffer, onLine func(string)) *lineWriter {
+	return &lineWriter{buf: buf, onLine: onLine}
+}
+
+// flush hands over a last line that ended without a newline.
+func (w *lineWriter) flush() {
+	if w.onLine != nil {
+		if line := strings.TrimSpace(string(w.part)); line != "" {
+			w.onLine(line)
+		}
+	}
+	w.part = nil
+}
+
+func (w *lineWriter) Write(p []byte) (int, error) {
+	w.buf.Write(p)
+	if w.onLine == nil {
+		return len(p), nil
+	}
+	w.part = append(w.part, p...)
+	for {
+		i := bytes.IndexByte(w.part, '\n')
+		if i < 0 {
+			break
+		}
+		if line := strings.TrimSpace(string(w.part[:i])); line != "" {
+			w.onLine(line)
+		}
+		w.part = w.part[i+1:]
+	}
+	return len(p), nil
+}
+
+func hasEnv(env []string, key string) bool {
+	for _, kv := range env {
+		if strings.HasPrefix(kv, key+"=") && len(kv) > len(key)+1 {
+			return true
+		}
+	}
+	return false
+}
+
+func failed(res Result, err error) Result {
+	res.Status, res.Output = "failed", "shift could not start: "+err.Error()
+	return res
+}
+
+// loadEnv is the process environment plus secrets/common.env and one agent env file; {root}
+// in a value is the team folder on this machine, so a setting can point into it anywhere.
+func loadEnv(c *Config, envFile string) ([]string, error) {
+	env := cleanEnv(os.Environ())
+	for _, f := range []string{c.Path(filepath.Join(secretsDir, commonEnv)), c.Path(envFile)} {
+		b, err := os.ReadFile(f)
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		for n, line := range strings.Split(string(b), "\n") {
+			line = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "export "))
+			if line == "" || strings.HasPrefix(line, "#") {
+				continue
+			}
+			if !strings.Contains(line, "=") {
+				return nil, fmt.Errorf("%s line %d: expected KEY=VALUE", f, n+1)
+			}
+			env = append(env, strings.ReplaceAll(line, "{root}", c.Root))
+		}
+	}
+	return env, nil
+}
+
+// capabilities reports what this machine can offer the organizer: which of the requested
+// gh logins exist here, and whether (and as whom) claude is logged in.
+func capabilities(c *Config, ghUsers []string) *Caps {
+	caps := &Caps{GhUsers: []string{}}
+	for _, u := range ghUsers {
+		if out, err := probe(c, "", os.Environ(), "gh", "auth", "token", "--user", u); err == nil && len(strings.TrimSpace(string(out))) > 0 {
+			caps.GhUsers = append(caps.GhUsers, u)
+		}
+	}
+	caps.ClaudeLoggedIn, caps.ClaudeEmail = claudeLogin(c)
+	return caps
+}
+
+// claudeLogin asks the claude CLI whether it is logged in, and as which account.
+func claudeLogin(c *Config) (bool, string) {
+	out, err := probe(c, "", os.Environ(), c.ClaudeBin, "auth", "status")
+	if err != nil {
+		return false, ""
+	}
+	var v struct {
+		LoggedIn bool   `json:"loggedIn"`
+		Email    string `json:"email"`
+	}
+	if json.Unmarshal(out, &v) != nil {
+		return false, ""
+	}
+	return v.LoggedIn, v.Email
+}
+
+// noMemory is env for a one-off claude call rota makes itself, such as a summary: it learns
+// nothing to keep, so Claude Code's auto memory is off and writes nothing under ~/.claude.
+func noMemory(env []string) []string {
+	return append(slices.Clone(env), "CLAUDE_CODE_DISABLE_AUTO_MEMORY=1")
+}
+
+func claudeArgs(c *Config, a *Agent) []string {
+	args := []string{"-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose",
+		"--replay-user-messages", "--permission-mode", a.PermissionMode} // a message is echoed once it enters the conversation
+	if a.Model != "" {
+		args = append(args, "--model", a.Model)
+	}
+	if a.Effort != "" {
+		args = append(args, "--effort", a.Effort)
+	}
+	if a.Role != "" {
+		args = append(args, "--append-system-prompt", a.Role)
+	}
+	args = append(args, c.ExtraArgs...)
+	args = append(args, a.ExtraArgs...)
+	// variadic flags go last so they cannot swallow other arguments
+	if a.DisallowedTools != "" {
+		args = append(args, "--disallowedTools", a.DisallowedTools)
+	}
+	tools := "Bash(rota say *)" // every agent may answer the human in the team chat
+	if a.Tools != "" {
+		tools = a.Tools + "," + tools
+	}
+	return append(args, "--allowedTools", tools)
+}
+
+// placeRepoEnv puts the agent's setup for a repository, secrets/<agent>/<name>.env, into its
+// checkout as .env, {work} replaced by the agent's work folder on this machine. A repository's
+// local setup (its own endpoints and data folder for a stack the agent runs) belongs to the
+// agent, not to the checkout: it moves with the agent to another machine.
+func placeRepoEnv(c *Config, agent, work, repo string) error {
+	name := repo[strings.LastIndex(repo, "/")+1:]
+	dir := filepath.Join(work, name)
+	if _, err := os.Stat(dir); err != nil {
+		return nil // not checked out here
+	}
+	dst := filepath.Join(dir, ".env")
+	b, err := os.ReadFile(c.Path(filepath.Join(secretsDir, agent, name+".env")))
+	if os.IsNotExist(err) { // no setup (any more): a copy rota placed goes
+		if old, err := os.ReadFile(dst); err == nil && strings.HasPrefix(string(old), placedMark) {
+			return os.Remove(dst)
+		}
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if fi, err := os.Lstat(dst); err == nil && !fi.Mode().IsRegular() {
+		return fmt.Errorf("%s's .env for %s: %s is not a plain file; not written", agent, name, dst)
+	}
+	if _, err := probe(c, dir, nil, "git", "ls-files", "--error-unmatch", ".env"); err == nil {
+		return fmt.Errorf("%s's .env for %s: git tracks .env there; not written, so it is never committed", agent, name)
+	}
+	text := placedMark + "\n" + strings.ReplaceAll(string(b), "{work}", work)
+	if old, err := os.ReadFile(dst); err == nil && string(old) == text {
+		return nil
+	}
+	tmp := dst + ".rota-tmp" // written whole, and a link in its place is replaced, never followed
+	if err := os.WriteFile(tmp, []byte(text), 0o600); err != nil {
+		return fmt.Errorf("%s's .env for %s: %w", agent, name, err)
+	}
+	return os.Rename(tmp, dst)
+}
+
+// placedMark starts a .env that rota placed from an agent's secrets.
+const placedMark = "# placed by rota from the agent's secrets; edit it there, not here"
+
+// command builds a child in its own process group, so cancelling ctx kills it and
+// everything it spawned (SIGTERM, then SIGKILL after killGrace).
+func command(ctx context.Context, c *Config, dir string, env []string, name string, args ...string) *exec.Cmd {
+	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.Dir, cmd.Env = dir, env
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM) }
+	cmd.WaitDelay = killGrace
+	return cmd
+}
+
+// syncRepo clones owner/name into work/<name> with clone_cmd, or fast-forwards the
+// default branch of an existing clone. Any failure fails the shift before claude starts.
+func syncRepo(ctx context.Context, c *Config, env []string, work, repo string) error {
+	name := repo[strings.LastIndex(repo, "/")+1:]
+	dir := filepath.Join(work, name)
+	if _, err := os.Stat(filepath.Join(dir, ".git")); err != nil {
+		words := strings.Fields(expand(c.CloneCmd, map[string]string{"{repo}": repo, "{dir}": dir, "{name}": name}))
+		if len(words) == 0 {
+			return fmt.Errorf("clone_cmd is empty")
+		}
+		if err := sh(ctx, c, env, work, words[0], words[1:]...); err != nil {
+			return fmt.Errorf("clone %s: %w", repo, err)
+		}
+		return nil
+	}
+	if err := sh(ctx, c, env, dir, "git", "fetch", "-q", "origin"); err != nil {
+		return fmt.Errorf("fetch %s: %w", repo, err)
+	}
+	head, _ := probe(c, dir, env, "git", "symbolic-ref", "--short", "refs/remotes/origin/HEAD")
+	branch := strings.TrimPrefix(strings.TrimSpace(string(head)), "origin/")
+	if branch == "" {
+		return fmt.Errorf("%s: cannot tell the default branch", repo)
+	}
+	if err := sh(ctx, c, env, dir, "git", "checkout", "-q", branch); err != nil {
+		return fmt.Errorf("%s: checkout %s (did an agent leave uncommitted changes there?): %w", repo, branch, err)
+	}
+	if err := sh(ctx, c, env, dir, "git", "pull", "-q", "--ff-only"); err != nil {
+		return fmt.Errorf("%s: pull %s: %w", repo, branch, err)
+	}
+	return nil
+}
+
+func sh(ctx context.Context, c *Config, env []string, dir, name string, args ...string) error {
+	cmd := command(ctx, c, dir, env, name, args...)
+	cmd.Stdout, cmd.Stderr = os.Stderr, os.Stderr
+	if err := runTracked(cmd); err != nil {
+		if ctx.Err() == nil {
+			fmt.Fprintf(os.Stderr, "warn: %s %s: %v\n", name, strings.Join(args, " "), err)
+		}
+		return err
+	}
+	return nil
+}
+
+// probe runs a short external command with the probe timeout, so a stuck keychain
+// prompt, a hung gh or a slow login shell can never stall the organizer.
+func probe(c *Config, dir string, env []string, name string, args ...string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), probeTimeout)
+	defer cancel()
+	cmd := command(ctx, c, dir, env, name, args...)
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	err := runTracked(cmd)
+	if ctx.Err() == context.DeadlineExceeded {
+		return out.Bytes(), fmt.Errorf("%s timed out after %s", name, probeTimeout)
+	}
+	return out.Bytes(), err
+}
+
+// children are the process groups KillChildren kills outright, for a second Ctrl-C.
+var (
+	childMu  sync.Mutex
+	children = map[int]bool{}
+)
+
+func runTracked(cmd *exec.Cmd) error {
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	childMu.Lock()
+	children[cmd.Process.Pid] = true
+	childMu.Unlock()
+	err := cmd.Wait()
+	// the direct child is gone; sweep anything it left behind in its process group
+	syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+	childMu.Lock()
+	delete(children, cmd.Process.Pid)
+	childMu.Unlock()
+	return err
+}
+
+func KillChildren() {
+	childMu.Lock()
+	defer childMu.Unlock()
+	for pid := range children {
+		syscall.Kill(-pid, syscall.SIGKILL)
+	}
+}
