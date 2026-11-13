@@ -17,6 +17,16 @@ the GitHub CLI.
 > and the team's budget is a share of your Claude subscription (such as Pro or Max). It does not work
 > with Codex, Gemini, Cursor, Copilot or any other AI tool.
 
+## It uses only the Claude budget you give it
+
+You decide how much of your Claude plan the agents may use: a share of each day's part of your weekly
+limit, 20% by default, for all the agents together. rota reads your real usage from Claude, starts no new
+shift once the share is used up and stops the one that is running, so the rest of your plan stays
+yours. Change the share any time in Settings, and split it between the agents by weight: rota proposes
+new shares from what each agent really used.
+
+<p align="center"><img src="docs/demos/budget.gif" width="860" alt="The budget: today's use, the setting, and the agents' shares"></p>
+
 ## Install with one prompt
 
 You need:
@@ -116,8 +126,8 @@ The same inbox works on your phone over Tailscale. Add it to your Home Screen fo
 
 - **Shifts.** The organizer (`rota start`) runs one agent at a time as a `claude -p` session, when it is
   due and inside its hours. Close it and everything stops.
-- **The team pool.** The agents together use a share of your Claude subscription that you set (20% of
-  each day's part of your weekly window by default), split by weights you choose. That is the only limit.
+- **The team pool.** The agents together use the share of your Claude plan you set (see the budget
+  above), split by weights you choose. That is the only limit on them.
 - **GitHub is the workplace.** Scouts open issues, the developer opens draft pull requests from its own
   branches, and agents talk to each other in notes on them. You stay the one who merges.
 - **The team folder.** `~/.rota` holds each agent as a Markdown file (settings on top, its role below),
