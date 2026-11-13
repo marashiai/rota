@@ -73,7 +73,7 @@ function when(iso) {
 function av(name, size = 40, presence = false) {
   const m = member(name), team = name === 'team', you = name === 'you';
   const c = m ? m.color : team ? 'var(--accent)' : you ? '#7b7b86' : '#888';
-  const letter = you ? 'Me' : team ? 'A' : esc((name || '?')[0].toUpperCase());
+  const letter = you ? 'Me' : team ? 'R' : esc((name || '?')[0].toUpperCase());
   const cls = (presence && m ? ' p-' + m.state : '') + (team ? ' sq' + (presence ? ' p-on' : '') : '');
   return `<span class="av${cls}" style="--c:${c};--s:${size}px${you ? ';font-size:' + Math.round(size * .34) + 'px' : ''}">${letter}</span>`;
 }

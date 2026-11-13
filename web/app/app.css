@@ -136,6 +136,7 @@ input:focus-visible,textarea:focus-visible{outline:none}
 .ok svg{width:16px;height:16px;stroke-width:2.6}
 .steps{border:1px solid var(--line);border-radius:14px;background:var(--surface);margin:8px 0}
 .step{display:flex;gap:12px;align-items:flex-start;padding:11px 14px;width:100%}
+.step>span:last-child{min-width:0;overflow-wrap:anywhere}
 .step+.step{border-top:1px solid var(--line)}
 .box{width:21px;height:21px;border-radius:6px;border:1.8px solid var(--line);flex:none;display:grid;place-items:center;margin-top:1px}
 .box.on{background:var(--green);border-color:var(--green);color:#fff}

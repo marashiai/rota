@@ -857,7 +857,7 @@ func TestReportsAndEvidence(t *testing.T) {
 	write(t, filepath.Join(root, "reports", "2026-10-29.md"), "# What changed\n\n- backend#63, merged by the triage\n")
 	write(t, filepath.Join(root, "evidence", "app", "developer", "1-fix", "after.png"), "\x89PNG")
 	write(t, filepath.Join(root, "evidence", "app", "developer", "1-fix", "page.html"), "<script>steal()</script>")
-	write(t, filepath.Join(root, "evidence", "app", "developer", "1-fix", "codex.md"), "# Review\n\nnothing open")
+	write(t, filepath.Join(root, "evidence", "app", "developer", "1-fix", "review.md"), "# Review\n\nnothing open")
 	if body := get(t, srv, "/reports/"); !strings.Contains(body, "merged by the triage") {
 		t.Fatalf("the report is shown:\n%s", body)
 	}
@@ -868,10 +868,10 @@ func TestReportsAndEvidence(t *testing.T) {
 	if body := get(t, srv, "/evidence/app/developer/1-fix/page.html"); strings.Contains(body, "<script>steal") || !strings.Contains(body, "&lt;script&gt;steal") {
 		t.Fatal("an html file is only text")
 	}
-	if body := get(t, srv, "/evidence/app/developer/1-fix"); !strings.Contains(body, `href="/evidence/app/developer/1-fix/codex.md"`) {
+	if body := get(t, srv, "/evidence/app/developer/1-fix"); !strings.Contains(body, `href="/evidence/app/developer/1-fix/review.md"`) {
 		t.Fatalf("a folder lists its files:\n%s", body)
 	}
-	if body := get(t, srv, "/evidence/app/developer/1-fix/codex.md"); !strings.Contains(body, "<h1>Review</h1>") {
+	if body := get(t, srv, "/evidence/app/developer/1-fix/review.md"); !strings.Contains(body, "<h1>Review</h1>") {
 		t.Fatal("markdown is rendered")
 	}
 	resp, _ = http.Get(srv.URL + "/evidence/../secrets")

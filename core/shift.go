@@ -76,8 +76,12 @@ func (t *Team) RunShift(ctx context.Context, name string, now time.Time, force, 
 		if err != nil {
 			return err
 		}
+		role := a.Role // as the shift gets it: its placeholders filled in
+		if i := slices.Index(job.Args, "--append-system-prompt"); i >= 0 && i+1 < len(job.Args) {
+			role = job.Args[i+1]
+		}
 		fmt.Printf("runs on: %s\ngh account: %s\n%s %s\n--- prompt ---\n%s\n--- system prompt ---\n%s\n",
-			or(a.Host, "local"), orNone(a.GhUser), t.ClaudeBin, shellJoin(job.Args), job.Prompt, a.Role)
+			or(a.Host, "local"), orNone(a.GhUser), t.ClaudeBin, shellJoin(job.Args), job.Prompt, role)
 		return nil
 	}
 	if a.Host != "" {

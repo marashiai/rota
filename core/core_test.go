@@ -3033,7 +3033,7 @@ func TestAnAgentRunsAfterAnotherWithoutPingPong(t *testing.T) {
 	if team.Asked()["developer"] {
 		t.Fatal("the triage does not wake the developer it runs after")
 	}
-	team.routeNotes("triage", "## Notes to teammates\n@developer: backend#72 is not ready: no Codex review\n", time.Now())
+	team.routeNotes("triage", "## Notes to teammates\n@developer: backend#72 is not ready: no independent review\n", time.Now())
 	if !team.Asked()["developer"] || !strings.Contains(inboxText(team, "developer"), "backend#72 is not ready") {
 		t.Fatal("a note to the developer is work for it, and wakes it")
 	}
@@ -4143,5 +4143,21 @@ func TestToolCallsKeepTheirIDs(t *testing.T) {
 	answer := ParseLine(`{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_1","content":"a"}]}}`)
 	if len(call) != 1 || call[0].ID != "toolu_1" || len(answer) != 1 || answer[0].ID != "toolu_1" {
 		t.Fatalf("ids: %+v %+v", call, answer)
+	}
+}
+
+// A dry run shows the role as the shift gets it, its placeholders filled in, so it can be checked.
+func TestADryRunShowsTheRoleFilledIn(t *testing.T) {
+	root := t.TempDir()
+	write(t, filepath.Join(root, "rota.conf"), "usage: off\nlisten: off\n")
+	write(t, filepath.Join(root, "agents", "alpha.md"), "---\nenabled: true\n---\nYou are {agent}; reports go in {root}/reports/{agent}/.\n")
+	team := open(t, root)
+	out := captureStdout(t, func() {
+		if err := team.RunShift(context.Background(), "alpha", time.Now(), true, true); err != nil {
+			t.Error(err)
+		}
+	})
+	if !strings.Contains(out, "--- system prompt ---\nYou are alpha; reports go in "+root+"/reports/alpha/.") {
+		t.Fatalf("the system prompt is the role as the shift gets it:\n%s", out)
 	}
 }
