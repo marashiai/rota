@@ -4,6 +4,7 @@ package tray
 
 import (
 	"fmt"
+	"math"
 	"strings"
 	"time"
 	"unicode"
@@ -16,15 +17,16 @@ import (
 // "Mon 15:04" within the week around today, "2 Jan 15:04" beyond.
 func when(t, now time.Time) string {
 	t, now = t.Local(), now.Local()
-	day := func(d time.Time) string { return d.Format("2006-01-02") }
+	midnight := func(d time.Time) time.Time { return time.Date(d.Year(), d.Month(), d.Day(), 0, 0, 0, 0, d.Location()) }
+	days := int(math.Round(midnight(t).Sub(midnight(now)).Hours() / 24)) // calendar days: a summer time change makes one 23 or 25 hours
 	switch {
-	case day(t) == day(now):
+	case days == 0:
 		return t.Format("15:04")
-	case day(t) == day(now.AddDate(0, 0, 1)):
+	case days == 1:
 		return "tomorrow " + t.Format("15:04")
-	case day(t) == day(now.AddDate(0, 0, -1)):
+	case days == -1:
 		return "yesterday " + t.Format("15:04")
-	case t.After(now.AddDate(0, 0, -6)) && t.Before(now.AddDate(0, 0, 6)):
+	case days >= -6 && days <= 6:
 		return t.Format("Mon 15:04")
 	}
 	return t.Format("2 Jan 15:04")

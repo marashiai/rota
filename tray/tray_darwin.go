@@ -374,7 +374,7 @@ func (tr *tray) refresh() {
 			m.look = l
 		}
 		m.item.SetTitle(agentTitle(ag.Name, doing(mem, as, ag.Enabled, paused, live, now)))
-		detail := upperFirst(or(why[ag.Name], as.State))
+		detail := why[ag.Name] // its line says the rest
 		if r := live; r != nil && r.Running != nil && r.Running.Agent == ag.Name {
 			detail = "Now: " + core.FirstLine(r.Running.Live, 60)
 		}

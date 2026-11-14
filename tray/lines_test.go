@@ -16,6 +16,8 @@ func TestTheMenuSaysTimesTheShortWay(t *testing.T) {
 		time.Date(2026, 11, 15, 5, 0, 0, 0, time.Local):   "tomorrow 05:00",
 		time.Date(2026, 11, 13, 15, 50, 0, 0, time.Local): "yesterday 15:50",
 		time.Date(2026, 11, 17, 18, 0, 0, 0, time.Local):  "Tue 18:00",
+		time.Date(2026, 11, 20, 15, 50, 0, 0, time.Local): "Fri 15:50", // six days ahead, later in the day than now
+		time.Date(2026, 11, 21, 8, 0, 0, 0, time.Local):   "21 Nov 08:00",
 		time.Date(2026, 12, 2, 9, 0, 0, 0, time.Local):    "2 Dec 09:00",
 	} {
 		if got := when(at, now); got != want {
