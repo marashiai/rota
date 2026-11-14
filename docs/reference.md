@@ -524,14 +524,22 @@ GOBIN=~/.local/bin go install ./gloss/cmd/gloss     # from this checkout
 
 ## The menu bar (macOS)
 
-`rota tray` puts the team in the menu bar: the bar shows the running agent and minutes, or idle, paused,
-on hold or off, after `?N` while agents have N questions for you. Each question is a notification with a
-field to answer it, and a menu item that opens a dialog to answer or dismiss it; an agent's answer to your
-review notes is a notification that opens the review, and goes once you opened it; macOS asks once whether rota may
-send notifications, and the menu says so when they are off. The menu lists every agent with its state and share, each with a submenu to toggle Enabled, Run
-now, open its latest run, leave a note and open its work folder; then
-hosts, Pause/Resume team, Stop current shift, Run next shift now, Start/Stop organizer, the inbox, the
-team, today's report, and the folders.
+`rota tray` puts the team in the menu bar. Beside the icon: `?N` while agents have N questions for you,
+then the agent that works, or paused, on hold or off; nothing while the team waits for its next shift.
+Each question is a notification with a field to answer it, and a menu item with an orange dot that opens
+a dialog to answer or dismiss it; an agent's answer to your review notes is a notification that opens the
+review, and goes once you opened it; macOS asks once whether rota may send notifications, and the menu
+says so when they are off.
+
+The menu starts with what the team does ("Next: maintainer · 09:07", "developer is working · 12 min",
+"Paused") and how much of its budget is used. Then one line per agent, those that are on first, as
+"maintainer — next 09:07", with a dot: green while it works, orange while it asks you something, red when
+its last run failed, blue just after it finished, grey while it waits, an empty ring while it is off or
+paused. Its submenu says why it waits, its share of the budget and its last run, and has Run now, Latest
+run, Leave a note…, its model and effort, Paused, Enabled and its work folder. Then the inbox, the team
+and today's report; Pause or Resume team, Run next shift now, and Stop current shift while one runs, or
+Start organizer while it is off; and under More, Stop organizer, the team folder, the terminal command,
+Claude's usage and the hosts.
 The tray only reads the organizer's state file and acts through the same files and signals the CLI uses
 (`rota pause`, `unpause`, `kick`, `cancel`, `stop`). Quitting the tray stops an organizer it started.
 It needs the Xcode command line tools to build (cgo) and no Apple developer account.
