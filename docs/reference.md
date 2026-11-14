@@ -358,9 +358,11 @@ with it within seconds: the pages and the schedule are the new version's without
 it, and it stays the same process, so the menu bar that started it still controls it. A shift that
 runs then stops between two of its steps, or while it waits for your answer (after 15 minutes at
 most, whatever it does), and resumes its Claude session where it stopped, in the new version. One that will not start is reported in rota.log, and the
-old one goes on. The menu bar does the same as soon as the new rota has settled: it runs the new
-version in its place, an organizer it started goes on and stays its own, and an `rota web` it started
-stops, since the new one starts its own when you open a page.
+old one goes on. The menu bar takes the new rota as soon as it has settled. Opened as rota.app, it
+opens the new one as the app and quits, since macOS shows a menu bar icon only for an app opened as
+one; run as `rota tray`, it restarts in its place. Either way an organizer it started goes on and
+becomes the new one's, and an `rota web` it started stops, since the new one starts its own when
+you open a page.
 
 ## The pages
 

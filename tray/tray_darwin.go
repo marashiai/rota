@@ -522,9 +522,9 @@ func (tr *tray) stopWeb() {
 // organizerEnv hands an organizer the menu started to the menu that takes its place.
 const organizerEnv = "ROTA_TRAY_ORGANIZER"
 
-// update runs a newly installed rota in the menu's place, as the organizer does between
-// shifts: an organizer it started goes on and is handed over, an rota web it started is stopped,
-// since the new menu runs its own when a page is opened.
+// update runs a newly installed rota in the menu's place: an organizer it started goes on and is
+// handed over, an rota web it started is stopped, since the new menu runs its own when a page is
+// opened.
 func (tr *tray) update() {
 	if !tr.self.Ready() {
 		return
@@ -539,6 +539,14 @@ func (tr *tray) update() {
 	var env []string
 	if p := tr.organizer; p != nil && p.Signal(syscall.Signal(0)) == nil {
 		env = append(env, organizerEnv+"="+strconv.Itoa(p.Pid))
+	}
+	if bundle, ok := strings.CutSuffix(filepath.Dir(tr.exe), "/Contents/MacOS"); ok && strings.HasSuffix(bundle, ".app") {
+		// Opened as an app, it opens the new one as an app, which takes the organizer over, and
+		// leaves: replaced in its process, it would run on without its icon in the menu bar.
+		if tr.self.Reopen(bundle, env...) == nil {
+			os.Exit(0)
+		}
+		return // the new one would not open: this one goes on
 	}
 	tr.self.Restart(env...) // returns only when the new one would not start: this one goes on
 }

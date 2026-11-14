@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sync"
 	"syscall"
@@ -142,3 +143,25 @@ func (s *SelfUpdate) Restart(env ...string) error {
 	s.w.failed, s.w.failedAt = s.w.seen, time.Now()
 	return err
 }
+
+// Reopen opens the new rota as another instance of the app bundle it is installed in, with env
+// added to its environment, for the menu bar: macOS shows a menu bar app's icon only when the app
+// was opened as an app, so one that replaced itself in its process would run on without one. nil
+// means the new one was opened and this one should end; otherwise that one is not tried again
+// for a while.
+func (s *SelfUpdate) Reopen(bundle string, env ...string) error {
+	args := []string{"-n", "-a", bundle}
+	for _, e := range env {
+		args = append(args, "--env", e)
+	}
+	err := reopen(args)
+	if err != nil {
+		s.w.mu.Lock()
+		s.w.failed, s.w.failedAt = s.w.seen, time.Now()
+		s.w.mu.Unlock()
+	}
+	return err
+}
+
+// reopen runs macOS's open with args.
+var reopen = func(args []string) error { return exec.Command("open", args...).Run() }
