@@ -31,13 +31,14 @@ new shares from what each agent really used.
 
 You need:
 
-- macOS or Linux;
+- a Mac with Apple Silicon (M1 or later) and macOS 13 or newer, which gets the ready-made app. On an
+  Intel Mac or Linux the setup builds rota from source instead;
 - **the Claude Code CLI**, the `claude` command in a terminal, logged in with a Claude subscription such
   as Pro or Max. rota runs `claude -p` for every shift, so the CLI is required even if you use the Claude
   desktop app. Install it with `curl -fsSL https://claude.ai/install.sh | bash` (or
   `brew install --cask claude-code`), then log in with `claude auth login`;
-- a GitHub account. The setup installs anything else that's missing (Go, git, the GitHub CLI) after
-  asking you.
+- a GitHub account. The setup installs anything else that's missing (git, the GitHub CLI, and Go when
+  it builds from source) after asking you.
 
 Run the setup in that terminal. The Claude desktop app and claude.ai/code are not supported for it:
 claude.ai/code runs in the cloud and can't install anything on your computer, and the desktop app
@@ -64,6 +65,15 @@ you just accept it. It asks about your schedule and how much of your Claude limi
 then shows a summary of all your answers. You can change any of them before you confirm, and nothing is
 created until you do. Then it builds a team that fits from [proven blueprints](setup/blueprints/). It
 changes nothing in your repositories while it does this. Expect 10 to 20 minutes.
+
+### Or download the app
+
+[Download rota for Apple Silicon Macs](https://github.com/marashiai/rota/releases/latest/download/rota-macos-arm64.dmg),
+open it and drag rota to Applications. The app isn't signed with an Apple Developer ID, so macOS refuses
+to open it the first time: open System Settings › Privacy & Security, click Open Anyway next to the
+message about rota, and confirm. rota then appears in the menu bar and puts the `rota` and `gloss`
+commands in `~/.local/bin`. Run the prompt above to build your team: the setup uses the app you
+installed. Every version is on the [releases page](https://github.com/marashiai/rota/releases).
 
 ## A tour
 
@@ -184,3 +194,7 @@ Keep the team machine on and awake: the inbox, the notifications and the shifts 
 - [docs/reference.md](docs/reference.md): every feature and setting in detail.
 - [setup/blueprints](setup/blueprints/): the agent roles the setup builds your team from.
 - [gloss/README.md](gloss/README.md): the pull-request reviewer built into the inbox.
+
+## License
+
+MIT: see [LICENSE](LICENSE).

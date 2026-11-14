@@ -54,9 +54,9 @@ Check each item yourself and report the result in one short list.
 
 | Needed | Check | If it's missing |
 |---|---|---|
-| macOS or Linux | `uname` | Windows is not supported |
+| macOS or Linux | `uname -sm` | Windows is not supported. `Darwin arm64` is an Apple Silicon Mac, which gets the ready-made app (macOS 13 or newer: `sw_vers -productVersion`); any other machine builds rota from source |
 | The Claude Code CLI (the `claude` command), logged in with a Claude subscription such as Pro or Max | `claude --version`, and `claude auth status` shows `"loggedIn": true` and `"authMethod": "claude.ai"` | Install it: `curl -fsSL https://claude.ai/install.sh \| bash` (or `brew install --cask claude-code`), then `claude auth login`. The Claude desktop app does not install this command, and its login may not carry over: rota runs `claude -p` for every shift, so the CLI must work in a terminal. With an API key instead of a subscription, rota still works but nothing limits spending: set `usage: off` later, and warn them about the cost |
-| Go | `go version` | macOS: `brew install go`; Linux: the distribution's package or go.dev/dl. Go fetches the exact version this repository needs by itself |
+| Go, only to build from source: not on an Apple Silicon Mac | `go version` | macOS: `brew install go`; Linux: the distribution's package or go.dev/dl. Go fetches the exact version this repository needs by itself |
 | git | `git --version` | `brew install git` or the distribution's package |
 | GitHub CLI, logged in | `gh auth status` | `brew install gh`, then `gh auth login` |
 | Tailscale (optional) | `tailscale status` (on macOS, when `tailscale` is not on the PATH: `/Applications/Tailscale.app/Contents/MacOS/Tailscale status`) | Only needed to manage the team from a phone or another computer, or to let other machines run shifts. Don't install it now: step 4 asks whether they want that |
@@ -67,9 +67,35 @@ login (`gh auth status` marks the active one), put `GH_TOKEN=$(gh auth token --u
 every `gh` command you run during setup. Never run `gh auth switch`: it changes their `gh` for
 everything else too.
 
-## 2. Build and install
+## 2. Install rota
 
-From the root of this repository:
+First see what is there: `command -v rota gloss`, and whether `rota.app` is in `/Applications` or
+`~/Applications`. If the person installed the app themselves (the README's download), `rota` and `gloss`
+already point into it: just run `rota init`. If a `rota` or `gloss` exists that is not rota's, ask before
+replacing it. Make sure `~/.local/bin` is on the `PATH` of their login shell; if it isn't, offer to add
+it to their shell profile.
+
+**On an Apple Silicon Mac** (`uname -sm` prints `Darwin arm64`), install the app from the latest
+release. It holds both commands and the menu bar app, from which they can start and stop the team and
+answer questions:
+
+```sh
+tmp=$(mktemp -d)
+curl -fsSL -o "$tmp/rota.dmg" https://github.com/marashiai/rota/releases/latest/download/rota-macos-arm64.dmg
+hdiutil attach -nobrowse -quiet -mountpoint "$tmp/mnt" "$tmp/rota.dmg"
+dest=/Applications; [ -w "$dest" ] || dest=~/Applications; mkdir -p "$dest"
+rm -rf "$dest/rota.app" && cp -R "$tmp/mnt/rota.app" "$dest/"
+hdiutil detach -quiet "$tmp/mnt" && rm -rf "$tmp"
+mkdir -p ~/.local/bin
+ln -sfn "$dest/rota.app/Contents/MacOS/rota" ~/.local/bin/rota
+ln -sfn "$dest/rota.app/Contents/MacOS/gloss" ~/.local/bin/gloss   # the agents write review notes with it
+rota init                                                           # creates the team folder ~/.rota
+```
+
+Downloaded from the terminal, the app opens without macOS asking first, although it isn't signed with an
+Apple Developer ID.
+
+**On any other machine** (an Intel Mac or Linux), build it from the root of this repository:
 
 ```sh
 mkdir -p ~/.local/bin
@@ -78,14 +104,9 @@ go build -o ~/.local/bin/gloss ./gloss/cmd/gloss    # the agents write review no
 rota init                                           # creates the team folder ~/.rota
 ```
 
-Before that, check `command -v rota gloss`: if either already exists and is not from this repository,
-ask before replacing it. Make sure `~/.local/bin` is on the `PATH` of their login shell; if it isn't,
-offer to add it to their shell profile.
-
-On macOS, offer the menu bar app too: `./build.sh install` builds `rota.app` (it needs the Xcode command
-line tools: `xcode-select --install`), puts it in /Applications (or `~/Applications` when that isn't
-writable), and links `~/.local/bin/rota` to it.
-From the menu bar they can start and stop the team and answer questions.
+On an Intel Mac, offer the menu bar app too: `./build.sh install` builds `rota.app` (it needs the Xcode
+command line tools: `xcode-select --install`), puts it in /Applications (or `~/Applications` when that
+isn't writable), and links `~/.local/bin/rota` and `gloss` to it.
 
 Then run `rota usage`. It should print the session and weekly percentages of their Claude subscription:
 that is what the team's budget is measured against. If it fails, explain that the budget can't be

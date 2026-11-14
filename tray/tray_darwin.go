@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"fyne.io/systray"
+	"golang.org/x/sys/unix"
 
 	"rota/core"
 	"rota/icon"
@@ -209,9 +210,11 @@ func (tr *tray) build() {
 	tr.handle(systray.AddMenuItem("Team", "the organizer, the agents and their runs"), func() { tr.openPage("/#team") })
 	tr.handle(systray.AddMenuItem("Today's report", ""), func() { tr.openPage("/reports/") })
 	tr.handle(systray.AddMenuItem("Open team folder", ""), func() { open(tr.root) })
-	tr.handle(systray.AddMenuItem("Install terminal command", "links ~/.local/bin/rota to this app"), func() {
+	tr.handle(systray.AddMenuItem("Install terminal command", "links rota and gloss in ~/.local/bin to this app"), func() {
 		if link, err := InstallCommand(tr.exe); err == nil {
 			tr.header.SetTitle("terminal command installed: " + link)
+		} else {
+			tr.header.SetTitle(err.Error())
 		}
 	})
 	systray.AddSeparator()
@@ -535,8 +538,15 @@ func or(s, alt string) string {
 	return s
 }
 
-// InstallCommand links ~/.local/bin/rota to exe, so the terminal runs the app's rota.
+// InstallCommand links ~/.local/bin/rota to exe, so the terminal runs the app's rota, and
+// ~/.local/bin/gloss to the gloss beside it, which the agents write review notes with. A gloss
+// there that is not a rota.app's is someone's own: it stays. A copy of the app that runs from a
+// read-only place, its disk image or where macOS moved it to check it, links nothing: it goes away.
 func InstallCommand(exe string) (string, error) {
+	var fs unix.Statfs_t
+	if unix.Statfs(exe, &fs) == nil && fs.Flags&unix.MNT_RDONLY != 0 {
+		return "", fmt.Errorf("rota runs from its disk image: move it to Applications first")
+	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
@@ -545,10 +555,28 @@ func InstallCommand(exe string) (string, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
 	}
+	if gloss := filepath.Join(filepath.Dir(exe), "gloss"); isFile(gloss) {
+		link := filepath.Join(dir, "gloss")
+		cur, err := os.Readlink(link)
+		if _, gone := os.Lstat(link); os.IsNotExist(gone) || err == nil && strings.HasSuffix(cur, "/rota.app/Contents/MacOS/gloss") {
+			relink(link, gloss)
+		}
+	}
 	link := filepath.Join(dir, "rota")
-	if cur, err := os.Readlink(link); err == nil && cur == exe {
-		return link, nil
+	return link, relink(link, exe)
+}
+
+// relink points link at target, unless it already does.
+func relink(link, target string) error {
+	if cur, err := os.Readlink(link); err == nil && cur == target {
+		return nil
 	}
 	os.Remove(link)
-	return link, os.Symlink(exe, link)
+	return os.Symlink(target, link)
+}
+
+// isFile says whether path is a regular file.
+func isFile(path string) bool {
+	fi, err := os.Stat(path)
+	return err == nil && fi.Mode().IsRegular()
 }

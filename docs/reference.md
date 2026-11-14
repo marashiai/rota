@@ -331,16 +331,22 @@ look, so a typo never stops the team. `rota version` says which build you are ru
 
 ## Install as an app (macOS)
 
+Each release has the app for Apple Silicon Macs with macOS 13 or newer, `rota-macos-arm64.dmg`; the
+newest is always at https://github.com/marashiai/rota/releases/latest/download/rota-macos-arm64.dmg. To
+build it yourself:
+
 ```
-./build.sh            # dist/rota.app and dist/rota.dmg, unsigned, no developer account needed
-./build.sh install    # also copies rota.app to /Applications and links ~/.local/bin/rota to it
-./release.sh v0.1.0   # tags, builds dmg + macOS and Linux binaries + checksums, publishes a GitHub release
+./build.sh            # dist/rota.app (rota and gloss) and dist/rota.dmg for this Mac, unsigned, for macOS 13 on
+./build.sh install    # also copies rota.app to /Applications and links ~/.local/bin/rota and gloss to it
+./release.sh v0.1.0   # on an Apple Silicon Mac: tags, builds rota-macos-arm64.dmg and its checksum, publishes a release
 ```
 
-Spotlight then finds "rota": opening it runs the tray, which on first launch links the terminal command
-to the same binary if needed. Terminal and menu bar control the same team folder. The dmg is for other
-Macs of yours: drag rota.app to Applications; since it is unsigned, open it the first time with
-right-click, Open. The app imports PATH from your login shell, so `claude`, `gh` and `git` are found.
+Spotlight then finds "rota": opening it runs the tray, which links the terminal commands to the app's
+binaries if needed; a `gloss` of your own in `~/.local/bin` stays. Terminal and menu bar control the same
+team folder. Drag rota.app from the dmg to Applications: run from the dmg, it links nothing. It is not
+signed with an Apple Developer ID, so macOS refuses to open a copy downloaded in a browser the first
+time: allow it in System Settings › Privacy & Security with Open Anyway. The app imports PATH from your
+login shell, so `claude`, `gh` and `git` are found.
 
 A running organizer notices when another rota is installed where it was started from, and restarts
 with it within seconds: the pages and the schedule are the new version's without anyone restarting
