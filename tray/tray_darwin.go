@@ -38,15 +38,17 @@ type tray struct {
 	organizer  *os.Process      // an organizer the tray started, or the menu it replaced: stopped when it quits
 	self       *core.SelfUpdate // another rota installed in this one's place
 	web        *exec.Cmd        // an rota web the tray started: stopped when it quits
-	names      string           // the agents the menu was built for
+	names      string           // the agents the menu was built for, in its order, each with whether it is on
 	agents     map[string]*agentMenu
-	header     *systray.MenuItem
-	claude     *systray.MenuItem
-	hosts      *systray.MenuItem
-	pause      *systray.MenuItem
-	cancel     *systray.MenuItem
-	kick       *systray.MenuItem
-	startStop  *systray.MenuItem
+	status     *systray.MenuItem    // what the team does now
+	budget     *systray.MenuItem    // how much of its budget is used
+	start      *systray.MenuItem    // while the organizer is off
+	pause      *systray.MenuItem    // while it runs, as Run next shift now does
+	kick       *systray.MenuItem    //
+	cancel     *systray.MenuItem    // only while a shift runs
+	stop       *systray.MenuItem    // under More, while the organizer runs
+	claude     *systray.MenuItem    // under More: Claude's usage
+	hosts      *systray.MenuItem    // under More: the hosts
 	questions  []core.Question      // open, as last read
 	qids       string               // the questions the menu was built for
 	notified   map[string]bool      // questions with a notification up
@@ -55,9 +57,12 @@ type tray struct {
 }
 
 type agentMenu struct {
-	item, enabled   *systray.MenuItem
-	paused          *systray.MenuItem
-	models, efforts map[string]*systray.MenuItem
+	item                *systray.MenuItem
+	detail, share, last *systray.MenuItem // what it does or waits for, its use of the budget, its last run
+	model, effort       *systray.MenuItem // titled with its value, its choices beneath
+	enabled, paused     *systray.MenuItem
+	models, efforts     map[string]*systray.MenuItem
+	look                string // the dot it shows
 }
 
 // Run puts rota in the menu bar until it is quit or ctx ends. exe is this program, which
@@ -123,18 +128,35 @@ func options(key string) []string {
 	return nil
 }
 
-// build lays the menu out for the current agents.
+// menuOrder is the team's agents as the menu lists them: those that are on, in the team's
+// order, then those that are off; key says that order, and changes when it does.
+func menuOrder(agents []*core.Agent) (out []*core.Agent, key string) {
+	for _, on := range []bool{true, false} {
+		for _, a := range agents {
+			if a.Enabled == on {
+				out, key = append(out, a), key+a.Name+map[bool]string{true: "+", false: "-"}[on]
+			}
+		}
+	}
+	return out, key
+}
+
+// build lays the menu out: what the team does, the questions that wait for you, one line per
+// agent with its details and controls beneath it, the pages, the team's controls, and the rest
+// under More.
 func (tr *tray) build() {
 	systray.ResetMenu()
-	tr.header = systray.AddMenuItem("rota", "")
-	tr.header.Disable()
-	tr.claude = systray.AddMenuItem("claude", "")
-	tr.claude.Disable()
+	tr.status = systray.AddMenuItem("rota", "")
+	tr.status.Disable()
+	tr.budget = systray.AddMenuItem("", "")
+	tr.budget.Disable()
 	systray.AddSeparator()
 	if len(tr.questions) > 0 {
 		for _, q := range tr.questions {
 			q := q
-			tr.handle(systray.AddMenuItem("? "+q.Agent+" asks: "+core.FirstLine(q.Text, 70), q.Text), func() { tr.answer(q) })
+			item := systray.AddMenuItem(q.Agent+": "+core.FirstLine(q.Text, 60), q.Text)
+			item.SetIcon(dot("needs"))
+			tr.handle(item, func() { tr.answer(q) })
 		}
 		if tr.off {
 			off := systray.AddMenuItem("Notifications are off: allow rota in System Settings, Notifications", "")
@@ -142,39 +164,19 @@ func (tr *tray) build() {
 		}
 		systray.AddSeparator()
 	}
-	tr.agents, tr.names = map[string]*agentMenu{}, ""
-	for _, ag := range tr.t.Agents {
+	var agents []*core.Agent
+	agents, tr.names = menuOrder(tr.t.Agents)
+	tr.agents = map[string]*agentMenu{}
+	for _, ag := range agents {
 		name := ag.Name
-		tr.names += name + ","
 		m := &agentMenu{item: systray.AddMenuItem(name, ""), models: map[string]*systray.MenuItem{}, efforts: map[string]*systray.MenuItem{}}
-		m.enabled = m.item.AddSubMenuItemCheckbox("Enabled", "", ag.Enabled)
-		tr.handle(m.enabled, func() {
-			if a := tr.t.Agent(name); a != nil { // it may have been removed since the menu was built
-				tr.set(name, "enabled", fmt.Sprint(!a.Enabled))
-			}
-		})
-		m.paused = m.item.AddSubMenuItemCheckbox("Paused", "its running shift finishes, no new one starts", tr.t.PausedAgents()[name])
-		tr.handle(m.paused, func() {
-			if tr.t.PausedAgents()[name] {
-				tr.t.ResumeAgent(name)
-			} else {
-				tr.t.PauseAgent(name)
-			}
-		})
-		for _, kind := range []struct {
-			key, title string
-			items      map[string]*systray.MenuItem
-		}{{"model", "Model", m.models}, {"effort", "Effort", m.efforts}} {
-			sub := m.item.AddSubMenuItem(kind.title, "")
-			for _, v := range options(kind.key) {
-				if kind.items[v] != nil {
-					continue
-				}
-				key, v := kind.key, v
-				kind.items[v] = sub.AddSubMenuItemCheckbox(or(v, "default"), "", false)
-				tr.handle(kind.items[v], func() { tr.set(name, key, v) })
-			}
+		m.detail = m.item.AddSubMenuItem("", "")
+		m.share = m.item.AddSubMenuItem("", "")
+		m.last = m.item.AddSubMenuItem("", "")
+		for _, info := range []*systray.MenuItem{m.detail, m.share, m.last} {
+			info.Disable()
 		}
+		m.item.AddSeparator()
 		tr.handle(m.item.AddSubMenuItem("Run now", "ahead of every agent you did not ask for: its interval and hours skipped; the team pool still applies"), func() { tr.t.RunNow(name) })
 		tr.handle(m.item.AddSubMenuItem("Latest run", "its report and transcript"), func() {
 			if trs := tr.t.Transcripts(name); len(trs) > 0 {
@@ -184,16 +186,48 @@ func (tr *tray) build() {
 			}
 		})
 		tr.handle(m.item.AddSubMenuItem("Leave a note…", "to it, or about a pull request or issue it works on; its running shift gets it after its current step"), func() { tr.note(name) })
+		m.item.AddSeparator()
+		m.model, m.effort = m.item.AddSubMenuItem("Model", ""), m.item.AddSubMenuItem("Effort", "")
+		for _, kind := range []struct {
+			key   string
+			sub   *systray.MenuItem
+			items map[string]*systray.MenuItem
+		}{{"model", m.model, m.models}, {"effort", m.effort, m.efforts}} {
+			for _, v := range options(kind.key) {
+				if kind.items[v] != nil {
+					continue
+				}
+				key, v := kind.key, v
+				kind.items[v] = kind.sub.AddSubMenuItemCheckbox(or(v, "default"), "", false)
+				tr.handle(kind.items[v], func() { tr.set(name, key, v) })
+			}
+		}
+		m.paused = m.item.AddSubMenuItemCheckbox("Paused", "its running shift finishes, no new one starts", tr.t.PausedAgents()[name])
+		tr.handle(m.paused, func() {
+			if tr.t.PausedAgents()[name] {
+				tr.t.ResumeAgent(name)
+			} else {
+				tr.t.PauseAgent(name)
+			}
+		})
+		m.enabled = m.item.AddSubMenuItemCheckbox("Enabled", "", ag.Enabled)
+		tr.handle(m.enabled, func() {
+			if a := tr.t.Agent(name); a != nil { // it may have been removed since the menu was built
+				tr.set(name, "enabled", fmt.Sprint(!a.Enabled))
+			}
+		})
+		m.item.AddSeparator()
 		tr.handle(m.item.AddSubMenuItem("Open work folder", ""), func() { open(tr.t.Path(ag.WorkDir)) })
 		tr.agents[name] = m
 	}
 	systray.AddSeparator()
-	tr.hosts = systray.AddMenuItem("hosts: none", "")
-	tr.hosts.Disable()
+	tr.handle(systray.AddMenuItem("Inbox", "what waits for you, and what the team did"), func() { tr.openPage("/") })
+	tr.handle(systray.AddMenuItem("Team", "the organizer, the agents and their runs"), func() { tr.openPage("/#team") })
+	tr.handle(systray.AddMenuItem("Today's report", ""), func() { tr.openPage("/reports/") })
 	systray.AddSeparator()
+	tr.start = systray.AddMenuItem("Start organizer", "it runs the shifts and serves the pages")
+	tr.handle(tr.start, tr.toggleOrganizer)
 	tr.pause = systray.AddMenuItem("Pause team", "the running shift finishes; no new shift starts")
-	tr.cancel = systray.AddMenuItem("Stop current shift", "")
-	tr.kick = systray.AddMenuItem("Run next shift now", "")
 	tr.handle(tr.pause, func() {
 		if tr.t.Paused() {
 			tr.t.Unpause()
@@ -201,24 +235,28 @@ func (tr *tray) build() {
 			tr.t.Pause()
 		}
 	})
-	tr.handle(tr.cancel, func() { tr.t.CancelShift("") })
+	tr.kick = systray.AddMenuItem("Run next shift now", "")
 	tr.handle(tr.kick, func() { tr.t.RunNow("") })
+	tr.cancel = systray.AddMenuItem("Stop current shift", "")
+	tr.handle(tr.cancel, func() { tr.t.CancelShift("") })
 	systray.AddSeparator()
-	tr.startStop = systray.AddMenuItem("Start organizer", "")
-	tr.handle(tr.startStop, tr.toggleOrganizer)
-	tr.handle(systray.AddMenuItem("Inbox", "what waits for you, and what the team did"), func() { tr.openPage("/") })
-	tr.handle(systray.AddMenuItem("Team", "the organizer, the agents and their runs"), func() { tr.openPage("/#team") })
-	tr.handle(systray.AddMenuItem("Today's report", ""), func() { tr.openPage("/reports/") })
-	tr.handle(systray.AddMenuItem("Open team folder", ""), func() { open(tr.root) })
-	tr.handle(systray.AddMenuItem("Install terminal command", "links rota and gloss in ~/.local/bin to this app"), func() {
+	more := systray.AddMenuItem("More", "")
+	tr.stop = more.AddSubMenuItem("Stop organizer", "no shift runs until it starts again")
+	tr.handle(tr.stop, tr.toggleOrganizer)
+	tr.handle(more.AddSubMenuItem("Open team folder", ""), func() { open(tr.root) })
+	tr.handle(more.AddSubMenuItem("Install terminal command", "links rota and gloss in ~/.local/bin to this app"), func() {
 		if link, err := InstallCommand(tr.exe); err == nil {
-			tr.header.SetTitle("terminal command installed: " + link)
+			tr.status.SetTitle("Terminal command installed: " + link)
 		} else {
-			tr.header.SetTitle(err.Error())
+			tr.status.SetTitle(upperFirst(err.Error()))
 		}
 	})
+	more.AddSeparator()
+	tr.claude, tr.hosts = more.AddSubMenuItem("", ""), more.AddSubMenuItem("", "")
+	tr.claude.Disable()
+	tr.hosts.Disable()
 	systray.AddSeparator()
-	tr.handle(systray.AddMenuItem("Quit", "also stops an organizer the menu started"), tr.quit)
+	tr.handle(systray.AddMenuItem("Quit rota", "also stops an organizer the menu started"), tr.quit)
 }
 
 func (tr *tray) handle(item *systray.MenuItem, f func()) {
@@ -240,10 +278,7 @@ func (tr *tray) refresh() {
 	} else {
 		tr.problem = err.Error()
 	}
-	names := ""
-	for _, a := range tr.t.Agents {
-		names += a.Name + ","
-	}
+	_, names := menuOrder(tr.t.Agents)
 	tr.questions = tr.t.Questions()
 	ids, open := "", map[string]bool{}
 	for _, q := range tr.questions {
@@ -277,90 +312,86 @@ func (tr *tray) refresh() {
 		tr.qids, tr.off = ids, off
 		tr.build()
 	}
-	asks := ""
-	if n := len(tr.questions); n > 0 {
-		asks = fmt.Sprintf(" ?%d", n)
-	}
-	setTitle := func(s string) { systray.SetTitle(asks + s) }
-	live := tr.t.Live()
+	live, now := tr.t.Live(), time.Now()
 	if live != nil && !live.Stale {
 		tr.stopWeb() // the organizer serves the pages itself
 	}
-	if live == nil {
-		setTitle(" off")
-		tr.header.SetTitle(or(tr.problem, "Organizer not running"))
-		tr.claude.SetTitle("claude: unknown")
-		tr.startStop.SetTitle("Start organizer")
-		tr.pause.Disable()
-		tr.cancel.Disable()
-		tr.kick.Disable()
-	} else {
-		tr.startStop.SetTitle("Stop organizer")
-		tr.pause.Enable()
-		tr.kick.Enable()
-		tr.pause.SetTitle(map[bool]string{true: "Resume team", false: "Pause team"}[live.Paused])
-		header := "Organizer " + live.Organizer() + " · " + fmt.Sprintf("pool %.0f%% used %s", live.Pool.Of(live.Pool.Used), live.Pool.Period)
-		if !live.Pool.Enforced {
-			header = "Organizer " + live.Organizer() + " · pool not enforced without usage data"
-		}
-		switch {
-		case live.Running != nil:
-			setTitle(fmt.Sprintf(" %s %dm", live.Running.Agent, int(time.Since(live.Running.Since).Minutes())))
-			tr.cancel.Enable()
-		case live.Held() != "":
-			setTitle(" ▲ on hold")
-			header = "▲ On hold: " + live.Held()
-			tr.cancel.Disable()
-		case live.Paused:
-			setTitle(" paused")
-			tr.cancel.Disable()
-		default:
-			setTitle(fmt.Sprintf(" idle %.0f%%", live.Pool.Of(live.Pool.Used)))
-			tr.cancel.Disable()
-		}
-		tr.header.SetTitle(header)
+	systray.SetTitle(barTitle(len(tr.questions), live))
+	tr.status.SetTitle(status(live, tr.problem, now))
+	show(tr.budget, budget(live))
+	show(tr.start, map[bool]string{true: "Start organizer"}[live == nil])
+	show(tr.stop, map[bool]string{true: "Stop organizer"}[live != nil])
+	show(tr.kick, map[bool]string{true: "Run next shift now"}[live != nil])
+	show(tr.cancel, map[bool]string{true: "Stop current shift"}[live != nil && live.Running != nil])
+	tr.claude.SetTitle("Claude: not read while the organizer is off")
+	tr.hosts.SetTitle("Hosts: none")
+	why := map[string]string{}
+	if live != nil {
+		show(tr.pause, map[bool]string{true: "Resume team", false: "Pause team"}[live.Paused])
 		switch {
 		case live.Usage != nil:
-			tr.claude.SetTitle("claude: " + live.Usage.String())
+			tr.claude.SetTitle("Claude: " + live.Usage.String())
 		case live.UsageError != "":
-			tr.claude.SetTitle("claude: usage cannot be read: " + core.FirstLine(live.UsageError, 80))
+			tr.claude.SetTitle("Claude: its usage cannot be read: " + core.FirstLine(live.UsageError, 60))
 		default:
-			tr.claude.SetTitle("claude: usage data off")
+			tr.claude.SetTitle("Claude: usage data off")
 		}
 		var hosts []string
 		for _, h := range live.Hosts {
 			hosts = append(hosts, h.String())
 		}
-		tr.hosts.SetTitle("hosts: " + or(strings.Join(hosts, " · "), "none"))
+		tr.hosts.SetTitle("Hosts: " + or(strings.Join(hosts, " · "), "none"))
+		why = tr.t.WhyWaits(*live)
+	} else {
+		tr.pause.Hide()
+	}
+	members, states := map[string]core.Member{}, map[string]core.AgentStatus{}
+	for _, m := range tr.t.Members(now) {
+		members[m.Name] = m
+	}
+	for _, as := range liveAgents(live) {
+		states[as.Name] = as
 	}
 	for _, ag := range tr.t.Agents {
 		m := tr.agents[ag.Name]
 		if m == nil {
 			continue
 		}
+		paused := tr.t.PausedAgents()[ag.Name]
 		check(m.enabled, ag.Enabled)
-		check(m.paused, tr.t.PausedAgents()[ag.Name])
+		check(m.paused, paused)
 		for v, item := range m.models {
 			check(item, v == ag.Model)
 		}
 		for v, item := range m.efforts {
 			check(item, v == ag.Effort)
 		}
-		title := ag.Name
-		for _, as := range liveAgents(live) {
-			if as.Name != ag.Name {
-				continue
-			}
-			title = fmt.Sprintf("%s    %s · next %s", ag.Name, as.State, as.NextText(live.NextTick))
-			if as.QuotaPct > 0 {
-				title += fmt.Sprintf(" · %.1f/%.1f%% of the pool", live.Pool.Of(as.PeriodPct), live.Pool.Of(as.QuotaPct))
-			}
-			if r := live.Running; r != nil && r.Agent == ag.Name {
-				title = fmt.Sprintf("%s    running %dm on %s · %s", ag.Name, int(time.Since(r.Since).Minutes()), r.Host, core.FirstLine(r.Live, 60))
-			}
+		m.model.SetTitle("Model: " + or(ag.Model, "default"))
+		m.effort.SetTitle("Effort: " + or(ag.Effort, "default"))
+		mem, as := members[ag.Name], states[ag.Name]
+		if l := look(mem, ag.Enabled, paused, live); l != m.look {
+			m.item.SetIcon(dot(l))
+			m.look = l
 		}
-		m.item.SetTitle(title)
+		m.item.SetTitle(agentTitle(ag.Name, doing(mem, as, ag.Enabled, paused, live, now)))
+		detail := upperFirst(or(why[ag.Name], as.State))
+		if r := live; r != nil && r.Running != nil && r.Running.Agent == ag.Name {
+			detail = "Now: " + core.FirstLine(r.Running.Live, 60)
+		}
+		show(m.detail, core.FirstLine(detail, 90))
+		show(m.share, share(as, live))
+		show(m.last, lastRun(as, now))
 	}
+}
+
+// show titles item and shows it, or hides it when there is no title.
+func show(item *systray.MenuItem, title string) {
+	if title == "" {
+		item.Hide()
+		return
+	}
+	item.SetTitle(title)
+	item.Show()
 }
 
 // answer asks for the answer to q in a dialog and sends it to the agent that asked, or
