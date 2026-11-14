@@ -1,8 +1,12 @@
 #!/bin/bash
-# Builds rota.app and rota.dmg for this Mac. The app holds rota and gloss, the command the agents
-# write review notes with. No developer account: the app is unsigned (ad-hoc signed so macOS keeps
-# its identity stable). ./build.sh install also puts it in /Applications (or ~/Applications) and
-# links ~/.local/bin/rota and gloss to it, so Spotlight and the terminal run the same binaries.
+# Builds rota.app for this Mac. The app holds rota and gloss, the command the agents write review
+# notes with. No developer account: the app is unsigned (ad-hoc signed so macOS keeps its identity
+# stable).
+#   ./build.sh            dist/rota.app
+#   ./build.sh install    also puts it in /Applications (or ~/Applications) and links ~/.local/bin/rota
+#                         and gloss to it, so Spotlight and the terminal run the same binaries
+#   ./build.sh dmg        also dist/rota.dmg: one window where rota is dragged to Applications.
+#                         It needs Python 3.10 or newer, for dmgbuild (assets/dmg)
 set -euo pipefail
 cd "$(dirname "$0")"
 APP=dist/rota.app
@@ -13,7 +17,8 @@ SHORT=${V#v}; [[ $SHORT =~ ^[0-9]+(\.[0-9]+)*$ ]] || SHORT=0.0.0 # what Finder s
 export MACOSX_DEPLOYMENT_TARGET=13.0
 export CGO_CFLAGS="${CGO_CFLAGS:--O2 -g} -mmacosx-version-min=$MACOSX_DEPLOYMENT_TARGET"
 export CGO_LDFLAGS="${CGO_LDFLAGS:-} -mmacosx-version-min=$MACOSX_DEPLOYMENT_TARGET"
-rm -rf dist && mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" dist/icon.iconset
+rm -rf "$APP" dist/rota.dmg dist/icon.iconset # dist/dmgbuild stays: it is only installed once
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" dist/icon.iconset
 go build -ldflags "-X main.version=$V" -o "$APP/Contents/MacOS/rota" .
 go build -o "$APP/Contents/MacOS/gloss" ./gloss/cmd/gloss
 cat > "$APP/Contents/Info.plist" <<PLIST
@@ -41,11 +46,9 @@ done
 iconutil -c icns dist/icon.iconset -o "$APP/Contents/Resources/rota.icns"
 rm -rf dist/icon.iconset
 codesign --force --deep -s - "$APP" 2>/dev/null || true
-ln -s /Applications dist/Applications
-hdiutil create -quiet -volname rota -srcfolder dist -ov -format UDZO dist/rota.dmg
-rm dist/Applications
-echo "built dist/rota.app and dist/rota.dmg"
-if [ "${1:-}" = install ]; then
+echo "built $APP"
+case "${1:-}" in
+install)
   DEST=/Applications; [ -w /Applications ] || DEST=~/Applications
   mkdir -p "$DEST" && rm -rf "$DEST/rota.app" && cp -R "$APP" "$DEST/"
   mkdir -p ~/.local/bin && ln -sfn "$DEST/rota.app/Contents/MacOS/rota" ~/.local/bin/rota
@@ -56,4 +59,17 @@ if [ "${1:-}" = install ]; then
   else
     echo "installed $DEST/rota.app; ~/.local/bin/rota -> it; your own ~/.local/bin/gloss stays. Spotlight: rota"
   fi
-fi
+  ;;
+dmg)
+  python3 -c 'import sys; sys.exit(sys.version_info < (3, 10))' ||
+    { echo "the disk image needs Python 3.10 or newer, for dmgbuild: brew install python" >&2; exit 2; }
+  if ! dist/dmgbuild/bin/python -c 'import dmgbuild' 2>/dev/null; then # missing, or its Python is gone
+    rm -rf dist/dmgbuild && python3 -m venv dist/dmgbuild
+    dist/dmgbuild/bin/pip install -q --disable-pip-version-check --require-hashes -r assets/dmg/requirements.txt
+  fi
+  # its output, hdiutil's warnings that macOS deprecates commands among it, shows only if it fails
+  dist/dmgbuild/bin/dmgbuild -s assets/dmg/settings.py -D app="$APP" rota dist/rota.dmg >dist/dmgbuild.log 2>&1 ||
+    { cat dist/dmgbuild.log >&2; exit 1; }
+  echo "built dist/rota.dmg"
+  ;;
+esac

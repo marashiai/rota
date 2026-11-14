@@ -336,10 +336,15 @@ newest is always at https://github.com/marashiai/rota/releases/latest/download/r
 build it yourself:
 
 ```
-./build.sh            # dist/rota.app (rota and gloss) and dist/rota.dmg for this Mac, unsigned, for macOS 13 on
+./build.sh            # dist/rota.app (rota and gloss) for this Mac, unsigned, for macOS 13 on
 ./build.sh install    # also copies rota.app to /Applications and links ~/.local/bin/rota and gloss to it
+./build.sh dmg        # also dist/rota.dmg: one window where rota is dragged to Applications (Python 3.10+)
 ./release.sh v0.1.0   # on an Apple Silicon Mac: tags, builds rota-macos-arm64.dmg and its checksum, publishes a release
 ```
+
+The disk image's window comes from `assets/dmg`: `settings.py` places the icons for
+[dmgbuild](https://github.com/dmgbuild/dmgbuild), pinned by hash in `requirements.txt`, and
+`background.html` is the background, which `render.sh` turns into the 1x and 2x images.
 
 Spotlight then finds "rota": opening it runs the tray, which links the terminal commands to the app's
 binaries if needed; a `gloss` of your own in `~/.local/bin` stays. Terminal and menu bar control the same

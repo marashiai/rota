@@ -14,7 +14,7 @@ case "$VERSION" in v[0-9]*) ;; *) echo "version must look like v0.1.0" >&2; exit
 export GH_REPO=${GH_REPO:-$(git remote get-url origin | sed -E 's#\.git$##; s#^.*[:/]([^/]+/[^/]+)$#\1#')}
 
 DMG=rota-macos-arm64.dmg # the same name in every release: .../releases/latest/download/$DMG is the newest
-GOOS=darwin GOARCH=arm64 VERSION="$VERSION" ./build.sh >/dev/null
+GOOS=darwin GOARCH=arm64 VERSION="$VERSION" ./build.sh dmg >/dev/null
 for b in rota gloss; do # Apple Silicon only, and every Mac from macOS 13 on, not only this one's version
   f=dist/rota.app/Contents/MacOS/$b
   [ "$(lipo -archs "$f")" = arm64 ] || { echo "$f is not arm64 only" >&2; exit 1; }

@@ -1,0 +1,50 @@
+<!doctype html>
+<!--
+  The background of rota's disk image window: rota on the left, the arrow, Applications on the right.
+  The window shows 640 x 400 points; the image is 40 points taller, so no strip of plain window shows
+  whatever height macOS gives its title bar. Finder draws the icons and their names on top, at the
+  places assets/dmg/settings.py gives (centres at 160,192 and 480,192). It draws the names black in
+  Light Mode and white in Dark Mode, so the band behind them stays mid-tone: both read at 4.5:1.
+
+  Render it with assets/dmg/render.sh after a change.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+  html, body { margin: 0; width: 640px; height: 440px; overflow: hidden; }
+  body {
+    position: relative;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+    color: #fff;
+    -webkit-font-smoothing: antialiased;
+    background:
+      radial-gradient(ellipse 420px 190px at 50% -60px, rgba(255, 255, 255, .26), transparent 72%),
+      radial-gradient(circle 92px at 160px 184px, rgba(255, 255, 255, .20), transparent 74%),
+      radial-gradient(circle 92px at 480px 184px, rgba(255, 255, 255, .20), transparent 74%),
+      linear-gradient(180deg, #7a7cf6 0%, #6c6df0 48%, #6162e9 70%, #5859e0 100%);
+  }
+  h1 {
+    position: absolute; top: 30px; left: 0; right: 0; margin: 0;
+    text-align: center; font-size: 21px; font-weight: 650; letter-spacing: -.2px;
+  }
+  .arrow { position: absolute; left: 252px; top: 172px; }
+  .hint {
+    position: absolute; top: 346px; left: 0; right: 0;
+    text-align: center; font-size: 11.5px; line-height: 16px; color: rgba(255, 255, 255, .86);
+  }
+  .hint b { font-weight: 600; color: #fff; }
+</style>
+</head>
+<body>
+  <h1>Drag rota to Applications</h1>
+  <svg class="arrow" width="136" height="40" viewBox="0 0 136 40" aria-hidden="true">
+    <circle cx="10" cy="20" r="6.5" fill="#1fc8a9"/>
+    <circle cx="34" cy="20" r="6.5" fill="#ffc23d"/>
+    <circle cx="58" cy="20" r="6.5" fill="#ff7a59"/>
+    <path d="M78 20 H122 M108 8 L124 20 L108 32" fill="none" stroke="#fff" stroke-width="5"
+          stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>
+  <div class="hint">If macOS won't open rota the first time: <b>System Settings › Privacy &amp; Security › Open Anyway</b></div>
+</body>
+</html>
