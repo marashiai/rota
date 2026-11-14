@@ -171,7 +171,7 @@ in, and how to adjust it when another role is left out.
 | Blueprint | Kind | What it does |
 |---|---|---|
 | `security` | scout | Reviews recent code and the infrastructure for vulnerabilities; opens issues |
-| `stack` | scout | Daily dependency audits, advisories, runtime and provider deprecations; opens issues |
+| `upstream` | scout | Daily dependency audits, advisories, runtime and provider deprecations; opens issues |
 | `errors` | scout | Finds the causes of production errors in the error tracker; opens issues |
 | `seo` | scout | Audits public pages for search and speed; opens issues |
 | `qa` | scout | Tests what was merged, end to end, on a non-production environment; tags releases |
@@ -179,11 +179,11 @@ in, and how to adjust it when another role is left out.
 | `maintainer` | builder | Keeps every open pull request mergeable: merges the base in, resolves conflicts |
 | `triage` | gatekeeper | Judges each pull request; merges low-risk ones itself, holds the rest for the person |
 | `rollout` | coordinator | Lists the manual steps of changes and releases, and follows them up with the person |
-| `reviewer` | coordinator | Weekly: recommends how the budget is divided between the agents |
+| `reflection` | coordinator | Weekly: looks back at what each agent delivered for its budget, and proposes how to divide it |
 
 Recommend a team from the profiles, smallest first, and explain each choice in one line. Ask with the
 recommended team as the default answer, and a smaller and a larger team as the others. A good start for
-most people is **security, stack and developer**: the scouts open issues, the developer opens draft pull
+most people is **security, upstream and developer**: the scouts open issues, the developer opens draft pull
 requests, and the person reviews and merges everything. Then add:
 
 - `errors` when an app's errors are collected somewhere Claude Code can read;
@@ -193,7 +193,7 @@ requests, and the person reviews and merges everything. Then add:
 - `triage` only when they want low-risk merges done without them;
 - `rollout` when getting a change live takes steps by hand (setting a secret, running a migration,
   changing a cloud setting), with or without the triage;
-- `reviewer` after a few weeks, with three or more agents.
+- `reflection` after a few weeks, with three or more agents.
 
 Leave out a role whose blueprint needs a fact you don't have: `seo` without a live URL, `qa` without an
 environment it may use, `errors` without an error tracker Claude Code can read. Tell the person what
@@ -259,7 +259,9 @@ review_label: rota:needs-review
 
   Leave out what the team doesn't need: without the triage, drop `rota:auto-merge`, `rota:needs-review`
   and `rota:not-ready` and the `review_label` line; without a developer, also `rota:needs-rollout` and
-  the `hold_label` line. A `hold_label` must be one of the labels, or `rota status` warns.
+  the `hold_label` line. A `hold_label` must be one of the labels, or `rota status` warns. Nobody
+  creates these labels by hand: rota creates them in every repository (step 6). `docs/github.md` says
+  what each label means, if the person asks.
 
 For each agent, write `~/.rota/agents/<name>.md` from its blueprint's "Agent file" block:
 

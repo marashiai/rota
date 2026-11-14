@@ -1,7 +1,7 @@
 # rota reference
 
 Everything rota does, in detail. To get started, see the [README](../README.md): one prompt to Claude Code
-sets rota up for you.
+sets rota up for you. How the team works on GitHub, with every label, is in [rota and GitHub](github.md).
 
 This repository is only the source. The team itself lives in `~/.rota` (or `$ROTA_ROOT`, or `-root`; the
 menu bar app, opened from Finder, reads `$ROTA_ROOT` and `$ROTA_CONFIG` from your login shell, so it picks

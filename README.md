@@ -77,10 +77,10 @@ installed. Every version is on the [releases page](https://github.com/marashiai/
 
 ## A tour
 
-These recordings show a real run on a small demo web shop. The setup prompt built a security scout, a
-stack scout and a developer for it, and a rollout agent was added from its blueprint afterwards.
-Everything in them, from the issues and pull requests to the notes and replies, was made by the agents
-in under an hour.
+These recordings show a real run on a small demo web shop. The setup prompt built a security scout, an
+upstream scout (named stack in these recordings) and a developer for it, and a rollout agent was added
+from its blueprint afterwards. Everything in them, from the issues and pull requests to the notes and
+replies, was made by the agents in under an hour.
 
 ### Your team
 
@@ -182,7 +182,9 @@ Keep the team machine on and awake: the inbox, the notifications and the shifts 
 - **The team pool.** The agents together use the share of your Claude plan you set (see the budget
   above), split by weights you choose. That is the only limit on them.
 - **GitHub is the workplace.** Scouts open issues, the developer opens draft pull requests from its own
-  branches, and agents talk to each other in notes on them. You stay the one who merges.
+  branches, and agents talk to each other in notes on them. You stay the one who merges. rota creates
+  and keeps its labels itself; [rota and GitHub](docs/github.md) explains each one, the accounts, and
+  what guards a merge.
 - **The team folder.** `~/.rota` holds each agent as a Markdown file (settings on top, its role below),
   the shared brief, the journal of every shift, notes, questions and reports. Edit any of it, or ask the
   Team in the chat to change it for you.
@@ -192,6 +194,7 @@ Keep the team machine on and awake: the inbox, the notifications and the shifts 
 ## Learn more
 
 - [docs/reference.md](docs/reference.md): every feature and setting in detail.
+- [docs/github.md](docs/github.md): how the team works on GitHub, and every label.
 - [setup/blueprints](setup/blueprints/): the agent roles the setup builds your team from.
 - [gloss/README.md](gloss/README.md): the pull-request reviewer built into the inbox.
 
