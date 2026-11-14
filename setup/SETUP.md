@@ -59,7 +59,7 @@ Check each item yourself and report the result in one short list.
 | Go | `go version` | macOS: `brew install go`; Linux: the distribution's package or go.dev/dl. Go fetches the exact version this repository needs by itself |
 | git | `git --version` | `brew install git` or the distribution's package |
 | GitHub CLI, logged in | `gh auth status` | `brew install gh`, then `gh auth login` |
-| Tailscale (optional) | `tailscale status` | Only needed for notifications on a phone or to let other machines run shifts; skip it for now |
+| Tailscale (optional) | `tailscale status` (on macOS, when `tailscale` is not on the PATH: `/Applications/Tailscale.app/Contents/MacOS/Tailscale status`) | Only needed to manage the team from a phone or another computer, or to let other machines run shifts. Don't install it now: step 4 asks whether they want that |
 
 The agents act on GitHub as a `gh` login on this machine. If the person has more than one, ask which
 one the agents should use; that account opens the issues and pull requests. When it is not the active
@@ -190,14 +190,18 @@ Then ask about these, each with the recommended answer as the default:
 4. **Account and author.** Which `gh` login the agents act as (`default_gh_user`). The agents' commits
    carry this machine's git identity (`git config user.name` and `user.email`); if they should carry
    another, step 5 sets it.
-5. **Phone.** Whether they want notifications and the inbox on their phone. That needs Tailscale and
-   `web: tailscale`; it can be added later.
+5. **Remote access.** Whether they want to manage the team from their phone and other computers, with
+   a notification when an agent asks them something. rota does that over Tailscale: it serves the
+   inbox on their tailnet only, never on the internet, and without a login, so anyone on their tailnet
+   can use it. Recommend "Yes, over Tailscale" when Tailscale worked in step 1, else "Later": they can
+   turn it on any time with Settings › Team › Open on my phone. Installing Tailscale is theirs to do
+   (the app from tailscale.com, signed in on this machine and their phone).
 
 ### Confirm before you create anything
 
 Show one summary of every answer: each repository's profile with how to run, test and deploy it and
 what is off limits; the team, each agent with its repositories and when it runs; the autonomy, schedule,
-budget, GitHub account and phone. Then ask one question: "Create it (Recommended)" or "Change an
+budget, GitHub account and remote access. Then ask one question: "Create it (Recommended)" or "Change an
 answer". To change one, ask which, ask that question again with their previous answer as the default,
 and show the summary again. Go on to step 5 only when they choose to create it.
 
@@ -212,6 +216,7 @@ by uncommenting or editing those lines, not by adding duplicates.
 - `timezone`: their time zone as an IANA name (such as `Europe/Amsterdam`) when it differs from this
   machine's; `hours` are read in it.
 - `clone_cmd` only if `gh repo clone` did not work in step 3: `clone_cmd: git clone git@<alias>:{repo}.git {dir}`.
+- `web: tailscale` when they chose remote access.
 - The team's labels. Every team needs the three priority labels: the scouts put one on each issue.
   Add `rota:needs-rollout` and the `hold_label` line when the team has a developer (it marks changes
   that need a step by hand), and the triage's three labels and the `review_label` line when it has the
@@ -288,6 +293,11 @@ every repository) acts as the active `gh` login, the person's own, while each sh
 `GH_TOKEN=$(gh auth token --user <login>)` in its environment, but then every shift acts as that login
 too, whatever its `gh_user` says. Do that only when it is the agents' login anyway.
 
+With remote access, check within a minute that Tailscale serves the inbox: `tailscale serve status`
+lists `https://<name>.ts.net` with a proxy to `http://127.0.0.1:7900` (or the `web_port`). If it
+doesn't, or the organizer warns `no HTTPS on the tailnet`, ask them to turn on MagicDNS and HTTPS
+certificates on the DNS page of Tailscale's admin console. rota tries again by itself.
+
 ## 8. Hand over
 
 End with a short summary:
@@ -295,6 +305,10 @@ End with a short summary:
 - the team in a table: each agent, what it does, its repositories, when it runs;
 - where to look: the inbox (http://127.0.0.1:7900 unless `web_port` changed it), where questions wait for an answer, pull requests
   for review, and each agent's messages;
+- with remote access: the inbox's address on their tailnet, `https://<name>.ts.net`; on an iPhone, add
+  it to the Home Screen (Share, Add to Home Screen), open it from there and turn on notifications in
+  Settings › Notifications › This device; that anyone on their tailnet can use the inbox; and that this
+  machine must stay on and awake;
 - how to change the team: ask the Team in the inbox's chat ("make the developer run only at night",
   "add an agent that watches the docs") and accept its proposal, or edit `~/.rota/agents/*.md`, which
   takes effect at the next shift;

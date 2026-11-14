@@ -118,9 +118,52 @@ it. Write `@` and an agent's name to reach it; while it works, it answers right 
 
 ### On your phone
 
-The same inbox works on your phone over Tailscale. Add it to your Home Screen for notifications.
+The same inbox works on your phone, with a notification when an agent asks you something
+([how](#manage-it-remotely-with-tailscale)).
 
 <p align="center"><img src="docs/demos/phone.gif" width="300" alt="The inbox on a phone"></p>
+
+## Manage it remotely with Tailscale
+
+The team lives on one machine, such as a spare laptop or a Mac mini at home. With
+[Tailscale](https://tailscale.com) you manage it from your phone or any other computer, and other
+machines can run its shifts. Nothing is opened to the internet.
+
+**From your phone and other computers**
+
+1. Install Tailscale on the team machine, your phone and your other computers, all signed in to the
+   same tailnet.
+2. In Tailscale's admin console, on the DNS page, turn on MagicDNS and HTTPS certificates. A phone
+   allows notifications only over HTTPS.
+3. In the inbox on the team machine, turn on **Settings › Team › Open on my phone** (or set
+   `web: tailscale` in `~/.rota/rota.conf`). rota has Tailscale serve the inbox at
+   `https://<machine>.<tailnet>.ts.net`, and shows that address under the switch.
+4. Open that address on your phone. On an iPhone, add it to the Home Screen first (Share, Add to Home
+   Screen) and open it from there. Then turn on notifications in
+   **Settings › Notifications › This device**: you get one when an agent asks you something or answers
+   your review.
+
+On another computer, open the same address in a browser. For the console, SSH into the team machine
+over the tailnet and run `rota` (on a Mac, turn on Remote Login in System Settings › General › Sharing).
+
+**Other machines run shifts**
+
+Any machine on your tailnet can run shifts for the team, with its own checkouts and secrets:
+
+```
+on the team machine:    rota pair                       # prints a one-time code
+on the other machine:   rota join <team machine> <code>
+```
+
+Then give an agent `host: <that machine>`, or `host: any` for whichever is free. See
+[Hosts](docs/reference.md#hosts-running-agents-on-other-machines) for what that machine needs.
+
+> [!WARNING]
+> The inbox has no login: anyone on your tailnet can open it and use it as you. Share your tailnet
+> only with people you trust, or limit who can reach the team machine with Tailscale's access
+> controls. rota never serves the inbox through Tailscale Funnel, which would open it to the internet.
+
+Keep the team machine on and awake: the inbox, the notifications and the shifts all come from it.
 
 ## How it works
 
