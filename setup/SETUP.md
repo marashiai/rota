@@ -27,6 +27,10 @@ needs the `claude` command there anyway.
 - Everything you create goes in the team folder and in `~/.local/bin`. Clone repositories you inspect
   into a temporary folder and delete it at the end.
 - Every agent you create starts disabled. The person enables them at the end.
+- Never overwrite a team that is already there. If the team folder (`$ROTA_ROOT`, else `~/.rota`)
+  already has agent files in `agents/`, this machine runs a team: build no other one, and change no
+  agent file and no `rota.conf`. Show the person what `rota status` says, and offer to check that team,
+  to add one new agent from a blueprint, or to stop.
 
 ## How to ask
 
@@ -73,7 +77,8 @@ First see what is there: `command -v rota gloss`, and whether `rota.app` is in `
 `~/Applications`. If the person installed the app themselves (the README's download), `rota` and `gloss`
 already point into it: just run `rota init`. If a `rota` or `gloss` exists that is not rota's, ask before
 replacing it. Make sure `~/.local/bin` is on the `PATH` of their login shell; if it isn't, offer to add
-it to their shell profile.
+it to their shell profile. If the team folder already has agents, a team runs here: install nothing,
+and follow the rules above instead of the rest of this guide.
 
 **On an Apple Silicon Mac** (`uname -sm` prints `Darwin arm64`), install the app from the latest
 release. It holds both commands and the menu bar app, from which they can start and stop the team and
@@ -238,6 +243,9 @@ by uncommenting or editing those lines, not by adding duplicates.
   machine's; `hours` are read in it.
 - `clone_cmd` only if `gh repo clone` did not work in step 3: `clone_cmd: git clone git@<alias>:{repo}.git {dir}`.
 - `web: tailscale` when they chose remote access.
+- `web_port: 7901` (or another free port) and `listen: off` when something already answers on port
+  7900 (`curl -s -o /dev/null http://127.0.0.1:7900/` succeeds): another rota runs on this machine,
+  perhaps another user's, and this team's inbox would otherwise open that one's.
 - The team's labels. Every team needs the three priority labels: the scouts put one on each issue.
   Add `rota:needs-rollout` and the `hold_label` line when the team has a developer (it marks changes
   that need a step by hand), and the triage's three labels and the `review_label` line when it has the
