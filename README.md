@@ -2,6 +2,8 @@
 
 <h1 align="center">rota</h1>
 
+<p align="center"><b>R</b>otating <b>O</b>n-call <b>T</b>eam of <b>A</b>gents</p>
+
 <p align="center"><b>A team of AI agents that looks after your software in shifts, also while you sleep.</b></p>
 
 Scouts look for problems in your repositories and open GitHub issues. A developer turns issues into
