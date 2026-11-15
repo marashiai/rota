@@ -27,11 +27,11 @@ mv dist/rota.dmg "dist/$DMG"
 git rev-parse -q --verify "refs/tags/$VERSION" >/dev/null || { git tag -a "$VERSION" -m "$VERSION"; git push -q origin "$VERSION"; }
 NOTES="rota $VERSION for Apple Silicon Macs (M1 or later) with macOS 13 or newer. rota works only with Claude Code.
 
-**Install:** open $DMG and drag rota to Applications, then open rota from Applications. It appears in the menu bar and links the \`rota\` and \`gloss\` commands in \`~/.local/bin\`. Then build your team with one prompt in Claude Code: https://github.com/$GH_REPO#install-with-one-prompt
+**Install:** open $DMG and drag rota to Applications, then open rota from Applications. It appears in the menu bar and links the \`rota\` and \`gloss\` commands in \`~/.local/bin\`. Then build your team with one prompt: start Claude Code in a terminal (\`claude\`) and paste \`Set up rota for me: run ~/.local/bin/rota setup and follow the guide it gives you.\` More in https://github.com/$GH_REPO#install
 
 **The first time:** the app is not signed with an Apple Developer ID, so macOS refuses to open it at first. Open System Settings › Privacy & Security, click Open Anyway next to the message about rota, and confirm. Or run \`xattr -dr com.apple.quarantine /Applications/rota.app\` in a terminal.
 
-**Intel Macs and Linux:** build rota from source, as the README says; the setup prompt does that for you.
+**Intel Macs and Linux:** build rota from source, as the README says (https://github.com/$GH_REPO#on-an-intel-mac-or-linux); the setup prompt does that for you.
 
 SHA256SUMS holds the checksum of $DMG."
 # create first, upload after: uploading in the same call failed right after a repository rename

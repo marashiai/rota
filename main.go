@@ -37,6 +37,8 @@ const usageText = `usage: rota <command> [agent] [flags]   (flags may also come 
 
 commands:
   ui            the console: reports, status, journal, transcripts, inbox, spend, agents and settings, with every control
+  setup         write this build's setup guide and its blueprints, and say where: Claude Code follows it
+                to set up rota and build your team
   init          create the team folder (~/.rota) from the starter files
   start         the organizer: run shifts as they come due until this process is closed; closing it stops everything
   run [agent]   run one shift now: the next eligible agent, or the named one (-force skips the schedule and the pool)
@@ -164,6 +166,19 @@ func command(ctx context.Context, args []string, root, conf string, now time.Tim
 		return args[i], nil
 	}
 	switch args[0] {
+	case "setup":
+		dir := guideDir()
+		if err := writeGuide(dir); err != nil {
+			return fmt.Errorf("setup: %w", err)
+		}
+		fmt.Printf("This build's setup guide is in %s:\n", dir)
+		fmt.Println("  SETUP.md      read it and follow it: it sets up rota and builds the team with the person")
+		fmt.Println("  blueprints/   the agent roles the guide builds the team from")
+		if tui.IsTerminal(os.Stdout) {
+			fmt.Println("\nIt is written for Claude Code: start claude in a terminal and say")
+			fmt.Println(`"Set up rota for me: run ~/.local/bin/rota setup and follow the guide it gives you."`)
+		}
+		return nil
 	case "init":
 		abs, _ := filepath.Abs(root)
 		return core.Init(abs)

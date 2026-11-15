@@ -249,6 +249,8 @@ contrast.
 
 ```
 rota                in a terminal: the console (rota ui)
+rota setup          write this build's setup guide and blueprints to ~/Library/Caches/rota/setup (Linux:
+                     ~/.cache/rota/setup) and say where: Claude Code follows it to set up a team
 rota init           create the team folder from the built-in templates
 rota start          organizer: run shifts every tick_minutes until the process is closed
 rota pair           print a one-time code for a host to join

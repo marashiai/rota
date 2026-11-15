@@ -27,22 +27,47 @@ new shares from what each agent really used.
 
 <p align="center"><img src="docs/demos/budget.gif" width="860" alt="The budget: today's use, the setting, and the agents' shares"></p>
 
-## Install with one prompt
+## Install
 
 You need:
 
-- a Mac with Apple Silicon (M1 or later) and macOS 13 or newer, which gets the ready-made app. On an
-  Intel Mac or Linux the setup builds rota from source instead;
+- a Mac with Apple Silicon (M1 or later) and macOS 13 or newer. On an Intel Mac or Linux, rota is built
+  from source instead: see [below](#on-an-intel-mac-or-linux);
 - **the Claude Code CLI**, the `claude` command in a terminal, logged in with a Claude subscription such
   as Pro or Max. rota runs `claude -p` for every shift, so the CLI is required even if you use the Claude
   desktop app. Install it with `curl -fsSL https://claude.ai/install.sh | bash` (or
   `brew install --cask claude-code`), then log in with `claude auth login`;
-- a GitHub account. The setup installs anything else that's missing (git, the GitHub CLI, and Go when
-  it builds from source) after asking you.
+- a GitHub account. The setup installs anything else that's missing (git and the GitHub CLI) after
+  asking you.
 
-Run the setup in that terminal. The Claude desktop app and claude.ai/code are not supported for it:
-claude.ai/code runs in the cloud and can't install anything on your computer, and the desktop app
-doesn't provide the `claude` command that rota needs.
+1. **Download the app.** [Download rota for Apple Silicon Macs](https://github.com/marashiai/rota/releases/latest/download/rota-macos-arm64.dmg),
+   open it, drag rota to Applications and open it from there. The app isn't signed with an Apple
+   Developer ID, so macOS refuses to open it the first time: open System Settings › Privacy & Security,
+   click Open Anyway next to the message about rota, and confirm. rota appears in the menu bar and puts
+   the `rota` and `gloss` commands in `~/.local/bin`.
+
+2. **Set up your team with one prompt.** Open a terminal, start Claude Code with `claude`, and paste:
+
+   ```
+   Set up rota for me: run ~/.local/bin/rota setup and follow the guide it gives you.
+   ```
+
+`rota setup` gives Claude Code the setup guide that comes with the rota you installed. Claude Code checks
+what else is missing. Then it asks which repositories the team should look after and studies each one:
+what it is, how it runs and is tested, and how and where it's deployed. Every question comes with its
+recommended answer first, worked out from your code, so most of the time you just accept it. It asks about your schedule and how much of your Claude limit the agents may use,
+then shows a summary of all your answers. You can change any of them before you confirm, and nothing is
+created until you do. Then it builds a team that fits from [proven blueprints](setup/blueprints/). It
+changes nothing in your repositories while it does this. Expect 10 to 20 minutes.
+
+Run the setup in Claude Code in a terminal. The Claude desktop app and claude.ai/code are not supported
+for it: claude.ai/code runs in the cloud and can't install anything on your computer, and the desktop
+app doesn't provide the `claude` command that rota needs. Every version of the app is on the
+[releases page](https://github.com/marashiai/rota/releases).
+
+### On an Intel Mac or Linux
+
+There's no ready-made app, so the setup builds rota from source, with Go, which it offers to install.
 
 1. Get the code and open Claude Code in it:
 
@@ -58,22 +83,7 @@ doesn't provide the `claude` command that rota needs.
    Install rota for me: read setup/SETUP.md and follow it.
    ```
 
-Claude Code checks what's missing and installs rota. Then it asks which repositories the team should
-look after and studies each one: what it is, how it runs and is tested, and how and where it's deployed.
-Every question comes with its recommended answer first, worked out from your code, so most of the time
-you just accept it. It asks about your schedule and how much of your Claude limit the agents may use,
-then shows a summary of all your answers. You can change any of them before you confirm, and nothing is
-created until you do. Then it builds a team that fits from [proven blueprints](setup/blueprints/). It
-changes nothing in your repositories while it does this. Expect 10 to 20 minutes.
-
-### Or download the app
-
-[Download rota for Apple Silicon Macs](https://github.com/marashiai/rota/releases/latest/download/rota-macos-arm64.dmg),
-open it and drag rota to Applications. The app isn't signed with an Apple Developer ID, so macOS refuses
-to open it the first time: open System Settings › Privacy & Security, click Open Anyway next to the
-message about rota, and confirm. rota then appears in the menu bar and puts the `rota` and `gloss`
-commands in `~/.local/bin`. Run the prompt above to build your team: the setup uses the app you
-installed. Every version is on the [releases page](https://github.com/marashiai/rota/releases).
+It builds rota, then sets up your team the same way.
 
 ## A tour
 

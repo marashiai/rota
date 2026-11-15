@@ -74,8 +74,9 @@ everything else too.
 ## 2. Install rota
 
 First see what is there: `command -v rota gloss`, and whether `rota.app` is in `/Applications` or
-`~/Applications`. If the person installed the app themselves (the README's download), `rota` and `gloss`
-already point into it: just run `rota init`. If a `rota` or `gloss` exists that is not rota's, ask before
+`~/Applications`. If the person installed the app themselves (the README's download, which is always the
+case when you got this guide from `rota setup`), `rota` and `gloss` already point into it: just run
+`rota init`. If a `rota` or `gloss` exists that is not rota's, ask before
 replacing it. Make sure `~/.local/bin` is on the `PATH` of their login shell; if it isn't, offer to add
 it to their shell profile. If the team folder already has agents, a team runs here: install nothing,
 and follow the rules above instead of the rest of this guide.
@@ -165,8 +166,8 @@ Then ask about each repository, with what you found as the recommended answers:
 
 ## 4. Decide on the team together
 
-The blueprints in `setup/blueprints/` are proven roles. Each one says when to include it, what to fill
-in, and how to adjust it when another role is left out.
+The blueprints, in the `blueprints` folder next to this guide, are proven roles. Each one says when to
+include it, what to fill in, and how to adjust it when another role is left out.
 
 | Blueprint | Kind | What it does |
 |---|---|---|
@@ -260,8 +261,9 @@ review_label: rota:needs-review
   Leave out what the team doesn't need: without the triage, drop `rota:auto-merge`, `rota:needs-review`
   and `rota:not-ready` and the `review_label` line; without a developer, also `rota:needs-rollout` and
   the `hold_label` line. A `hold_label` must be one of the labels, or `rota status` warns. Nobody
-  creates these labels by hand: rota creates them in every repository (step 6). `docs/github.md` says
-  what each label means, if the person asks.
+  creates these labels by hand: rota creates them in every repository (step 6).
+  https://github.com/marashiai/rota/blob/main/docs/github.md says what each label means, if the person
+  asks.
 
 For each agent, write `~/.rota/agents/<name>.md` from its blueprint's "Agent file" block:
 
@@ -343,6 +345,7 @@ End with a short summary:
 - how to change the team: ask the Team in the inbox's chat ("make the developer run only at night",
   "add an agent that watches the docs") and accept its proposal, or edit `~/.rota/agents/*.md`, which
   takes effect at the next shift;
-- what to read next: the README's tour, and `docs/reference.md` for every detail.
+- what to read next: the README's tour (https://github.com/marashiai/rota#a-tour), and the reference
+  (https://github.com/marashiai/rota/blob/main/docs/reference.md) for every detail.
 
 Delete the temporary clones you made in step 3.

@@ -157,6 +157,31 @@ func TestAttachFollowsUntilTheShiftIsOver(t *testing.T) {
 	}
 }
 
+// rota setup hands Claude Code the guide of the build it runs, with no copy of the repository:
+// the same files as setup/, and none an older build left behind.
+func TestSetupWritesThisBuildsGuideAndSaysWhere(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("XDG_CACHE_HOME", "")
+	dir := guideDir()
+	write(t, filepath.Join(dir, "blueprints", "stack.md"), "a role this build no longer has")
+	out, err := cli(t, t.TempDir(), "setup") // before any team folder exists
+	if err != nil || !strings.Contains(out, dir) || !strings.Contains(out, "SETUP.md") {
+		t.Fatalf("rota setup: %v\n%s", err, out)
+	}
+	want, _ := filepath.Glob("setup/blueprints/*.md")
+	got, _ := filepath.Glob(filepath.Join(dir, "blueprints", "*.md"))
+	if len(want) == 0 || len(got) != len(want) {
+		t.Fatalf("blueprints: wrote %d, the build has %d", len(got), len(want))
+	}
+	for _, f := range append(want, "setup/SETUP.md") {
+		b, _ := os.ReadFile(f)
+		rel, _ := filepath.Rel("setup", f)
+		if w, err := os.ReadFile(filepath.Join(dir, rel)); err != nil || !bytes.Equal(w, b) {
+			t.Errorf("%s: %v, or not the build's copy", rel, err)
+		}
+	}
+}
+
 func TestHelpListsTheCommands(t *testing.T) {
 	cmd := exec.Command("go", "run", ".", "help")
 	if b, err := cmd.Output(); err != nil || !strings.Contains(string(b), "commands:") || !strings.Contains(string(b), "-root") {
