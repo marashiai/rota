@@ -102,6 +102,9 @@ func TestLivePagesUpdateInPlaceWhenTheTeamChanges(t *testing.T) {
 	if js := get(t, srv, "/app.js"); !strings.Contains(js, "onGitHub(t.id, 'Approving'") || !strings.Contains(js, "onGitHub(t.id, 'Sending'") || !strings.Contains(js, `aria-busy="true"`) {
 		t.Fatal("what GitHub takes a few seconds to do, an approval or a note, shows a spinner until it is done")
 	}
+	if js := get(t, srv, "/app.js"); !strings.Contains(js, "draw(document.getElementById('root'), html, !samePlace(drawnAt, at))") || !strings.Contains(js, "morph(el, drawT.content)") || strings.Contains(js, "getElementById('root').innerHTML = (desk()") || !strings.Contains(js, "r.swipes = true") {
+		t.Fatal("the app draws into the page as it stands, so that what the human selects stays selected while the team changes, and binds a row's swipe once")
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	req, _ := http.NewRequestWithContext(ctx, "GET", srv.URL+"/events", nil)

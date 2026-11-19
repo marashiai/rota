@@ -1052,10 +1052,10 @@ function ctxChip() {
 function renderEmbed() {
   const ae = document.activeElement, typingIn = !!(ae && ae.id === 'chatin'), caret = typingIn ? [ae.selectionStart, ae.selectionEnd] : null;
   const cb = document.querySelector('[data-cbody]'), chatTop = cb && cb.scrollTop, chatEnd = cb && cb.scrollHeight - cb.scrollTop - cb.clientHeight < 32;
-  document.getElementById('root').innerHTML = `<div class="app embed"><div class="cfull">${chatPane('embed')}</div></div>`;
+  draw(document.getElementById('root'), `<div class="app embed"><div class="cfull">${chatPane('embed')}</div></div>`);
   fitChatIn();
   const nb = document.querySelector('[data-cbody]'); if (nb) nb.scrollTop = !cb || chatEnd ? nb.scrollHeight : chatTop;
-  if (typingIn) { const el = document.getElementById('chatin'); if (el) { el.focus({preventScroll: true}); el.setSelectionRange(caret[0], caret[1]); } }
+  if (typingIn) { const el = document.getElementById('chatin'); if (el && el !== document.activeElement) { el.focus({preventScroll: true}); el.setSelectionRange(caret[0], caret[1]); } }
   const dot = chatDot();
   if (dot !== FRAME.dot) { FRAME.dot = dot; parent.postMessage({type: 'rota-chat-dot', dot}, location.origin); }
 }
@@ -1454,6 +1454,58 @@ window.addEventListener('pageshow', e => {
   if (M && p && !samePlace(p, shown)) showStep(p);
 });
 window.addEventListener('hashchange', route);
+// ---------- drawing into the page ----------
+// The page is drawn from what the app knows whenever that changes, as it does every few seconds while
+// a shift runs. Drawn into the page as it stands, each element and each piece of text that is the same
+// stays the very one it was: what the human selects stays selected, a transcript they opened stays
+// open, and what scrolls or moves stays where it is. Only a new place, another folder, page or
+// message, is drawn anew.
+const drawT = document.createElement('template'); // read into here: nothing in it loads or runs
+let drawnAt = null; // the place drawn last
+function draw(el, html, anew) {
+  if (anew) { el.innerHTML = html; return; }
+  drawT.innerHTML = html;
+  morph(el, drawT.content);
+}
+// keyOf: what an element stands for among its siblings, as a row its thread
+const keyOf = n => n.nodeType === 1 && (n.id || n.getAttribute('data-sw') || n.getAttribute('data-open')) || '';
+// alike: whether the node drawn now may be the one already there: the same kind, standing for the same
+const alike = (a, b) => a.nodeType === b.nodeType && (a.nodeType !== 1 || a.nodeName === b.nodeName && keyOf(a) === keyOf(b) && cls1(a) === cls1(b));
+const cls1 = n => (n.getAttribute('class') || '').trim().split(/\s/, 1)[0];
+// morph makes el's children what to's are: each that is the same where it was, or for the same thing
+// further on, stays, and takes what changed; the others go, and the new come
+function morph(el, to) {
+  const keys = new Set();
+  for (let b = to.firstChild; b; b = b.nextSibling) { const k = keyOf(b); if (k) keys.add(k); }
+  let a = el.firstChild, byKey = null;
+  for (let b = to.firstChild; b;) {
+    const next = b.nextSibling, k = keyOf(b);
+    while (a && keyOf(a) && !keys.has(keyOf(a))) { const n = a.nextSibling; a.remove(); a = n; } // gone, as an archived thread's row
+    let m = null;
+    if (a && alike(a, b)) { m = a; a = a.nextSibling; }
+    else if (k) { // moved, as a row when the list's order changed
+      if (!byKey) { byKey = new Map(); for (let x = a; x; x = x.nextSibling) { const kx = keyOf(x); if (kx && !byKey.has(kx)) byKey.set(kx, x); } }
+      const x = byKey.get(k);
+      if (x && x.parentNode === el && alike(x, b)) { m = x; el.insertBefore(x, a); }
+    }
+    if (m) { if (byKey && byKey.get(keyOf(m)) === m) byKey.delete(keyOf(m)); patch(m, b); }
+    else el.insertBefore(b, a);
+    b = next;
+  }
+  while (a) { const n = a.nextSibling; a.remove(); a = n; }
+}
+// patch gives the node there what the one drawn now says: its text, its attributes, its children, and
+// what a field holds; a transcript the human opened or closed stays so
+function patch(a, b) {
+  if (a.nodeType !== 1) { if (a.nodeValue !== b.nodeValue) a.nodeValue = b.nodeValue; return; }
+  const keepOpen = a.nodeName === 'DETAILS';
+  for (const at of [...a.attributes]) if (!b.hasAttributeNS(at.namespaceURI, at.localName) && !(keepOpen && at.name === 'open')) a.removeAttributeNS(at.namespaceURI, at.localName);
+  for (const at of b.attributes) if (a.getAttributeNS(at.namespaceURI, at.localName) !== at.value && !(keepOpen && at.name === 'open')) a.setAttributeNS(at.namespaceURI, at.name, at.value);
+  if (a.nodeName === 'TEXTAREA') { if (a.value !== b.value) a.value = b.value; return; } // what it holds, not its first text
+  morph(a, b);
+  if (a.nodeName === 'INPUT') { if (a.value !== b.value) a.value = b.value; if (a.checked !== b.checked) a.checked = b.checked; }
+  if (a.nodeName === 'SELECT') { const i = Math.max(0, [...b.options].findIndex(o => o.hasAttribute('selected'))); if (a.selectedIndex !== i) a.selectedIndex = i; }
+}
 function render() {
   if (EMBED) { renderEmbed(); return; }
   if (!M) return;
@@ -1470,13 +1522,14 @@ function render() {
   for (const sel of ['.lp', '.rp', '#over', '.side']) { const el = document.querySelector(sel); if (el) keep[sel] = el.scrollTop; }
   const winY = window.scrollY, sameOpen = S.open === shownOpen;
   const cb = document.querySelector('[data-cbody]'), chatTop = cb && cb.scrollTop, chatEnd = cb && cb.scrollHeight - cb.scrollTop - cb.clientHeight < 32; // the chat: read at its end, which new lines move, or further up
-  document.getElementById('root').innerHTML = (desk() ? deskHTML() : phoneHTML()) + composeHTML();
+  const html = (desk() ? deskHTML() : phoneHTML()) + composeHTML(), at = placeNow();
+  draw(document.getElementById('root'), html, !samePlace(drawnAt, at)); drawnAt = at;
   fitChatIn(); // drawn anew, the chat's box holds what is typed in it as before
   for (const sel in keep) { const el = document.querySelector(sel); if (el && (sel !== '.rp' && sel !== '#over' || sameOpen)) el.scrollTop = keep[sel]; }
   const nb = document.querySelector('[data-cbody]'); if (nb) nb.scrollTop = !cb || chatEnd ? nb.scrollHeight : chatTop; // one that appears anew opens at its end
   if (!desk() && !S.open) window.scrollTo(0, winY);
-  if (keepQ || S.focusSearch) { const q = document.getElementById(desk() ? 'dq' : 'q'); if (q) { q.focus(); q.setSelectionRange(q.value.length, q.value.length); } S.focusSearch = false; }
-  else if (fid && /^(rtext|ctext|cabout|repoin|roletext|chatin|f-[a-z_]+|w-[\w.-]+|rz-(?:side|list|chatw|chath))$/.test(fid)) { const el = document.getElementById(fid); if (el) { el.focus({preventScroll: true}); if (caret && el.setSelectionRange && el.type !== 'number') { el.setSelectionRange(Math.min(caret[0], el.value.length), Math.min(caret[1], el.value.length)); el.scrollTop = caret[2]; } } }
+  if (keepQ || S.focusSearch) { const q = document.getElementById(desk() ? 'dq' : 'q'); if (q && (S.focusSearch || q !== document.activeElement)) { q.focus(); q.setSelectionRange(q.value.length, q.value.length); } S.focusSearch = false; } // still there, it keeps where the human types
+  else if (fid && /^(rtext|ctext|cabout|repoin|roletext|chatin|f-[a-z_]+|w-[\w.-]+|rz-(?:side|list|chatw|chath))$/.test(fid)) { const el = document.getElementById(fid); if (el && el !== document.activeElement) { el.focus({preventScroll: true}); if (caret && el.setSelectionRange && el.type !== 'number') { el.setSelectionRange(Math.min(caret[0], el.value.length), Math.min(caret[1], el.value.length)); el.scrollTop = caret[2]; } } }
   else if (fkey !== undefined) { const b = filterAt(fkey); if (b) b.focus({preventScroll: true}); }
   bindSwipe();
   if (desk()) paintPanes();
@@ -1862,11 +1915,13 @@ document.addEventListener('keydown', e => {
   if (keys[e.key]) { keys[e.key](); }
 });
 
-// swipe on the phone: right archives, left snoozes
+// swipe on the phone: right archives, left snoozes; each row once, as a row drawn into stays the same
 function bindSwipe() {
   if (desk()) return;
   document.querySelectorAll('.app.phone .swipe').forEach(w => {
     const r = w.querySelector('.row'), bg = w.querySelector('.sw-bg');
+    if (!r || !bg || r.swipes) return;
+    r.swipes = true;
     let x0 = 0, y0 = 0, dx = 0, on = false, locked = false;
     r.addEventListener('pointerdown', e => { x0 = e.clientX; y0 = e.clientY; dx = 0; locked = false; on = true; });
     r.addEventListener('pointermove', e => {
@@ -1882,7 +1937,9 @@ function bindSwipe() {
       if (dx > 90) { r.style.transform = 'translateX(110%)'; setTimeout(() => archive([t]), 160); }
       else if (dx < -90) { r.style.transform = ''; snoozeSheet([t]); }
       else r.style.transform = '';
-      r.addEventListener('click', ev => ev.stopPropagation(), {once: true, capture: true});
+      const eat = ev => ev.stopPropagation(); // the click the swipe ends with, if any, opens nothing; the next tap does
+      r.addEventListener('click', eat, {once: true, capture: true});
+      setTimeout(() => r.removeEventListener('click', eat, {capture: true}), 300);
     };
     r.addEventListener('pointerup', end); r.addEventListener('pointercancel', end);
   });
