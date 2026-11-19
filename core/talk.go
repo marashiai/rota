@@ -300,7 +300,7 @@ func (t *Team) chatAfterShift(agent string, talked, resumes bool) {
 	if len(asked) > 0 && !again {
 		err := t.changeNotes(agent, func(notes []Note) []Note {
 			for _, m := range asked {
-				n := Note{ID: chatNoteID(m.ID), At: m.At, From: "human", Text: chatWords(m.Text, agent), Chat: true}
+				n := Note{ID: chatNoteID(m.ID), At: m.At, From: "human", Text: chatNoteText(m, agent), Chat: true}
 				if slices.ContainsFunc(notes, func(x Note) bool { return x.ID == n.ID || x.Chat && x.Text == n.Text }) {
 					continue // it never reached the shift
 				}

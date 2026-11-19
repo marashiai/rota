@@ -167,3 +167,24 @@ func TestThePageKeepsWhatWasRead(t *testing.T) {
 		t.Errorf("the review lacks what was read, or which notes are PR comments: %d %s", w.Code, body)
 	}
 }
+
+// The page shows the chat of the app gloss is part of, framed, with a button that opens it, when
+// that app gives one for the pull request; gloss alone shows none.
+func TestThePageShowsTheAppsChat(t *testing.T) {
+	page := func(o Options) string {
+		w := httptest.NewRecorder()
+		New(review.NewClient("x"), o).ServeHTTP(w, httptest.NewRequest("GET", "/o/r/12/", nil))
+		return w.Body.String()
+	}
+	if body := page(Options{}); strings.Contains(body, `id="chatbtn"`) || strings.Contains(body, "<iframe") {
+		t.Fatal("gloss alone has no chat")
+	}
+	asked := ""
+	body := page(Options{Chat: func(ref review.Ref) string { asked = ref.String(); return "/?embed=chat&agent=alpha" }})
+	if asked != "o/r#12" || !strings.Contains(body, `<button id="chatbtn"`) || !strings.Contains(body, `<iframe id="chatframe" src="/?embed=chat&amp;agent=alpha" title="Chat">`) {
+		t.Fatalf("the app's chat, for this pull request: %q\n%s", asked, body)
+	}
+	if js, _ := assets.ReadFile("app.js"); !strings.Contains(string(js), "type: 'rota-context'") || !strings.Contains(string(js), "e.origin !== location.origin") {
+		t.Fatal("the page tells the chat what the reviewer looks at, and hears only its own")
+	}
+}

@@ -43,6 +43,10 @@ type Options struct {
 	// Reads keeps what the reviewer has read, shared with the console; review.DefaultReads when
 	// nil.
 	Reads *review.Reads
+	// Chat, when set, is the address of a chat the review page of ref shows over itself, framed,
+	// with a button that opens it; the page tells it what the reviewer looks at. The app gloss is
+	// part of sets it (rota: its team chat); gloss alone has none.
+	Chat func(ref review.Ref) string
 }
 
 // Handler serves review pages.
@@ -120,7 +124,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case rest == "/":
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Header().Set("Cache-Control", "no-store")
-		page.Execute(w, map[string]any{"PR": ref.String(), "Title": h.opts.Title})
+		chat := ""
+		if h.opts.Chat != nil {
+			chat = h.opts.Chat(ref)
+		}
+		page.Execute(w, map[string]any{"PR": ref.String(), "Title": h.opts.Title, "Chat": chat})
 	case rest == "/app.js" || rest == "/app.css":
 		h.asset(w, rest[1:])
 	case strings.HasPrefix(rest, "/api/"):

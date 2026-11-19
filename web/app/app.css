@@ -58,8 +58,6 @@ input:focus-visible,textarea:focus-visible{outline:none}
 .vh{display:flex;align-items:center;gap:10px;padding:12px 18px 4px;font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--ink3)}
 .list{padding-bottom:110px}
 .ltitle{font-size:22px;font-weight:700;padding:14px 18px 8px;letter-spacing:-.01em}
-.fab{position:fixed;right:16px;bottom:calc(env(safe-area-inset-bottom) + 18px);z-index:12;display:flex;align-items:center;gap:10px;padding:16px 22px 16px 18px;border-radius:18px;background:var(--accent-soft);color:var(--ink);font-weight:650;font-size:15.5px;box-shadow:0 4px 14px rgba(0,0,0,.16)}
-.fab svg{width:22px;height:22px}
 
 /* rows, as a mail client lists them: sender, subject, a line of it */
 .swipe{position:relative;overflow:hidden}
@@ -512,21 +510,30 @@ button.row{width:100%;text-align:left}
 #mentions button{display:inline-flex;align-items:center;gap:6px;color:var(--ink)}
 #mentions .av{--s:18px;font-size:9px}
 .cfull{position:fixed;inset:0;z-index:38;background:var(--surface);display:flex;flex-direction:column;padding-bottom:env(safe-area-inset-bottom)}
-.cfull.tab{bottom:calc(env(safe-area-inset-bottom) + 62px);z-index:12;padding-bottom:0}
+.csheet{z-index:44;animation:sheetin .22s cubic-bezier(.2,.8,.2,1)} /* over a thread, the drawer, and the menus' scrim */
+@keyframes sheetin{from{transform:translateY(24px);opacity:0}}
+.cbub{position:fixed;right:16px;bottom:calc(env(safe-area-inset-bottom) + 18px);z-index:30;width:56px;height:56px;border-radius:18px;display:grid;place-items:center;background:var(--accent);color:var(--on-accent);box-shadow:0 4px 14px rgba(0,0,0,.2)}
+.cbub svg{width:24px;height:24px}
+.cbub.up{bottom:calc(env(safe-area-inset-bottom) + 84px)} /* over a thread: above its reply bar */
+.cbub .dot{position:absolute;top:8px;right:8px;width:10px;height:10px;border-radius:50%;background:var(--on-accent);box-shadow:0 0 0 2px var(--accent)}
+.app.embed .cfull{position:fixed;inset:0;padding-bottom:0}
+.app.embed .cfull .cwh{padding-top:8px}
+/* what is on the screen, which goes with what the human writes; and over their words, what was */
+.cctx{display:flex;align-items:center;gap:6px;margin:4px 10px 0;padding:4px 4px 4px 10px;border-radius:12px;background:var(--accent-soft);font-size:12.5px;color:var(--ink2);flex:none;min-width:0}
+.cctx svg{width:14px;height:14px;flex:none}
+.cctx span{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cctx .ib{width:26px;height:26px;flex:none}
+.cctx .ib svg{width:13px;height:13px}
+.cabout{align-self:flex-end;display:flex;align-items:center;gap:5px;max-width:86%;font-size:11.5px;color:var(--ink3);margin-top:4px}
+.cabout svg{width:12px;height:12px;flex:none}
+.cabout span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .cfull .cwh{padding-top:calc(env(safe-area-inset-top) + 8px);background:var(--surface);border-bottom:1px solid var(--line);padding-left:12px}
 .cfull .ib{width:40px;height:40px}
 /* the phone's foot: what waits for Save, above Mail and Chat */
-.pfoot{position:fixed;left:0;right:0;bottom:0;z-index:13;pointer-events:none}
+.pfoot{position:fixed;left:0;right:0;bottom:0;z-index:13;pointer-events:none;padding-bottom:env(safe-area-inset-bottom)}
 .pfoot>*{pointer-events:auto}
-.bnav{display:flex;background:color-mix(in srgb,var(--surface) 94%,transparent);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom)}
-.bnav button{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;padding:8px 0 7px;font-size:12px;font-weight:650;color:var(--ink3);position:relative}
-.bnav button.on{color:var(--ink)}
-.bnav .pill{width:60px;height:30px;border-radius:15px;display:grid;place-items:center}
-.bnav .pill svg{width:20px;height:20px}
-.bnav button.on .pill{background:var(--accent-soft)}
-.bnav .dot{position:absolute;top:8px;left:calc(50% + 14px);width:8px;height:8px;border-radius:50%;background:var(--accent)}
-.app.phone .fab{bottom:calc(env(safe-area-inset-bottom) + 76px)}
-.app.phone .list{padding-bottom:170px}
+.app.phone .list{padding-bottom:100px} /* the last row clear of the chat's bubble */
+.drawer .compose-btn{margin:2px 0 10px 4px}
 .askteam{display:flex;align-items:center;gap:12px;width:100%;text-align:left;padding:11px 14px 11px 12px;color:var(--accent);font-weight:650;font-size:15.5px}
 .askteam:hover{background:var(--hover)}
 .askteam span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

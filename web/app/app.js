@@ -44,12 +44,17 @@ const I = {
 // ---------- the mail, and where the human is in it ----------
 let M = null; // threads, members, repos, prefs, top: as /api/mail last said
 const S = {view: 'inbox', tab: 'focused', open: null, drawer: false, q: null, f: {}, keepRead: new Set(), compose: null, sel: new Set(), reply: false, vals: {}, drafts: {}, focusSearch: false, autoOpen: true,
-  aTab: 'messages', roleDraft: null, adv: null, edits: {}, sent: null, weights: Object.create(null), wbase: null, tc: {open: false, min: false}, ptab: 'mail', // weights: by an agent's name, which may be any // tc: the desktop's chat window; ptab: the phone's Mail or Chat tab
+  aTab: 'messages', roleDraft: null, adv: null, edits: {}, sent: null, weights: Object.create(null), wbase: null, tc: {open: false, min: false}, pchat: false, ctxOff: '', // weights: by an agent's name, which may be any // tc: the desktop's chat window; pchat: the phone's chat, open over the screen; ctxOff: what was on the screen that the human chose not to send with what they write
   repos: false, repoAdding: ''}; // repos: the team's repositories open in Settings; repoAdding: the one GitHub is asked about
 // BUSY: what the human started on a thread that GitHub takes a few seconds to do, by the thread's
 // id: Approving, or Sending a note. Where its button was, a spinner says so until it is done; kept
 // by id, it outlasts the mail being read anew meanwhile, and the same is not started twice.
 const BUSY = {};
+// EMBED: the page is only the chat, framed by a review page of these pages (gloss's), which says what
+// the human looks at there, and opens and closes it. FRAME: whether it shows the chat now, what it says
+// is on the screen, whose chat opens first (the pull request's author), and the dot it was last told.
+const EMBED = new URLSearchParams(location.search).get('embed') === 'chat';
+const FRAME = {open: false, ctx: null, agent: new URLSearchParams(location.search).get('agent') || '', dot: null};
 const desk = () => matchMedia('(min-width:1000px)').matches;
 const find = id => M && M.threads.find(t => t.id === id);
 const member = n => M && M.members.find(m => m.name === n);
@@ -701,7 +706,7 @@ const unsaved = () => { const p = pending(); return !!(p && p.mine); };
 // leaveOK: whether the human may leave what they changed: nothing is unsaved, or they say so
 const leaveOK = (q = 'Leave without saving your changes?') => !unsaved() || confirm(q);
 // barShown: what the bar says, when the page is shown: not under a search or the phone's Chat
-const barShown = () => searching() || !desk() && S.ptab === 'chat' ? null : pending();
+const barShown = () => searching() || !desk() && S.pchat ? null : pending();
 let barWas = ''; // what the bar showed when it was drawn: it slides in only as it appears
 function barInner() {
   const p = barShown();
@@ -889,7 +894,7 @@ function switchChat(w) {
   CHAT.with = w; S.vals.chat = CHAT.drafts[w] || '';
   try { localStorage.setItem('rota.chat', w); } catch (e) { /* this browser keeps it until the page reloads */ }
 }
-const chatShown = () => desk() ? S.tc.open && !S.tc.min : S.ptab === 'chat';
+const chatShown = () => EMBED ? FRAME.open : desk() ? S.tc.open && !S.tc.min : S.pchat;
 function chatToEnd() { const b = document.querySelector('[data-cbody]'); if (b) b.scrollTop = b.scrollHeight; }
 function hereText() {
   const w = CHAT.here;
@@ -950,10 +955,13 @@ function chatBody() {
   const msgs = chatMsgs(), a = chatAgent(), busy = CHAT.busy.includes(CHAT.with);
   if (!msgs.length && !busy) return `<div class="sys">${a ? (a.online ? `${esc(a.name)} is ${esc(a.note)}.` : `${esc(a.name)} is offline, ${esc(a.note)}. What you write it here, it answers here at its next run, first thing.`)
     : `${CHAT.team ? 'Ask the Team what anyone is doing, or tell it what to change. ' : ''}To talk with an agent, open its chat above, or write @ and its name: online, it stops its work to talk with you; offline, it answers you there at its next run.`}</div>`;
-  let h = '', prev = null;
+  let h = '', prev = null, about = '';
   for (const m of msgs) {
     if (!m.from) { prev = null; h += `<div class="sys">${m.html}</div>`; continue; }
-    if (m.from === 'you') { prev = 'you'; h += `<div class="bub me">${m.html}</div>`; continue; }
+    if (m.from === 'you') { // what was on the screen, over the first of the human's words about it
+      if (m.about && m.about !== about) h += `<div class="cabout">${I.eye}<span>${esc(m.about)}</span></div>`;
+      about = m.about || ''; prev = 'you'; h += `<div class="bub me">${m.html}</div>`; continue;
+    }
     const first = prev !== m.from; prev = m.from;
     h += `<div class="grp${first ? '' : ' cont'}">${first ? av(m.from, 26) : '<span class="avsp"></span>'}<div class="col">${first ? `<div class="nm">${m.from === 'team' ? 'Team' : esc(m.from)} · ${esc(when(m.at))}</div>` : ''}${m.html ? `<div class="bub mb">${m.html}</div>` : ''}${m.change ? changeCard(m) : ''}</div></div>`;
   }
@@ -989,16 +997,73 @@ function chatTo(text) {
   return CHAT.agents.find(x => x.name === at[1]) || null;
 }
 // chatPane: the open chat: who it is with, the chats, what was said, and what the human writes
-function chatPane(tab) {
+function chatPane(mode) { // mode: dock (the desktop's window), sheet (over the phone's screen), embed (framed by a review page)
   const w = CHAT.here, a = chatAgent();
   markSeen();
   const head = a ? `${av(a.name, 30, true)}<div class="tt"><b>${esc(a.name)}</b><span class="here">${esc(a.online ? a.note : 'offline, ' + a.note)}</span></div>`
     : `${av('team', 30, true)}<div class="tt"><b>Team</b><span class="here">${w.length ? `<span class="ppl">${w.map(n => av(n, 18)).join('')}</span>` : ''}${esc(hereText())}</span></div>`;
   const say = a ? `Message ${a.name}` : CHAT.team ? 'Message the Team, or @ an agent' : '@ an agent';
-  return `<div class="cwh"${tab ? '' : ' data-cmin'}>${head}
-    ${tab ? `<button class="ib" data-view="${a ? 'agent:' + esc(a.name) : 'team'}" title="${a ? esc(a.name) + '’s page' : 'Everyone on the team'}">${I.team}</button>` : `<button class="ib" data-cmin title="${S.tc.min ? 'Open' : 'Minimize'}">${I.minus}</button><button class="ib" data-cclose title="Close">${I.x}</button>`}</div>
-    ${chatList()}<div class="cwb" data-cbody>${chatBody()}</div>${chatChips()}<div class="cwc" id="mentions">${mentionsHTML()}</div>
+  const tools = mode === 'dock' ? `<button class="ib" data-cmin title="${S.tc.min ? 'Open' : 'Minimize'}">${I.minus}</button><button class="ib" data-cclose title="Close">${I.x}</button>`
+    : (mode === 'sheet' ? `<button class="ib" data-view="${a ? 'agent:' + esc(a.name) : 'team'}" title="${a ? esc(a.name) + '’s page' : 'Everyone on the team'}">${I.team}</button>` : '') +
+      `<button class="ib" data-cclose title="Close" aria-label="Close the chat">${I.x}</button>`;
+  return `<div class="cwh"${mode === 'dock' ? ' data-cmin' : ''}>${head}
+    ${tools}</div>
+    ${chatList()}<div class="cwb" data-cbody>${chatBody()}</div>${chatChips()}<div class="cwc" id="mentions">${mentionsHTML()}</div>${ctxChip()}
     <div class="cwi"><textarea id="chatin" rows="1" placeholder="${esc(say)}" aria-label="${esc(a ? 'Message ' + a.name : 'Message the team')}">${esc(S.vals.chat || '')}</textarea><button class="ib" data-csend aria-label="Send">${I.send}</button></div>`;
+}
+// screenContext: what the human has open, which goes with what they write in the chat: words that
+// say it to whoever answers, and the agent behind it, whose chat opens first; null over a list. In a
+// review page's frame, what that page says.
+function screenContext() {
+  if (EMBED) return FRAME.ctx;
+  if (!M) return null;
+  const agentOf = n => n && CHAT.agents.some(x => x.name === n) ? n : null, quoted = x => x ? ` «${x}»` : '';
+  if (S.open && isIssue(S.open)) {
+    const i = issueOf(S.open), g = ISS.got.get(S.open);
+    if (!i) return null;
+    const by = ((g && g.labels) || i.labels || []).map(l => /^rota:(.+)$/.exec(l)).find(m => m && agentOf(m[1]));
+    return {about: `Issue ${i.repo}#${i.number}${quoted((g && g.title) || i.title)}`, agent: by ? by[1] : null};
+  }
+  const t = S.open && find(S.open);
+  if (t) {
+    if (t.pr) return {about: `Pull request ${t.ref || t.label}${quoted(t.subject)}${t.pr.author ? ', by ' + t.pr.author : ''}`, agent: agentOf(t.pr.author)};
+    const who = peer(t), what = t.qid ? (t.kind === 'do' ? `${who}'s to-do for you` : `${who}'s question`) : t.kind === 'msg' ? `Your message to ${who}`
+      : t.kind === 'update' ? `${who}'s update` : t.kind === 'digest' ? 'The daily report' : 'A message';
+    return {about: what[0].toUpperCase() + what.slice(1) + quoted(t.subject) + (t.ref ? ` (${t.ref})` : ''), agent: agentOf(who)};
+  }
+  const run = /^run:(\d{4}-\d\d-\d\d)\/(\d\d)(\d\d)-(.+)$/.exec(S.view);
+  if (run) return {about: `${run[4]}'s run of ${run[1]} at ${run[2]}:${run[3]}: its transcript`, agent: agentOf(run[4])};
+  if (S.view.startsWith('agent:')) { const n = S.view.slice(6); return {about: `${n}'s page: ${({messages: 'its messages', runs: 'its runs', role: 'its role', settings: 'its settings'})[S.aTab] || 'its messages'}`, agent: agentOf(n)}; }
+  if (S.view === 'team') return {about: 'The Team page: the agents, their shares and when they run', agent: null};
+  if (S.view === 'settings') return {about: 'Settings', agent: null};
+  return null;
+}
+// chatContext: what goes with what the human writes: what is on the screen, unless they chose not to send it
+function chatContext() {
+  const c = screenContext();
+  return c && c.about && c.about !== S.ctxOff ? c : null;
+}
+// ctxChip: above the box, what goes with what is written, which the human can leave out
+function ctxChip() {
+  const c = chatContext();
+  return c ? `<div class="cctx" title="Goes with what you write: ${esc(c.about)}">${I.eye}<span>${esc(c.about)}</span><button class="ib" data-cctxoff aria-label="Do not send what is on your screen" title="Do not send this">${I.x}</button></div>` : '';
+}
+// renderEmbed: the chat alone, all of the frame a review page shows it in; the page hears of its dot
+function renderEmbed() {
+  const ae = document.activeElement, typingIn = !!(ae && ae.id === 'chatin'), caret = typingIn ? [ae.selectionStart, ae.selectionEnd] : null;
+  const cb = document.querySelector('[data-cbody]'), chatTop = cb && cb.scrollTop, chatEnd = cb && cb.scrollHeight - cb.scrollTop - cb.clientHeight < 32;
+  document.getElementById('root').innerHTML = `<div class="app embed"><div class="cfull">${chatPane('embed')}</div></div>`;
+  fitChatIn();
+  const nb = document.querySelector('[data-cbody]'); if (nb) nb.scrollTop = !cb || chatEnd ? nb.scrollHeight : chatTop;
+  if (typingIn) { const el = document.getElementById('chatin'); if (el) { el.focus({preventScroll: true}); el.setSelectionRange(caret[0], caret[1]); } }
+  const dot = chatDot();
+  if (dot !== FRAME.dot) { FRAME.dot = dot; parent.postMessage({type: 'rota-chat-dot', dot}, location.origin); }
+}
+// closeChat: the dock, the phone's sheet, or the review page's frame
+function closeChat() {
+  if (EMBED) { FRAME.open = false; parent.postMessage({type: 'rota-chat-close'}, location.origin); return; }
+  if (desk()) S.tc.open = false; else S.pchat = false;
+  render();
 }
 // fitChatIn: the box the human writes in the chat grows with what is typed, a line at a time, to near
 // half the chat, and only then scrolls; drawn anew, it keeps that size. The talk above keeps its last
@@ -1014,12 +1079,15 @@ function fitChatIn() {
   el.style.overflowY = full > max ? 'auto' : 'hidden';
   if (b && atEnd) b.scrollTop = b.scrollHeight;
 }
-// openChat: the dock on the desktop, the Chat tab on the phone, with the chat w ("team" or an agent's)
-// or the one open; what was typed comes along
+// openChat: the dock on the desktop, the sheet over the screen on the phone, with the chat w ("team" or
+// an agent's); opened without one, the chat of the agent behind what is on the screen, else the one
+// open last. What was typed comes along. Open, it stays on its chat as the human moves on.
 function openChat(prefill, w) {
+  if (EMBED) { if (w) switchChat(w); if (prefill !== undefined) S.vals.chat = prefill; render(); chatToEnd(); return; } // the review page opens and closes it
+  if (!w && !chatShown()) { const c = screenContext(); if (c && c.agent) w = c.agent; }
   if (w) switchChat(w);
   if (prefill !== undefined) S.vals.chat = prefill;
-  if (desk()) S.tc = {open: true, min: false}; else { S.ptab = 'chat'; S.open = null; }
+  if (desk()) S.tc = {open: true, min: false}; else S.pchat = true; // over what is open: closed, it is still there
   if (searching()) { S.q = null; S.f = {}; S.keepRead.clear(); } // as search's own X: its filters were the search's
   S.drawer = false; render(); chatToEnd();
   const el = document.getElementById('chatin');
@@ -1035,11 +1103,12 @@ async function chatSend(text) {
   if (w === 'team') { const to = chatTo(text); if (to && to !== 'team') w = to.name; }
   switchChat(w); // what was typed in that chat before stays there
   const a = chatAgent(w), who = w === 'team' ? (CHAT.team ? 'team' : '') : a && a.online ? a.name : ''; // who answers it here: the Team, or the agent at work
-  const id = 'local' + (++CHAT.local), msg = {id, local: true, with: w, text, from: 'you', html: `<p>${esc(text)}</p>`, at: new Date().toISOString()};
+  const ctx = chatContext(), about = ctx ? ctx.about : ''; // what is on the screen goes with it
+  const id = 'local' + (++CHAT.local), msg = {id, local: true, with: w, text, about, from: 'you', html: `<p>${esc(text)}</p>`, at: new Date().toISOString()};
   CHAT.msgs.push(msg);
   if (who && !CHAT.busy.includes(who)) CHAT.busy = CHAT.busy.concat(who);
   render(); chatToEnd();
-  const said = await post({action: 'chat', text, arg: w === 'team' ? '' : w});
+  const said = await post({action: 'chat', text, about, arg: w === 'team' ? '' : w});
   CHAT.msgs = CHAT.msgs.filter(m => m.id !== id); // the server's copy takes its place
   if (said === null) { if (!S.vals.chat) S.vals.chat = text; CHAT.busy = CHAT.busy.filter(x => x !== who); render(); return; } // a newer draft stays
   CHAT.tag = null; loadChat();
@@ -1176,16 +1245,18 @@ function phoneHTML() {
   if (sel) h += `<div class="selbar"><button class="ib" data-clearsel aria-label="Clear">${I.x}</button><b>${sel} selected</b><button class="ib" data-bulk="archive" aria-label="Archive">${I.archive}</button><button class="ib" data-bulk="snooze" aria-label="Snooze">${I.clock}</button><button class="ib" data-bulk="read" aria-label="Mark read">${I.mail}</button></div>`;
   else if (searching()) h += `<div class="pbar"><div class="spill"><button class="ib" data-endsearch aria-label="Back">${I.back}</button><input id="q" value="${esc(S.q || '')}" placeholder="Search messages" autocomplete="off" enterkeyhint="search">${S.q ? `<button class="ib" data-clearq aria-label="Clear">${I.x}</button>` : ''}${filterBtn()}</div></div>`;
   else h += `<div class="pbar"><div class="spill"><button class="ib" data-drawer aria-label="Menu">${I.menu}</button><span class="ph" data-search>Search messages</span><button class="ib" data-view="team" aria-label="${esc(M.top.State)}" style="width:44px">${statusMini()}</button></div></div>`;
-  const chatTab = S.ptab === 'chat' && !searching();
-  if (!searching() && S.view === 'inbox' && !chatTab) h += tabsHTML('tabs3');
-  h += `<div class="list">${searching() && searchEmpty() ? searchStart() : chatTab ? '' : listBody()}</div>`;
-  if (chatTab) h += `<div class="cfull tab">${chatPane(true)}</div>`;
-  if (!searching() && !sel && !pageView() && S.view !== 'keys' && !chatTab) h += `<button class="fab" data-compose>${I.pen}Message</button>`; // only over the mail: an agent's page has its own, and it would cover a setting
-  if (!searching() && !sel) h += `<div class="pfoot">${saveBar()}<nav class="bnav">${[['mail', 'Mail', I.mail], ['chat', 'Chat', I.chat]].map(([v, l, ic]) => `<button class="${S.ptab === v ? 'on' : ''}" data-ptab="${v}"><span class="pill">${ic}</span>${l}${v === 'chat' && chatDot() ? '<span class="dot"></span>' : ''}</button>`).join('')}</nav></div>`;
+  if (!searching() && S.view === 'inbox') h += tabsHTML('tabs3');
+  h += `<div class="list">${searching() && searchEmpty() ? searchStart() : listBody()}</div>`;
+  if (!searching() && !sel) h += `<div class="pfoot">${saveBar()}</div>`;
   else { barWas = ''; document.body.classList.remove('unsaved'); } // no bar under a search or a selection
   h += `</div>`;
   if (S.open) { const [tools, body] = paneOf(S.open, true); h += `<div class="over${S.open !== shownOpen ? ' slide' : ''}" id="over"><div class="tbar">${tools}</div>${body}</div>`; }
-  h += `<div class="scrim${S.drawer ? ' open' : ''}" data-closedrawer></div><nav class="drawer${S.drawer ? ' open' : ''}" aria-label="Folders"><div class="brand"><img class="mk" src="/mark.png" alt="">rota</div>${nav()}</nav>`;
+  if (!S.pchat && !sel && !searching() && !S.reply && !S.compose) { // the chat, over whatever is open: above a thread's reply bar
+    const dot = chatDot();
+    h += `<button class="cbub${S.open ? ' up' : ''}" data-chat aria-label="Chat${dot ? ', something new' : ''}">${I.chat}${dot ? '<span class="dot"></span>' : ''}</button>`;
+  }
+  if (S.pchat) h += `<div class="cfull csheet" role="dialog" aria-label="Chat">${chatPane('sheet')}</div>`;
+  h += `<div class="scrim${S.drawer ? ' open' : ''}" data-closedrawer></div><nav class="drawer${S.drawer ? ' open' : ''}" aria-label="Folders"><div class="brand"><img class="mk" src="/mark.png" alt="">rota</div><button class="compose-btn" data-compose>${I.pen}New message</button>${nav()}</nav>`;
   return h;
 }
 function deskHTML() {
@@ -1202,7 +1273,7 @@ function deskHTML() {
      <nav class="side" aria-label="Folders"><button class="compose-btn" data-compose>${I.pen}New message</button>${nav()}</nav>
      <section class="lp">${S.view === 'inbox' && !searching() ? `<div class="lhead">${tabsHTML('ltabs')}${sel ? `<div class="ltool"><button class="ib" data-clearsel aria-label="Clear">${I.x}</button><b>${sel} selected</b><span class="sp"></span><button class="ib" data-bulk="archive" title="Archive">${I.archive}</button><button class="ib" data-bulk="snooze" title="Snooze">${I.clock}</button><button class="ib" data-bulk="read" title="Mark read">${I.mail}</button></div>` : ''}</div>` : ''}${listBody()}${saveBar()}</section>
      ${wide ? '' : `<section class="rp">${rp}</section>`}${divider('side')}${wide ? '' : divider('list')}
-   </div>${S.tc.open ? `<div class="dock"><div class="cw${S.tc.min ? ' min' : ''}">${S.tc.min ? '' : chatGrips()}${chatPane(false)}</div></div>` : ''}</div>`;
+   </div>${S.tc.open ? `<div class="dock"><div class="cw${S.tc.min ? ' min' : ''}">${S.tc.min ? '' : chatGrips()}${chatPane('dock')}</div></div>` : ''}</div>`;
 }
 // ---------- the computer's panes and the chat: as wide as the human drags them, and the chat as tall ----------
 // The divider between two panes drags, and so do the chat's left and top edges and the corner between
@@ -1299,7 +1370,7 @@ function route() {
   }
   if (FOLDERS.includes(h)) { // a folder of the mail, from an old page's link
     if (!leaveOK()) { writeStep(false, placeNow(), shown); return; }
-    history.replaceState(null, '', location.pathname); S.view = h; S.open = null; S.ptab = 'mail'; S.q = null; S.f = {}; S.keepRead.clear(); S.sel.clear();
+    history.replaceState(null, '', location.pathname); S.view = h; S.open = null; S.pchat = false; S.q = null; S.f = {}; S.keepRead.clear(); S.sel.clear();
     S.roleDraft = null; S.adv = null; S.edits = {}; S.weights = Object.create(null);
     if (h === 'issues') loadIssues();
     render(); return;
@@ -1354,7 +1425,7 @@ function keepPlace() {
 // showStep shows the step the browser went to
 function showStep(p) {
   if (p.view !== S.view) setView(p.view);
-  S.tab = p.tab || S.tab; S.open = p.open || null; S.reply = false; S.wrong = null; S.autoOpen = false; S.drawer = false; S.ptab = 'mail';
+  S.tab = p.tab || S.tab; S.open = p.open || null; S.reply = false; S.wrong = null; S.autoOpen = false; S.drawer = false; S.pchat = false;
   shownOpen = S.open; // shown at once, with no slide: the browser's back or forward is the move
   shown = placeNow();
   render();
@@ -1384,6 +1455,7 @@ window.addEventListener('pageshow', e => {
 });
 window.addEventListener('hashchange', route);
 function render() {
+  if (EMBED) { renderEmbed(); return; }
   if (!M) return;
   if (S.autoOpen && desk() && !S.open && S.view === 'inbox' && !searching()) { const l = listFor().rows; if (l[0]) S.open = l[0].id; }
   S.autoOpen = false;
@@ -1595,7 +1667,7 @@ function setPref(k, v) {
 
 document.addEventListener('click', e => {
   const b = e.target.closest('button,[data-open],[data-search],[data-closedrawer],[data-expand],[data-cmin]');
-  if (!b || !M) return;
+  if (!b || !M && !EMBED) return;
   if (performance.now() < calmUntil) return; // the second click of a double click, on what moved up
   const d = b.dataset;
   if (d.pick) { e.stopPropagation(); S.sel.has(d.pick) ? S.sel.delete(d.pick) : S.sel.add(d.pick); render(); return; }
@@ -1623,9 +1695,9 @@ document.addEventListener('click', e => {
   }
   if (d.closeadv !== undefined) { if (!leaveOK('Close without saving your changes?')) return; S.adv = null; S.edits = {}; render(); return; }
   if (d.chat !== undefined) { if (desk() && S.tc.open && !d.chat) { S.tc.open = false; render(); } else openChat(d.chat || undefined); return; }
-  if (d.ptab) { S.ptab = d.ptab; S.open = null; S.drawer = false; render(); if (d.ptab === 'chat') chatToEnd(); window.scrollTo(0, 0); return; }
   if (d.cmin !== undefined) { e.stopPropagation(); S.tc.min = !S.tc.min; render(); if (!S.tc.min) chatToEnd(); return; }
-  if (d.cclose !== undefined) { e.stopPropagation(); S.tc.open = false; render(); return; }
+  if (d.cclose !== undefined) { e.stopPropagation(); closeChat(); return; }
+  if (d.cctxoff !== undefined) { const c = screenContext(); S.ctxOff = c ? c.about : ''; render(); const el = document.getElementById('chatin'); if (el) el.focus(); return; }
   if (d.csend !== undefined) { chatSend((document.getElementById('chatin') || {}).value); return; }
   if (d.csay) { chatSend(d.csay); return; }
   if (d.askteam !== undefined) { const q = S.q; S.q = null; S.f = {}; openChat('', 'team'); chatSend(q); return; }
@@ -1693,7 +1765,7 @@ document.addEventListener('click', e => {
   if (d.replyopen !== undefined) { S.reply = true; render(); const r = document.getElementById('rtext'); if (r) r.focus(); return; }
   if (d.replyclose !== undefined) { S.reply = false; render(); return; }
   if (d.send) { const v = ((document.getElementById('rtext') || {}).value || '').trim(); if (!v) { toast('Write something first'); return; } send(find(d.send), v); return; }
-  if (d.compose !== undefined) { S.compose = {to: ''}; render(); return; }
+  if (d.compose !== undefined) { S.compose = {to: ''}; S.drawer = false; render(); return; }
   if (d.to !== undefined) { S.compose.to = d.to; render(); return; }
   if (d.closecompose !== undefined) { S.compose = null; S.vals.ctext = S.vals.cabout = ''; render(); return; }
   if (d.sendcompose !== undefined) {
@@ -1757,6 +1829,11 @@ document.addEventListener('focusin', e => { if (e.target.id === 'dq' && S.q === 
 // keyboard, as Gmail's
 document.addEventListener('keydown', e => {
   if (M && (e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 's' && barShown()) { e.preventDefault(); saveNow(); return; } // as the bar's Save
+  if (EMBED) {
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.keyCode !== 229 && document.activeElement.id === 'chatin') { e.preventDefault(); chatSend(document.activeElement.value); }
+    else if (e.key === 'Escape') closeChat();
+    return;
+  }
   if (!M || e.metaKey || e.ctrlKey || e.altKey) return;
   if (paneKey(e)) return;
   if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.keyCode !== 229 && document.activeElement.id === 'chatin') { e.preventDefault(); chatSend(document.activeElement.value); return; } // Enter that ends an IME's word only ends it
@@ -1764,6 +1841,7 @@ document.addEventListener('keydown', e => {
   const typing = ['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName);
   if (e.key === 'Escape') {
     if (document.getElementById('sheet').classList.contains('open')) { document.getElementById('sscrim').click(); return; }
+    if (S.pchat && !desk()) { S.pchat = false; render(); return; } // the phone's chat, over the screen
     if (S.compose) S.compose = null; else if (searching()) { S.q = null; S.f = {}; document.activeElement.blur(); } else if (S.reply) S.reply = false; else if (S.open && !desk()) S.open = null; else if (S.view === 'keys' || S.view === 'settings' && !unsaved()) { if (backTo('inbox')) return; S.view = 'inbox'; }
     else if (S.view.startsWith('run:')) { S.view = 'agent:' + S.view.slice(20); loadPage(); }
     render(); return;
@@ -1814,7 +1892,7 @@ function bindSwipe() {
 function setView(v) {
   if (v.startsWith('agent:') && !S.view.startsWith('run:') && S.view !== v) S.aTab = 'messages'; // back from a run: its tab stays
   S.view = v; S.drawer = false; S.q = null; S.f = {}; S.keepRead.clear(); S.open = null; S.sel.clear(); S.autoOpen = true; S.roleDraft = null; S.adv = null; S.edits = {}; S.weights = Object.create(null); TEAM.error = '';
-  S.ptab = 'mail'; // on the phone, a page is under Mail
+  S.pchat = false; // on the phone, a page opens with the chat closed
   if (v === 'issues') loadIssues();
   if (pageView()) loadPage();
 }
@@ -1837,12 +1915,31 @@ if (step && (atPage ? atPage === step.view && pageAt(step.view) : FOLDERS.includ
 }
 addEventListener('resize', () => render());
 addEventListener('beforeunload', e => { if (unsaved()) { e.preventDefault(); e.returnValue = ''; } }); // closing or reloading the page asks first too
-route(); // a link or a reload of #team, #settings, #agent:<name> or #run:<id>
-load();
+if (EMBED) { // a review page's chat: what that page says, which it opens and closes; links open beside it
+  document.head.insertAdjacentHTML('beforeend', '<base target="_blank">');
+  addEventListener('message', e => {
+    if (e.origin !== location.origin || e.source !== parent) return;
+    const d = e.data || {};
+    if (d.type === 'rota-context') { FRAME.ctx = d.ctx && d.ctx.about ? {about: String(d.ctx.about), agent: FRAME.agent || null} : null; render(); }
+    if (d.type === 'rota-chat-open') {
+      const was = FRAME.open;
+      FRAME.open = !!d.open;
+      if (FRAME.open && !was && FRAME.agent) switchChat(FRAME.agent); // opened: the chat of the pull request's author
+      render(); if (FRAME.open) { chatToEnd(); const el = document.getElementById('chatin'); if (el) el.focus(); }
+    }
+  });
+  loadChat().then(() => parent.postMessage({type: 'rota-chat-ready'}, location.origin));
+  fetch('/api/mail', {cache: 'no-cache'}).then(r => r.ok ? r.json() : null).then(m => { if (m) { M = m; render(); } }).catch(() => {}); // the agents' faces, as the app draws them
+} else {
+  route(); // a link or a reload of #team, #settings, #agent:<name> or #run:<id>
+  load();
+}
 const events = new EventSource('/events');
-events.onmessage = reload;
-events.onopen = () => { if (S.loaded) reload(); };
+events.onmessage = EMBED ? () => loadChat() : reload;
+events.onopen = () => { if (EMBED) loadChat(); else if (S.loaded) reload(); };
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden || !M) return;
+  if (document.hidden) return;
+  if (EMBED) { render(); return; } // what it shows is seen now
+  if (!M) return;
   if (S.due) { S.due = false; lastTag = null; load(); } else render(); // what is open is seen now
 });

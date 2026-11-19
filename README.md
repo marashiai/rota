@@ -136,7 +136,9 @@ developer answers in the thread. Approve when you're happy.
 Ask the Team what anyone is doing, or tell it what to change: it proposes the change and you apply
 it. Each agent has its own chat beside the Team's: while it works, it stops its work and talks with
 you there, its whole attention on you, and goes back to its work once you're done. When it isn't
-working, it answers you there first thing in its next shift.
+working, it answers you there first thing in its next shift. The chat floats over every screen, also
+a pull request's review, and knows what you have open: ask "is this ready?" on a review and the agent
+that wrote it gets the file and line you are on.
 
 <p align="center"><img src="docs/demos/chat.gif" width="860" alt="The team chat: the Team answers, and the working developer replies"></p>
 

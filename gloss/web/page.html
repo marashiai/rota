@@ -59,6 +59,8 @@
   <p>The whole change is the diff from the base to the head, with every note in it; each commit shows its own diff and notes the same way. Drafts are saved to your pending review on GitHub as you type; only you see them until you send. With no drafts, the Send button approves: the team may then merge the pull request. A note you have read shows folded, on one line, the next time you open the review, and the read notes on the whole change or a commit fold into a single line: you have read a note once it was on the screen, or once you fold it. New ones say new. On a phone, tap a line or a note, then use the buttons at the bottom.</p>
 </div>
 <div id="modal" hidden><div role="dialog" aria-modal="true" aria-labelledby="modaltext"><p id="modaltext"></p><p class="btns"><button id="no">Cancel</button><button id="also" hidden></button><button id="yes" class="primary">Yes</button></p><p class="hint keys"><kbd>Enter</kbd> the green button · <kbd>Esc</kbd> cancel</p></div></div>
+{{if .Chat}}<button id="chatbtn" aria-label="Chat" aria-expanded="false" aria-controls="chatbox" title="Chat: ask about what you look at here"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span class="dot" hidden></span></button>
+<div id="chatbox" hidden><iframe id="chatframe" src="{{.Chat}}" title="Chat"></iframe></div>{{end}}
 <script src="app.js"></script>
 </body>
 </html>

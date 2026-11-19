@@ -366,6 +366,7 @@ type apiChatMsg struct {
 	From   string           `json:"from,omitempty"`
 	To     string           `json:"to,omitempty"`
 	HTML   string           `json:"html"`
+	About  string           `json:"about,omitempty"` // the human's: what was on their screen as they wrote it
 	Change *core.ChatChange `json:"change,omitempty"`
 }
 
@@ -386,7 +387,7 @@ func (s *site) chatJSON(w http.ResponseWriter, r *http.Request) {
 		if m.From == "" {
 			html = esc(m.Text)
 		}
-		out.Msgs = append(out.Msgs, apiChatMsg{ID: m.ID, At: m.At, With: m.With(), From: m.From, To: m.To, HTML: html, Change: m.Change})
+		out.Msgs = append(out.Msgs, apiChatMsg{ID: m.ID, At: m.At, With: m.With(), From: m.From, To: m.To, HTML: html, About: m.About, Change: m.Change})
 	}
 	for _, p := range out.Agents {
 		if p.Online {
@@ -426,7 +427,7 @@ func writeJSON(w http.ResponseWriter, r *http.Request, v any) {
 }
 
 // teamAct does what the human did on the team's pages; ok is false for an action that is not one.
-func (s *site) teamAct(t *core.Team, action, arg, text string) (said string, ok bool, err error) {
+func (s *site) teamAct(t *core.Team, action, arg, text, about string) (said string, ok bool, err error) {
 	switch action {
 	case "pause", "resume", "run": // arg: the agent; "" the team
 		said, err = s.control(t, action, arg, "", "", "")
@@ -492,9 +493,9 @@ func (s *site) teamAct(t *core.Team, action, arg, text string) (said string, ok 
 			return "", true, fmt.Errorf("seen up to when?")
 		}
 		err = t.ChatSeen(arg, at)
-	case "chat": // text: what the human writes in the team chat; arg: the chat, an agent's, or "" for the Team's
+	case "chat": // text: what the human writes in the team chat; arg: the chat, an agent's, or "" for the Team's; about: what is on their screen
 		root, conf := s.root, s.conf
-		_, err = t.ChatSendTo(arg, text, func() { core.WakeTeam(root, conf) })
+		_, err = t.ChatSendAbout(arg, text, about, func() { core.WakeTeam(root, conf) })
 	case "chat-apply": // arg: the change's id
 		said, err = t.ChatApply(arg)
 	case "chat-cancel":

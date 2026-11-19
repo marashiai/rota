@@ -4,6 +4,8 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -167,5 +169,48 @@ func TestAnAgentWritesTheHumanWhenItNeedsThemNow(t *testing.T) {
 	}
 	if err := team.ChatSay("qa", "Rolled back; it is healthy again.", true); err != nil || team.Talking("qa") {
 		t.Fatalf("its last words end it: %v", err)
+	}
+}
+
+// What the human writes in the chat goes with what they had on their screen, as the app says it:
+// one line, of a size. The agent's note has it with their words, also when its next shift gets them
+// again; so has the Team's turn, and its view of an agent's chat. The pull request's agent is the one
+// whose branch it is.
+func TestTheChatKnowsWhatIsOnTheScreen(t *testing.T) {
+	root, team := chatTeam(t)
+	m, err := team.ChatSendAbout("dev", "what do you think of this?", "Reviewing pull request o/app#1 «Retry the flaky login test»,\n the whole change, at src/login.go:42", nil)
+	if err != nil || m.About != "Reviewing pull request o/app#1 «Retry the flaky login test», the whole change, at src/login.go:42" {
+		t.Fatalf("one line: %+v %v", m, err)
+	}
+	if notes := inboxText(team, "dev"); !strings.Contains(notes, "in the team chat: what do you think of this?\n  (on their screen: Reviewing pull request o/app#1 «Retry the flaky login test», the whole change, at src/login.go:42)") {
+		t.Fatalf("the agent's note has it: %s", notes)
+	}
+	if long, _ := team.ChatSendAbout("dev", "and this?", strings.Repeat("x", 500), nil); len(long.About) > aboutMax+len("…") {
+		t.Fatalf("of a size: %d", len(long.About))
+	}
+	os.Remove(team.Inbox("dev"))
+	team.chatAfterShift("dev", false, false) // its shift read them, and did not answer
+	if notes := inboxText(team, "dev"); !strings.Contains(notes, "(on their screen: Reviewing pull request o/app#1") {
+		t.Fatalf("its next shift gets them as they were: %s", notes)
+	}
+	if text, _ := team.agentChat("dev", 10); !strings.Contains(text, "the human: what do you think of this?\n  (on their screen: Reviewing pull request o/app#1") {
+		t.Fatalf("the Team reads it in the agent's chat: %s", text)
+	}
+
+	claude := filepath.Join(root, "claude")
+	write(t, claude, "#!/bin/bash\nread -r prompt\nprintf '%s\\n' \"$prompt\" > "+filepath.Join(root, "prompt")+"\n"+
+		`echo '{"type":"result","subtype":"success","is_error":false,"result":"It retries.","num_turns":1,"session_id":"team-1","usage":{}}'`+"\n")
+	os.Chmod(claude, 0o755)
+	write(t, filepath.Join(root, "rota.conf"), "usage: off\nlisten: off\nchat_model: haiku\nclaude_bin: "+claude+"\n")
+	team = open(t, root)
+	team.ChatSendAbout("", "is this ready?", "Issue o/app#7 «Login fails on Safari»", nil)
+	team.teamTurn()
+	if p := readFile(filepath.Join(root, "prompt")); !strings.Contains(p, `is this ready?\n(on their screen: Issue o/app#7 «Login fails on Safari»)`) {
+		t.Fatalf("the Team's turn has it: %s", p)
+	}
+
+	write(t, filepath.Join(root, ".open.json"), `{"time":"`+time.Now().Add(time.Hour).Format(time.RFC3339)+`","repos":{"o/app":{"1":{"title":"t","pr":true,"head":"dev/flaky-login"},"2":{"title":"u","pr":true,"head":"someone/x"}}}}`)
+	if a, b, c := team.PRAgent("o/app", 1), team.PRAgent("o/app", 2), team.PRAgent("o/app", 3); a != "dev" || b != "" || c != "" {
+		t.Fatalf("the pull request's agent: %q %q %q", a, b, c)
 	}
 }

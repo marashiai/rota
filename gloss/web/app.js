@@ -1087,6 +1087,48 @@
   window.addEventListener('hashchange', () => { const v = parseInt(location.hash.slice(1), 10); if (!isNaN(v) && v !== S.view) go(v); });
   setInterval(() => { if (!document.hidden) refresh(true); }, 30000);
 
+  // ---- the chat of the app gloss is part of (rota's), when it has one: a button over the review
+  // opens it, framed; it hears what the reviewer looks at: the pull request, the whole change or a
+  // commit, and the file and line, the hunk, the file or the note under the cursor
+  const chatBtn = $('#chatbtn'), chatBox = $('#chatbox'), chatFrame = $('#chatframe');
+  if (chatFrame) {
+    const tell = msg => { if (chatFrame.contentWindow) chatFrame.contentWindow.postMessage(msg, location.origin); };
+    const where = () => {
+      if (!S.rv) return null;
+      const n = commits().length, el = cur(), d = el ? el.dataset : {};
+      let about = `Reviewing pull request ${S.rv.pr} «${S.rv.title}»` +
+        (S.view === 0 ? ', the whole change' : `, commit ${S.view} of ${n} «${commits()[S.view - 1].title}»`);
+      if (d.kind === 'line') about += `, at ${d.path}:${d.line}${d.old === '1' ? ' (the old side)' : ''}`;
+      else if (d.kind === 'hunk') about += `, at ${d.path}, hunk ${d.hunk}`;
+      else if (d.kind === 'file') about += `, at ${d.path}`;
+      else if (d.kind === 'note') {
+        const t = threads().find(x => x.notes.some(m => m.id === d.id)), m = noteById(d.id);
+        if (t && t.path) about += `, at ${t.path}${t.line ? ':' + t.line : ''}`;
+        if (m) about += `, on ${m.author}'s note «${m.text.split('\n')[0].slice(0, 80)}»`;
+      }
+      return { about };
+    };
+    let told = '';
+    const tellWhere = () => { const ctx = where(), k = JSON.stringify(ctx); if (k !== told) { told = k; tell({ type: 'rota-context', ctx }); } };
+    const showChat = open => {
+      chatBox.hidden = !open;
+      chatBtn.setAttribute('aria-expanded', String(open));
+      document.body.classList.toggle('chatting', open);
+      if (open) tellWhere();
+      tell({ type: 'rota-chat-open', open });
+      if (open) chatFrame.focus(); else main.focus();
+    };
+    chatBtn.addEventListener('click', () => showChat(chatBox.hidden));
+    addEventListener('message', e => {
+      if (e.origin !== location.origin || e.source !== chatFrame.contentWindow) return;
+      const d = e.data || {};
+      if (d.type === 'rota-chat-close') showChat(false);
+      else if (d.type === 'rota-chat-dot') $('.dot', chatBtn).hidden = !d.dot;
+      else if (d.type === 'rota-chat-ready') { told = ''; tellWhere(); if (!chatBox.hidden) tell({ type: 'rota-chat-open', open: true }); } // loaded anew
+    });
+    setInterval(tellWhere, 600); // the cursor moves by keys, taps, scrolls and the files: what is under it now
+  }
+
   (async function init() {
     try {
       const r = await api('review');

@@ -384,6 +384,15 @@ func (l openList) due() bool {
 	return time.Since(l.Time) > openFresh && time.Since(l.Tried) > openRetry
 }
 
+// PRAgent is the agent that wrote an open pull request of the team's, by its branch (<agent>/…) as
+// GitHub listed it last; "" when no agent of the team did.
+func (t *Team) PRAgent(repo string, number int) string {
+	if a, _, ok := strings.Cut(t.openWork().Repos[repo][number].Head, "/"); ok && t.Agent(a) != nil {
+		return a
+	}
+	return ""
+}
+
 // openWork is GitHub's last list of what is open; an older one than openFresh is refreshed in
 // the background.
 func (t *Team) openWork() openList {

@@ -62,6 +62,10 @@ func (s *site) app(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Header().Set("Cache-Control", "no-cache")
 		w.Header().Set("Content-Security-Policy", appCSP)
+		if r.URL.Query().Get("embed") == "chat" { // only the chat, which a review page of these pages shows over itself: a frame of their own
+			w.Header().Set("Content-Security-Policy", strings.Replace(appCSP, "frame-ancestors 'none'", "frame-ancestors 'self'", 1))
+			w.Header().Set("X-Frame-Options", "SAMEORIGIN")
+		}
 		appPage.Execute(w, map[string]string{"Token": s.token, "JS": assets["app.js"].hash, "CSS": assets["app.css"].hash})
 		return
 	}
@@ -284,7 +288,7 @@ func (s *site) mailAct(t *core.Team, f map[string][]string) (string, error) {
 		return ""
 	}
 	action, id, arg, text, now := get("action"), get("id"), get("arg"), get("text"), time.Now()
-	if said, ok, err := s.teamAct(t, action, arg, text); ok {
+	if said, ok, err := s.teamAct(t, action, arg, text, get("about")); ok {
 		return said, err
 	}
 	switch action {

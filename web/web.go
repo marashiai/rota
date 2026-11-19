@@ -16,6 +16,7 @@ import (
 	"html/template"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -637,6 +638,14 @@ func (s *site) reviewPages() http.Handler {
 				}
 				approved, err := core.Approved(ctx, c, rv)
 				return errors.Join(err, t.ReviewSent(ctx, rv.Ref.Repo(), rv.Ref.Number, sent, approved))
+			}, Chat: func(ref review.Ref) string { // the team chat over the review, on the chat of the agent that wrote it first
+				u := "/?embed=chat"
+				if t, err := core.Open(s.root, s.conf); err == nil {
+					if a := t.PRAgent(ref.Repo(), ref.Number); a != "" {
+						u += "&agent=" + url.QueryEscape(a)
+					}
+				}
+				return u
 			}})
 		}
 		handler := h

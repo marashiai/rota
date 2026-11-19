@@ -1461,12 +1461,29 @@ func TestTheTeamChatInTheApp(t *testing.T) {
 	if ths := tm.MessageThreads(); len(ths) != 0 || !strings.Contains(tm.NotesText(tm.Notes("alpha")), "in the team chat: Rebase it, please.\n") {
 		t.Fatalf("alpha, not at work, gets it from the chat at its next shift, not in its mail: %+v", ths)
 	}
+	if code, _ := act(url.Values{"token": {token}, "action": {"chat"}, "arg": {"alpha"}, "text": {"And this one?"}, "about": {"Pull request o/app#1 «one», by alpha"}}); code != 200 {
+		t.Fatalf("with what is on the screen: %d", code)
+	}
+	if raw := get(t, srv, "/api/chat"); !strings.Contains(raw, `"about":"Pull request o/app#1 «one», by alpha"`) || !strings.Contains(tm.NotesText(tm.Notes("alpha")), "(on their screen: Pull request o/app#1 «one», by alpha)") {
+		t.Fatalf("the chat and alpha have what was on the screen: %s", raw)
+	}
+	c = read()
 	at := c.Msgs[len(c.Msgs)-1].At // the page says the human saw alpha's chat up to there, as the server has the time
 	if code, _ := act(url.Values{"token": {token}, "action": {"chat-seen"}, "arg": {"alpha"}, "text": {at.Format(time.RFC3339Nano)}}); code != 200 || !tm.ChatSeenAt("alpha").Equal(at) {
 		t.Fatalf("seen: %d %v", code, tm.ChatSeenAt("alpha"))
 	}
 	if code, _ := act(url.Values{"token": {token}, "action": {"chat-seen"}, "arg": {"alpha"}, "text": {"yesterday"}}); code != 400 {
 		t.Fatal("seen up to a time")
+	}
+	for path, want := range map[string][2]string{"/": {"frame-ancestors 'none'", "DENY"}, "/?embed=chat": {"frame-ancestors 'self'", "SAMEORIGIN"}} { // only the chat alone, for a review page of these pages
+		resp, err := http.Get(srv.URL + path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if csp := resp.Header.Get("Content-Security-Policy"); !strings.Contains(csp, want[0]) || resp.Header.Get("X-Frame-Options") != want[1] {
+			t.Fatalf("%s may be framed by: %q %q", path, csp, resp.Header.Get("X-Frame-Options"))
+		}
 	}
 	resp, _ := http.Get(srv.URL + "/api/chat")
 	tag := resp.Header.Get("ETag")
