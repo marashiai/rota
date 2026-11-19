@@ -21,11 +21,12 @@ import (
 
 // The team chat, for the human and the whole team: a chat with the Team (rota itself, a Claude
 // session that knows the team), always there, which answers for the team; and a chat with each
-// agent, which is there while it works. The human writes in the Team's chat, where an @ and an
+// agent, which is in it while it works. The human writes in the Team's chat, where an @ and an
 // agent's name writes to that agent instead, or in an agent's: an agent at work here gets it after
 // its current step, stops its work and talks with the human (talk.go), with rota say and rota
-// listen, until the talk is over; one that is not working gets it as a message, which waits in the
-// mail until it reads it at its next run. Each message is in one chat (With). The Team does anything the human can do in the app, and
+// listen, until the talk is over; one that is not working gets it as its next shift begins, and
+// answers it there first. What the human writes in the chat is answered in the chat, never in the
+// mail. Each message is in one chat (With). The Team does anything the human can do in the app, and
 // changes nothing itself: it reads the team folder, nothing else, and proposes what to do in its
 // answer, which the human applies with a tap and can undo where that can be done (chatdo.go).
 //
@@ -40,7 +41,7 @@ type ChatMsg struct {
 	Text   string            `json:"text,omitempty"`
 	Change *ChatChange       `json:"change,omitempty"`
 	Re     string            `json:"re,omitempty"`     // the change this line is about
-	Answer string            `json:"answer,omitempty"` // the Team's: the human's last message it answers
+	Answer string            `json:"answer,omitempty"` // the Team's or an agent's, or rota's line for one: the human's last message it answers
 	State  string            `json:"state,omitempty"`  // its new state: applied, cancelled or undone; working, then applied, partly or failed (chatWork)
 	Lines  []string          `json:"lines,omitempty"`  // what the work did so far, a line each (chatWork)
 	Said   string            `json:"said,omitempty"`   // what rota answered when it applied the change, or undid it
@@ -220,10 +221,13 @@ func (t *Team) ChatSend(text string, wakeTeam func()) (ChatMsg, error) {
 
 // ChatSendTo is what the human writes in a chat: to "" (or "team"), in the Team's, where an @ and an
 // agent's name writes to that agent instead; to an agent, in its own, where all of it goes to that
-// agent. To the Team, it is answered by the Team's next turn, which wakeTeam starts. To an agent at
-// work on this machine, it reaches its shift after its current step, and begins a talk: the agent
-// stops its work and answers with rota say; in a talk, rota listen brings it at once. To one that
-// is not at work, it is a message, which the agent reads at its next run and answers in the mail.
+// agent. To the Team, it is answered by the Team's next turn, which wakeTeam starts. To an agent,
+// it waits in its inbox as the human's words from the chat, and the agent answers them here, never
+// in the mail. At work on this machine, its shift gets them after its current step, and a talk
+// begins: the agent stops its work and answers with rota say; in a talk, rota listen brings them at
+// once. Not at work, its next shift gets them as it begins, and answers them first; they ask for
+// that shift, as a message in the mail does, and the chat says so. At work on another machine, its
+// shift there gets them after its current step, and answers them as it ends.
 func (t *Team) ChatSendTo(to, text string, wakeTeam func()) (ChatMsg, error) {
 	text = strings.TrimSpace(text)
 	switch {
@@ -262,38 +266,85 @@ func (t *Team) ChatSendTo(to, text string, wakeTeam func()) (ChatMsg, error) {
 		return ms[0], nil
 	}
 	a := t.Agent(m.To)
-	words := strings.TrimSpace(chatMention.ReplaceAllStringFunc(text, func(s string) string { // what it says, without its name
-		if strings.EqualFold(strings.TrimPrefix(strings.TrimSpace(s), "@"), a.Name) {
+	id := time.Now().Format("20060102-150405") + "-" + randHex(3)
+	m.ID = chatID(id)
+	ms := []ChatMsg{m}
+	if !t.Steerable(a.Name) || a.Host != "" { // not here to answer now: the chat says when it does, once until it says something
+		if line := t.awayText(a); !t.saidLast(a.Name, line) {
+			ms = append(ms, ChatMsg{Text: line, To: a.Name}) // no answer for it: it answers them itself
+		}
+	}
+	if _, err := t.chatAppend(ms...); err != nil {
+		return ChatMsg{}, err
+	}
+	if err := t.chatNote(a.Name, Note{ID: id, At: ms[0].At, From: "human", Text: chatWords(text, a.Name), Chat: true}); err != nil {
+		return ChatMsg{}, err
+	}
+	if !t.Steerable(a.Name) { // checked after the note is in, as for a note: a shift that ends meanwhile asks for the next itself
+		t.wakeForHuman(a.Name)
+	}
+	return ms[0], nil
+}
+
+// chatID is the chat's id of the human's words to an agent, whose note in its inbox has the id
+// note: the chat knows which words its shift got, and the inbox which the agent answered.
+func chatID(note string) string { return "c" + note }
+
+// chatNoteID is the id of the note in the agent's inbox of the human's words with the chat's id.
+func chatNoteID(chat string) string { return strings.TrimPrefix(chat, "c") }
+
+// chatWords is what the human wrote an agent in the chat, as its note has it: without its name.
+func chatWords(text, agent string) string {
+	words := strings.TrimSpace(chatMention.ReplaceAllStringFunc(text, func(s string) string {
+		if strings.EqualFold(strings.TrimPrefix(strings.TrimSpace(s), "@"), agent) {
 			return ""
 		}
 		return s
 	}))
 	if words == "" {
-		words = text
+		return text
 	}
-	if t.Steerable(a.Name) && a.Host == "" { // at work here: it reads it after its current step, or at once in a talk, and answers as the Team does
-		ms, err := t.chatAppend(m)
-		if err != nil {
-			return ChatMsg{}, err
+	return words
+}
+
+// awayText is rota's line in an agent's chat as the human writes it while it is not here to answer
+// now: when it does. One that runs on other machines answers as its shift there ends.
+func (t *Team) awayText(a *Agent) string {
+	when := "its next shift answers you here, first thing."
+	if a.Host != "" {
+		when = "its next shift, away from the chat, answers you here as it ends."
+	}
+	switch {
+	case t.Steerable(a.Name):
+		host := "another machine"
+		if st := t.Live(); st != nil && st.Running != nil && st.Running.Agent == a.Name && st.Running.Host != "" {
+			host = st.Running.Host
 		}
-		n := Note{ID: time.Now().Format("20060102-150405") + "-" + randHex(3), At: time.Now(), From: "human", Text: words, Chat: true}
-		return ms[0], t.chatNote(a.Name, n)
+		return fmt.Sprintf("%s is at work on %s, away from the chat: it gets your words after the step it is on, and answers you here as that shift ends.", a.Name, host)
+	case !a.Enabled:
+		return a.Name + " is off: once it is on again, " + when
+	case t.PausedAgents()[a.Name]:
+		return a.Name + " is paused: once you resume it, " + when
 	}
-	if _, err := t.SendMessage(a.Name, "", words, ""); err != nil {
-		return ChatMsg{}, err
+	return a.Name + " is not at work now: " + when
+}
+
+// saidLast says whether rota's line is the last thing said in the agent's chat but the human's.
+func (t *Team) saidLast(agent, line string) bool {
+	msgs := t.Chat(100)
+	for i := len(msgs) - 1; i >= 0; i-- {
+		if m := msgs[i]; m.Re == "" && m.From != "you" && m.With() == agent {
+			return m.From == "" && m.Text == line
+		}
 	}
-	m.ID = "c" + time.Now().Format("20060102-150405") + "-" + randHex(3)
-	ms, err := t.chatAppend(m, ChatMsg{Text: a.Name + " is not working now. It reads your message at its next run and answers in your inbox; until then the message waits in Waiting.", To: a.Name, Answer: m.ID})
-	if err != nil {
-		return ChatMsg{}, err
-	}
-	return ms[0], nil
+	return false
 }
 
 // ChatSay is what an agent says in the chat from its shift, with rota say: an agent's name only,
 // never the Team's. It answers what the human wrote it since its last words, as the Team's answer
 // does, and names the last. In a talk, it is the agent's turn in it; last, its last words, which
-// end it.
+// end it. Words that answer nothing begin a talk: the agent needs the human now, and waits there
+// for their answer.
 func (t *Team) ChatSay(agent, text string, last bool) error {
 	text = strings.TrimSpace(text)
 	switch {
@@ -305,19 +356,21 @@ func (t *Team) ChatSay(agent, text string, last bool) error {
 		return fmt.Errorf("%s is not an agent", agent)
 	}
 	said := ChatMsg{From: agent, Text: text}
-	if asked := chatPending(t.Chat(400), agent); len(asked) > 0 {
+	asked := chatPending(t.Chat(400), agent)
+	if len(asked) > 0 {
 		said.Answer = asked[len(asked)-1].ID
 	}
 	if _, err := t.chatAppend(said); err != nil {
 		return err
 	}
-	return t.sayInTalk(agent, last)
+	return t.sayInTalk(agent, last, len(asked) == 0)
 }
 
 // Presence is an agent as the chat shows it: online while it works here, when what the human
 // writes it reaches its shift after its current step and it stops its work to talk with them, or
-// at once while they talk; offline when it is not its turn, when what the human writes it becomes a
-// message in the mail, which it reads at its next run.
+// at once while they talk; offline when it is not its turn, when what the human writes it waits for
+// its next shift, which answers it in the chat first; or while it works on another machine, away
+// from the chat, when its shift there gets it after its current step and answers it as it ends.
 type Presence struct {
 	Name    string `json:"name"`
 	Online  bool   `json:"online"`
@@ -356,7 +409,7 @@ func (t *Team) ChatPresence(now time.Time) []Presence {
 		case st == nil:
 			p.Note = "the team is not running"
 		case st.Running != nil && st.Running.Agent == a.Name:
-			p.Note = "working on " + or(st.Running.Host, "another machine") + ", not in the chat"
+			p.Note = "working on " + or(st.Running.Host, "another machine") + ", away from the chat"
 		case st.UsageError != "":
 			p.Note = "on hold: no shift starts until Claude's usage can be read"
 		case st.Paused && !t.askedByHand()[a.Name]:
@@ -790,8 +843,8 @@ func (t *Team) safeTurn() {
 }
 
 // ChatBusy says who is answering in the chat now, as the chat shows them typing: the Team while
-// its turn runs, and each agent at work here that has not answered what the human wrote it, asked
-// within the hour.
+// its turn runs, and each agent at work here that has not answered what the human wrote it, for an
+// hour from when it was asked, or from when its shift began for what came before.
 func (t *Team) ChatBusy() []string {
 	busy := []string{}
 	if fi, err := os.Stat(t.Path(".chat-busy")); err == nil && time.Since(fi.ModTime()) < teamTimeout+time.Minute {
@@ -805,7 +858,15 @@ func (t *Team) ChatBusy() []string {
 		if msgs == nil {
 			msgs = t.Chat(400)
 		}
-		if asked := chatPending(msgs, a.Name); len(asked) > 0 && time.Since(asked[len(asked)-1].At) < time.Hour {
+		asked := chatPending(msgs, a.Name)
+		if len(asked) == 0 {
+			continue
+		}
+		since := asked[len(asked)-1].At
+		if fi, err := os.Stat(t.steerFile(a.Name)); err == nil && fi.ModTime().After(since) { // its shift began since: it answers them first
+			since = fi.ModTime()
+		}
+		if time.Since(since) < time.Hour {
 			busy = append(busy, a.Name)
 		}
 	}
@@ -839,8 +900,9 @@ var sessionGone = regexp.MustCompile(`(?i)no conversation found|session[^\n]*not
 
 // chatPending are the human's messages to who, the Team ("team") or an agent, that it has not
 // answered: those after the one its last answer names, or rota's line that answers for it (the
-// Team could not answer, or is off; the agent is not at work, went back to its work, or its shift
-// ended); also what came while it answered. An agent's words that name none answer all before.
+// Team could not answer, or is off; the agent went back to its work, or did not answer in two
+// shifts; once, that an agent was not at work, when its mail got them); also what came while it
+// answered. An agent's words that name none answer all before.
 func chatPending(msgs []ChatMsg, who string) (asked []ChatMsg) {
 	to := who
 	if who == "team" {
@@ -1182,12 +1244,12 @@ PROPOSE {"do": "brief", "replace": "<a passage of brief.md, word for word>", "wi
 PROPOSE {"new": true, "agent": "<name>", "role": "<what it does, as its role>", "set": {...}, "why": "..."}
 PROPOSE {"do": "archive" | "unarchive" | "star" | "unstar" | "read" | "unread" | "unsnooze" | "focused" | "other", "threads": ["<id>", ...], "why": "..."}   (the human's mail; focused and other move a thread there)
 PROPOSE {"do": "snooze", "threads": ["<id>", ...], "until": "<a time, as 2026-11-09T09:00:00+01:00>", "why": "..."}
-PROPOSE {"do": "inbox", "set": {"notify": "focused" | "all" | "off", "focus": "<1 to 20>", "split": "true" | "false", "after": "next" | "list"}, "why": "..."}   (how the human's inbox works, and what their phone hears of)
+PROPOSE {"do": "inbox", "set": {"notify": "focused" | "all" | "off", "chat": "all" | "off", "focus": "<1 to 20>", "split": "true" | "false", "after": "next" | "list"}, "why": "..."}   (how the human's inbox works; what their devices hear of their mail (notify) and, at once, of the chat (chat))
 A proposal is one line. A value is one line; an empty one takes the default.
 
 How the organizer chooses who runs, which is how the team comes with each question: it starts one shift at a time, at each look. An agent may start when it is due (its interval since its last run, or a retry's wait), in its hours, not paused, with work to do, its host ready, and the pool lets it: the only hard limit is the team pool, team_pct of Claude's weekly window, used by the period it paces (a week, or a seventh of it each day), split into fair shares, each agent's its weight's part of all the enabled agents' weights; what a higher-priority agent (a lower number) can still use of its share is held for it. An agent whose share is used starts only on what is free: what the others cannot use before the pool fills again, when one of its shifts fits in it; otherwise it waits until the pool fills again. Of those that may start, the human's requests go first, in the order asked but one whose agent owns the hours it is in before the others; then an agent in hours it owns; then the one that has waited longest. While Claude's usage cannot be read, no shift starts; while the team is paused, only what the human asks for. Run now, the human's request (PROPOSE "run"), skips the agent's interval, a retry's wait, its hours, its pause, its waiting for work and what is held for higher priority, and puts it ahead of every agent the human did not ask for; it skips neither the team pool nor its own fair share nor its host: such an agent still waits. Each agent's line says whether it may start, or why it waits and when it runs next, what a Run now would do, and a run asked for that has not started; rota.log is the organizer's own log, day by day. So before you say an agent will run, read its line: when it waits, say why and when, and what would let it start sooner, which is the human's to decide: a larger weight for it (its share), less for others, or a larger team_pct; never propose a run as if it starts when its line says it waits, and never blame the organizer for what its line explains. What you proposed comes back with what rota answered when it was applied: read it, and say it.
 
-Each agent has its own chat with the human, beside this one, which it is in while it works: there the human talks with it, and it answers itself; in this chat, the human's @<name> writes to it there. Read an agent's chat with your agent_chat tool when what they said, or how their talk goes, matters to what the human asks you; the team as it comes with each question says which agent talks with the human now. Never speak as an agent: say what its journal or its chat says it did.`
+Each agent has its own chat with the human, beside this one: there the human talks with it, and it answers itself, there and never in the mail: while it works, after the step it is on; when it is not at work, first thing in its next shift, which the human's words ask for. In this chat, the human's @<name> writes to it there. Read an agent's chat with your agent_chat tool when what they said, or how their talk goes, matters to what the human asks you; the team as it comes with each question says which agent talks with the human now. Never speak as an agent: say what its journal or its chat says it did.`
 
 // sessionVars are what a Claude Code session puts in the environment of what it runs: its id, its
 // messaging socket and token. A claude rota starts gets none of them: an agent must not reach the

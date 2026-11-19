@@ -53,6 +53,8 @@ type tray struct {
 	qids       string               // the questions the menu was built for
 	notified   map[string]bool      // questions with a notification up
 	answered   map[string]time.Time // agents' answers with a notification up, by its id: answerPrefix and the review's page
+	chatTold   time.Time            // the newest of what was said in the chat that the Mac heard of, or when the menu started
+	chats      map[string]time.Time // chats with a notification up, by its id (chatPrefix and the chat): what it was said at
 	off        bool                 // macOS has rota's notifications turned off
 }
 
@@ -69,7 +71,7 @@ type agentMenu struct {
 // the menu runs for the organizer and the pages; inBundle says it runs as rota.app.
 func Run(ctx context.Context, root, conf, exe string, inBundle bool) (err error) {
 	tr := &tray{ctx: ctx, root: root, conf: conf, exe: exe, notified: map[string]bool{}, answered: map[string]time.Time{},
-		self: core.WatchSelfUpdate()}
+		chatTold: time.Now(), chats: map[string]time.Time{}, self: core.WatchSelfUpdate()}
 	active = tr
 	if pid, err := strconv.Atoi(os.Getenv(organizerEnv)); err == nil { // the menu this one replaced started it
 		os.Unsetenv(organizerEnv)
@@ -283,8 +285,8 @@ func (tr *tray) refresh() {
 	ids, open := "", map[string]bool{}
 	for _, q := range tr.questions {
 		ids, open[q.ID] = ids+q.ID+",", true
-		if !tr.notified[q.ID] {
-			tr.notified[q.ID] = notifyQuestion(q)
+		if !tr.notified[q.ID] { // as the human chose to hear of their mail: what they do not, is not shown later either
+			tr.notified[q.ID] = !tr.t.Notifies(q.Importance) || notifyQuestion(q)
 		}
 	}
 	for id := range tr.notified {
@@ -297,7 +299,7 @@ func (tr *tray) refresh() {
 	for _, a := range answers { // a newer answer on the same pull request takes the last one's place
 		id := answerPrefix + a.Page()
 		unseen[id] = true
-		if !tr.answered[id].Equal(a.At) && notifyAnswer(id, a) {
+		if !tr.answered[id].Equal(a.At) && (!tr.t.Notifies("") || notifyAnswer(id, a)) {
 			tr.answered[id] = a.At
 		}
 	}
@@ -307,6 +309,7 @@ func (tr *tray) refresh() {
 			delete(tr.answered, id)
 		}
 	}
+	tr.tellChat()
 	off := len(tr.questions)+len(answers) > 0 && notificationsOff() // also checks again whether they are allowed
 	if names != tr.names || ids != tr.qids || off != tr.off {
 		tr.qids, tr.off = ids, off
@@ -463,6 +466,29 @@ func (tr *tray) note(agent string) {
 }
 
 // answerID is answer for the question with that id, if it is still open.
+// tellChat shows what agents and the Team said the human in the chat that they did not see within
+// a few seconds, the newest of each chat, as they chose to hear of the chat; and takes away a
+// notification whose chat they saw since, here or on another device.
+func (tr *tray) tellChat() {
+	if !tr.t.ChatQuiet(time.Minute) {
+		newest := map[string]core.ChatMsg{}
+		for _, m := range tr.t.ChatToTell(tr.chatTold, time.Now()) {
+			newest[m.With()], tr.chatTold = m, m.At
+		}
+		for with, m := range newest {
+			if notifyChat(m) {
+				tr.chats[chatPrefix+with] = m.At
+			}
+		}
+	}
+	for id, at := range tr.chats {
+		if !tr.t.ChatSeenAt(strings.TrimPrefix(id, chatPrefix)).Before(at.Truncate(time.Millisecond)) {
+			withdraw(id)
+			delete(tr.chats, id)
+		}
+	}
+}
+
 func (tr *tray) answerID(id string) {
 	tr.mu.Lock()
 	qs := tr.t.Questions()

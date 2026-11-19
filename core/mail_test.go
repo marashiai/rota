@@ -240,14 +240,14 @@ func TestAnArchivedThreadComesBackWithNews(t *testing.T) {
 
 func TestMailPrefs(t *testing.T) {
 	_, team := mailTeam(t)
-	p := MailPrefs{Split: false, Focus: 3, After: "list", Notify: "all"}
+	p := MailPrefs{Split: false, Focus: 3, After: "list", Notify: "all", Chat: "off"}
 	if err := team.SetMailPrefs(p); err != nil {
 		t.Fatal(err)
 	}
 	if got := team.Mail(time.Now()).Prefs; got != p {
 		t.Fatalf("prefs %+v", got)
 	}
-	for _, bad := range []MailPrefs{{Focus: 0, After: "next", Notify: "all"}, {Focus: 5, After: "back", Notify: "all"}, {Focus: 5, After: "next", Notify: "loud"}} {
+	for _, bad := range []MailPrefs{{Focus: 0, After: "next", Notify: "all"}, {Focus: 5, After: "back", Notify: "all"}, {Focus: 5, After: "next", Notify: "loud"}, {Focus: 5, After: "next", Notify: "all", Chat: "loud"}} {
 		if team.SetMailPrefs(bad) == nil {
 			t.Errorf("%+v is accepted", bad)
 		}

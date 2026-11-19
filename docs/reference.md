@@ -399,7 +399,7 @@ alike. It is where you use rota:
   agent's, those at work first, each online or offline, a dot on one with something you have not seen
   and a blinking light on one answering now. What you write goes to the chat's own Team or agent, with
   no `@` needed; in the Team's chat, `@` and an agent's name writes to that agent instead, and opens its
-  chat. An agent's page opens its chat too (Chat now). On a computer, its left and top edges and the
+  chat. An agent's page opens its chat too. On a computer, its left and top edges and the
   corner between them drag, as the panes' dividers do. The Team, rota itself, may do anything within
   rota's scope, and nothing outside it: that is its one rule. The scope is rota itself, its agents, and
   their work and what they did: the team folder, all of it (settings, roles, journals, reports, logs,
@@ -439,11 +439,15 @@ alike. It is where you use rota:
   whether there is anything else and you say no), when neither of you says anything for `talk_minutes`
   (5), or with its shift; then it goes back to its work where it left it, and the chat says so. Your
   first words tell it what to do even when your team's own `brief.md` predates talks. A new rota waits
-  for a talk to end before it takes over the running shift. Offline, when it is not its turn, it gets
-  your words as a message in its mail, which it reads at its next run. The chat shows each agent online,
-  talking with you, or offline under its header, and why and until when it is offline; as you write `@`
-  and a name it says which, and where your words go. An agent's page says it too, with Chat now while it
-  is online.
+  for a talk to end before it takes over the running shift. An agent answers you in its chat, never in
+  your mail, and asks you there too. Offline, when it is not its turn, your words wait for its next
+  shift, which answers them first thing: they ask for that shift, as a message does, the chat says so,
+  and it shows the agent typing as that shift begins. One at work on another machine, away from the
+  chat, gets them after its current step and answers as its shift there ends (a line `@human say:
+  <answer>` in its final message). Words a shift ended before it answered go to its next shift, once,
+  and the chat says so. The chat shows each agent online, talking with you, or offline under its header,
+  and why and until when it is offline; as you write `@` and a name it says which, and where your words
+  go. An agent's page says it too, with Chat now while it is online, and Chat while it is not.
 - **Team**: whether the team works, the team pool and Claude's usage, and every agent, with Pause or
   Resume, and "Rebalance the agents' shares" (see "Rebalancing the shares"). Under each agent that does
   not run now though it could, its list and its page say why, by the organizer's own reasons: another
@@ -453,9 +457,9 @@ alike. It is where you use rota:
   Message, Run now or Stop, Pause or Resume; its Messages; its Runs, each with its report and its
   transcript (following a running one), and the reports it keeps for you; its Role, edited in place; and
   its Settings: on or off, when it runs, Importance, model, and Advanced with every setting.
-- **Settings**: how the inbox behaves, notifications on each device, the team's budget, the team's
-  repositories, which you add and remove there (see "Repositories"), Open on my phone, and Advanced
-  with every `rota.conf` setting.
+- **Settings**: how the inbox behaves, notifications (Chat and Messages, and each device), the team's
+  budget, the team's repositories, which you add and remove there (see "Repositories"), Open on my
+  phone, and Advanced with every `rota.conf` setting.
 
 In the pages, a switch or a choice outside Advanced applies as you tap it. What you change under
 Advanced, in a role or in the shares waits for Save (Apply, for the shares): a bar at the bottom of the
@@ -494,12 +498,15 @@ With `web: tailscale`, rota also has Tailscale serve the pages over HTTPS at thi
 (`tailscale serve`, with Tailscale's certificate; MagicDNS and HTTPS certificates must be on for the
 tailnet), and the agents' links use that address. Something else Tailscale already serves on port 443 is
 left alone. In Settings there, "Turn on" under This device registers it for notifications (`push.json` in
-the team folder): when an agent asks you something or answers your review notes, each device gets a push
-signed with the team's key (`secrets/web-push-key.pem`, made once), as Settings says which you hear of. The
-push carries no content: the phone fetches the open questions and the answers you have not seen from the
-pages over the tailnet and shows the newest; off the tailnet it only says an agent asks or answers you.
-Tapping it opens the question, or the review. On an iPhone, add the page to the Home Screen first (Share,
-Add to Home Screen) and turn notifications on from there; Android's Chrome needs nothing extra.
+the team folder), and each device gets a push signed with the team's key (`secrets/web-push-key.pem`, made
+once), as Settings › Notifications says you hear of each: Chat, what is synchronous and needs you now,
+when an agent or the Team says you something in the chat that you did not see within ten seconds on any
+device (All, or None); Messages, your mail, which you read when you choose, when an agent asks you
+something or answers your review notes (Focused: all but the unimportant; All; or None). The push carries
+no content: the phone fetches what to show from the pages over the tailnet (`notify.json`) and shows the
+newest; off the tailnet it only says an agent asks or tells you something. Tapping it opens the chat, the
+question, or the review. On an iPhone, add the page to the Home Screen first (Share, Add to Home Screen)
+and turn notifications on from there; Android's Chrome needs nothing extra.
 
 ## Reviewing pull requests
 
@@ -548,8 +555,10 @@ GOBIN=~/.local/bin go install ./gloss/cmd/gloss     # from this checkout
 then the agent that works, or paused, on hold or off; nothing while the team waits for its next shift.
 Each question is a notification with a field to answer it, and a menu item with an orange dot that opens
 a dialog to answer or dismiss it; an agent's answer to your review notes is a notification that opens the
-review, and goes once you opened it; macOS asks once whether rota may send notifications, and the menu
-says so when they are off.
+review, and goes once you opened it; what an agent or the Team says you in the chat, and you did not see
+within ten seconds, is a notification for that chat that opens it, and goes once you saw it. Each comes as
+Settings › Notifications says you hear of the chat and of your mail. macOS asks once whether rota may send
+notifications, and the menu says so when they are off.
 
 The menu starts with what the team does ("Next: maintainer · 09:07", "developer is working · 12 min",
 "Paused") and how much of its budget is used. Then one line per agent, those that are on first, as

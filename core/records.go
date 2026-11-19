@@ -155,10 +155,12 @@ func writeJournal(c *Config, header, text, inbox, during string, now time.Time) 
 // routeNotes delivers the "@name: message" lines of a final message to the inboxes, a note
 // about one pull request or issue ("@name repo#n: message") under that one's heading, and
 // records the "@human: question" lines as questions for the human; "@human withdraw <id>"
-// withdraws one of the agent's questions that no longer needs an answer. An agent may leave itself
-// notes about a pull request or issue, to pick up when it next works on it. A note addressed
-// to an until-done agent by another is work for it, and wakes it: the triage's "not ready",
-// say. It returns the notes it could not deliver, and why.
+// withdraws one of the agent's questions that no longer needs an answer; "@human re <id>: <answer>"
+// answers the human's message in the mail, and "@human say: <answer>" their words in the team chat,
+// from a machine where rota say does not work. An agent may leave itself notes about a pull request
+// or issue, to pick up when it next works on it. A note addressed to an until-done agent by another
+// is work for it, and wakes it: the triage's "not ready", say. It returns the notes it could not
+// deliver, and why.
 func (t *Team) routeNotes(from, text string, now time.Time) []string {
 	var undelivered []string
 	for _, m := range withdrawLine.FindAllStringSubmatch(text, -1) {
@@ -169,6 +171,11 @@ func (t *Team) routeNotes(from, text string, now time.Time) []string {
 	for _, m := range replyLine.FindAllStringSubmatch(text, -1) { // its answer to the human's message
 		if err := t.ReplyTo(from, m[1], m[2]); err != nil {
 			undelivered = append(undelivered, fmt.Sprintf("@human re %s: %v", m[1], err))
+		}
+	}
+	for _, m := range chatSaid.FindAllStringSubmatch(text, -1) { // its answer in the team chat, from where rota say does not work
+		if err := t.ChatSay(from, m[1], false); err != nil {
+			undelivered = append(undelivered, fmt.Sprintf("@human say: %v", err))
 		}
 	}
 	for _, m := range noteLine.FindAllStringSubmatch(text, -1) {

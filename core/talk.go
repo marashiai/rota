@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -20,6 +21,11 @@ import (
 // said they are done; when neither said anything for talk_minutes, as an engineer goes back to
 // work when the other went quiet; or with the shift. Then the agent goes back to its work, and
 // what waited reaches it.
+//
+// What the human writes an agent that is not at work here waits in its inbox, and its next shift
+// answers it in the chat, first thing: its brief has it, with what to do with it (chatWaits); a
+// shift on another machine answers it in its final message (chatAway). Words a shift ended before
+// it answered go back to the inbox for the next, once (chatAfterShift).
 //
 // .talk/<agent>.json is the running shift's talk, under the agent's inbox lock: whether one goes
 // on, what the human wrote in it that rota listen has not brought yet, and what it brought, which
@@ -39,6 +45,19 @@ type chatTalk struct {
 // talkBegins follows the human's first words in a talk, as the shift gets them: what to do now,
 // though the brief, far back in a long shift, says it too.
 const talkBegins = "The human is talking to you in the team chat. Stop your work now and give them your whole attention: answer with rota say <answer>, then run rota listen for their next words, and keep talking until they are done. Then end the talk with rota say --end <what you go back to>, and go back to your work where you left it."
+
+// chatWaits follows the human's words from the chat in a shift's brief, which came while the
+// agent was not at work, as talkBegins follows them as a talk begins: what to do with them, though
+// the brief says it too.
+const chatWaits = "The human wrote you in the team chat while you were not at work, and waits for your answer there: answer them first, before anything else, with rota say <answer>; for what they ask that takes longer, say there what you will do, do it, and tell them there once it is done."
+
+// chatAway follows the human's words from the chat as a shift on another machine gets them, where
+// rota say does not work.
+const chatAway = `The human wrote you in the team chat, and reads your answer there. rota say does not work on this machine: answer them with a line "@human say: <answer>" in your final message's last section, which the chat shows as your shift ends.`
+
+// chatSaid is an agent's answer in the team chat in its final message, on a machine where rota say
+// does not work: "@human say: <answer>".
+var chatSaid = regexp.MustCompile(`(?mi)^\s*(?:[-*]\s*)?@human\s+say:\s*(.+)$`)
 
 func (c *Config) talkFile(agent string) string {
 	return c.Path(filepath.Join(talkDir, agent+".json"))
@@ -219,8 +238,10 @@ func (c *Config) HeardText(h Heard) string {
 
 // sayInTalk is the agent's words in its talk, and last, its last words, which end it. Outside a
 // talk, words that answer the human's in the chat of the last talk_minutes begin one: those reached
-// the shift as it began, in its brief, and the human may be there still.
-func (c *Config) sayInTalk(agent string, last bool) error {
+// the shift as it began, in its brief, and the human may be there still; so do words that answer
+// nothing, first: the agent needs the human now (it writes the chat only for that), and waits for
+// their answer as in any talk.
+func (c *Config) sayInTalk(agent string, last, first bool) error {
 	unlock, err := c.lockInbox(agent)
 	if err != nil {
 		return err
@@ -233,7 +254,7 @@ func (c *Config) sayInTalk(agent string, last bool) error {
 	case tk.Open:
 		tk.heard(now)
 		tk.Last = now
-	case !last && c.Steerable(agent) && c.wroteTo(agent, now.Add(-c.talkQuiet())):
+	case !last && c.Steerable(agent) && (first || c.wroteTo(agent, now.Add(-c.talkQuiet()))):
 		tk = chatTalk{Open: true, Since: now, Last: now, Heard: tk.Heard}
 	default:
 		return nil
@@ -252,25 +273,64 @@ func (c *Config) wroteTo(agent string, since time.Time) bool {
 	return false
 }
 
-// endTalk is the shift's end: the talk with it, if it goes on, and what the human said in its
-// talks, read. When they talked, or the human waits for its answer, the chat says that what they
-// wrote it waits for its next run.
-func (t *Team) endTalk(agent string) []Note {
-	var heard []Note
-	open := false
+// endTalk is the shift's end: the talk with it ends, if it goes on, which it says; and what the
+// human said in its talks, read.
+func (t *Team) endTalk(agent string) (heard []Note, talked bool) {
 	if unlock, err := t.lockInbox(agent); err == nil {
 		tk := t.loadTalk(agent)
-		heard, open = tk.Heard, tk.Open
+		heard, talked = tk.Heard, tk.Open
 		os.Remove(t.talkFile(agent))
 		unlock()
 	}
-	switch asked := chatPending(t.Chat(400), agent); {
-	case len(asked) > 0:
-		t.sayFor(agent, agent+"'s shift ended before it answered you. It reads what you wrote at its next run.")
-	case open:
-		t.sayFor(agent, agent+"'s shift ended. What you write it now waits for its next run.")
+	return heard, talked
+}
+
+// chatAfterShift is the chat once a shift is recorded, its answers in its final message too. What
+// the human wrote the agent there that it did not answer goes back to its inbox, unless it is still
+// there, for its next shift to answer here, first thing; the human's words ask for that shift, and
+// the chat says so, answering nothing: the next shift does. Once: when that shift did not answer
+// either, the chat says so, answering for it, and gives them to no other. A talk the shift's end cut
+// short, the chat says it ended. A shift that resumes gets them back as it resumes, and the chat says
+// nothing.
+func (t *Team) chatAfterShift(agent string, talked, resumes bool) {
+	msgs := t.Chat(400)
+	asked := chatPending(msgs, agent)
+	next := agent + "'s shift ended before it answered you: its next shift answers you here, first thing."
+	again := len(asked) > 0 && t.saidSince(msgs, agent, next, asked[0].At)
+	if len(asked) > 0 && !again {
+		err := t.changeNotes(agent, func(notes []Note) []Note {
+			for _, m := range asked {
+				n := Note{ID: chatNoteID(m.ID), At: m.At, From: "human", Text: chatWords(m.Text, agent), Chat: true}
+				if slices.ContainsFunc(notes, func(x Note) bool { return x.ID == n.ID || x.Chat && x.Text == n.Text }) {
+					continue // it never reached the shift
+				}
+				at := slices.IndexFunc(notes, func(x Note) bool { return x.At.After(n.At) }) // in its place among those that came after it
+				if at < 0 {
+					at = len(notes)
+				}
+				notes = slices.Insert(notes, at, n)
+			}
+			return notes
+		})
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "warn: what the human wrote in the chat does not reach the agent's next shift:", err)
+		}
 	}
-	return heard
+	switch {
+	case resumes:
+	case again:
+		t.sayFor(agent, agent+"'s next shift did not answer you either. Write it again when you still need the answer.")
+	case len(asked) > 0:
+		t.chatAppend(ChatMsg{Text: next, To: agent})
+		t.wakeForHuman(agent)
+	case talked:
+		t.sayFor(agent, agent+"'s shift ended, and your talk with it: what you write it now, its next shift answers here.")
+	}
+}
+
+// saidSince says whether rota said line in the agent's chat since then.
+func (t *Team) saidSince(msgs []ChatMsg, agent, line string, since time.Time) bool {
+	return slices.ContainsFunc(msgs, func(m ChatMsg) bool { return m.From == "" && m.To == agent && m.Text == line && !m.At.Before(since) })
 }
 
 // chatNote puts the human's words from the chat in the agent's inbox, and, in a talk, before rota

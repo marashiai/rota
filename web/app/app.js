@@ -498,7 +498,8 @@ function settingsPage() {
     <div class="fld"><span>Focused shows up to</span><span class="mini">${[3, 5, 7, 10].map(n => `<button class="${p.focus === n ? 'on' : ''}" data-pref="focus" data-v="${n}">${n}</button>`).join('')}</span></div>
     <div class="fld"><span>After you answer or archive</span><span class="mini">${[['next', 'Next'], ['list', 'List']].map(([v, l]) => `<button class="${p.after === v ? 'on' : ''}" data-pref="after" data-v="${v}">${l}</button>`).join('')}</span></div></div>
   <div class="gh2">Notifications</div><div class="card">
-    <div class="fld"><span>Notify me about</span><span class="mini">${[['focused', 'Focused'], ['all', 'All'], ['off', 'None']].map(([v, l]) => `<button class="${p.notify === v ? 'on' : ''}" data-pref="notify" data-v="${v}">${l}</button>`).join('')}</span></div>
+    <div class="fld"><span>Chat<span class="small fsub">What an agent or the Team says you there, at once, unless you saw it</span></span><span class="mini">${[['all', 'All'], ['off', 'None']].map(([v, l]) => `<button class="${(p.chat || 'all') === v ? 'on' : ''}" data-pref="chat" data-v="${v}">${l}</button>`).join('')}</span></div>
+    <div class="fld"><span>Messages<span class="small fsub">Your mail, which you read when you choose</span></span><span class="mini">${[['focused', 'Focused'], ['all', 'All'], ['off', 'None']].map(([v, l]) => `<button class="${p.notify === v ? 'on' : ''}" data-pref="notify" data-v="${v}">${l}</button>`).join('')}</span></div>
     <div class="fld" style="display:block"><div>This device</div><div class="small">${pushText()}</div>${pushButtons()}</div></div>
   ${teamSettings()}
   <div class="gh2">More</div><div class="card">
@@ -555,8 +556,8 @@ function agentPage() {
   let h = `<div class="prof"><button class="lnk" data-view="team">${I.back}Team</button>`;
   if (!A) return h + `</div>` + loadingText(name);
   const working = A.state === 'working', n = esc(name), online = CHAT.here.includes(name); // online: in the chat, as the chat routes it
-  h += `<div class="top">${av(name, 64, true)}<div><h2>${n}</h2><div class="ln">${STATE[A.state] ? `<span class="state st-${esc(A.state)}">${esc(STATE[A.state])}</span> ` : ''}${esc(A.line || '')}</div>${A.why ? `<div class="wait">${esc(A.why)}</div>` : ''}${!online && CHAT.agents.length ? `<div class="pline"><i></i>Offline: a message waits for its next run</div>` : ''}</div></div>
-    <div class="acts">${online ? `<button class="btn p" data-cwith="${n}">${I.chat}Chat now</button>` : ''}<button class="btn${online ? '' : ' p'}" data-composeto="${n}">${I.pen}Message</button>${working
+  h += `<div class="top">${av(name, 64, true)}<div><h2>${n}</h2><div class="ln">${STATE[A.state] ? `<span class="state st-${esc(A.state)}">${esc(STATE[A.state])}</span> ` : ''}${esc(A.line || '')}</div>${A.why ? `<div class="wait">${esc(A.why)}</div>` : ''}${!online && CHAT.agents.length ? `<div class="pline"><i></i>Offline: it answers your chat at its next run</div>` : ''}</div></div>
+    <div class="acts"><button class="btn p" data-cwith="${n}">${I.chat}${online ? 'Chat now' : 'Chat'}</button><button class="btn" data-composeto="${n}">${I.pen}Message</button>${working
       ? `<button class="btn" data-teamact="cancel" data-arg="${n}">${I.stop}Stop</button>` : `<button class="btn" data-teamact="run" data-arg="${n}">${I.play}Run now</button>`}${A.paused
       ? `<button class="btn" data-teamact="resume" data-arg="${n}">${I.play}Resume</button>` : `<button class="btn" data-teamact="pause" data-arg="${n}">${I.pause}Pause</button>`}</div>
     ${working && A.live ? `<div class="live">$ ${esc(A.live)}</div>` : ''}
@@ -826,11 +827,11 @@ function repoTeam(name) {
   } : null);
 }
 // ---------- the team chat: a chat with the Team, always there, and one with each agent ----------
-// An agent is online, in its chat, while it works: its turn; offline, what the human writes it goes
-// to its mail, and it reads it at its next run. The chats say who is which, and why; the window shows
-// one at a time (CHAT.with), and each message is in one (its with).
+// An agent is online, in its chat, while it works: its turn; offline, what the human writes it waits
+// for its next run, which answers it there first. The chats say who is which, and why; the window
+// shows one at a time (CHAT.with), and each message is in one (its with).
 // It reads /api/chat whenever the team folder changes; what the human writes goes to /api/act.
-const CHAT = {msgs: [], busy: [], here: [], agents: [], team: true, tag: null, asked: 0, shown: 0, local: 0, applying: {}, with: 'team', seen: {}, drafts: {}}; // asked, shown: readings, in order: an older one is not shown over a newer; applying: cards tapped, until the server says how they stand; with: the chat open, "team" or an agent's name; seen: by chat, when the human last had it open; drafts: what was typed in each chat but the open one
+const CHAT = {msgs: [], busy: [], here: [], agents: [], team: true, tag: null, asked: 0, shown: 0, local: 0, applying: {}, with: 'team', seen: {}, told: {}, drafts: {}}; // asked, shown: readings, in order: an older one is not shown over a newer; applying: cards tapped, until the server says how they stand; with: the chat open, "team" or an agent's name; seen: by chat, when the human last had it open; told: by chat, up to which message the server heard they saw it; drafts: what was typed in each chat but the open one
 try { CHAT.with = localStorage.getItem('rota.chat') || 'team'; const s = JSON.parse(localStorage.getItem('rota.chatSeen')); if (s && typeof s === 'object') CHAT.seen = s; } catch (e) { /* no storage: the Team's chat, all seen from now */ }
 async function loadChat() {
   const n = ++CHAT.asked;
@@ -864,9 +865,17 @@ const lastAt = w => Math.max(0, ...chatMsgs(w).map(m => Date.parse(m.at) || 0));
 // unread: what others said in a chat since the human last had it open on this device
 const unread = w => chatMsgs(w).some(m => m.from !== 'you' && (Date.parse(m.at) || 0) > (CHAT.seen[w] || 0));
 const chatDot = () => CHAT.busy.length > 0 || [...new Set(CHAT.msgs.map(chatOf))].some(unread); // on the chat's button: someone answers, or something new
+// markSeen: the open chat is seen up to its newest message while the human can see it: on this
+// device, for its dots, and on the server, so that no device of theirs is told of what they saw
 function markSeen() {
-  const at = chatShown() ? lastAt(CHAT.with) : 0;
-  if (at > (CHAT.seen[CHAT.with] || 0)) { CHAT.seen[CHAT.with] = at; keepSeen(); }
+  if (!chatShown() || document.visibilityState !== 'visible') return;
+  const w = CHAT.with, last = chatMsgs(w).filter(m => !m.local).reduce((a, m) => !a || (Date.parse(m.at) || 0) >= (Date.parse(a.at) || 0) ? m : a, null);
+  const at = last ? Date.parse(last.at) || 0 : 0;
+  if (at > (CHAT.seen[w] || 0)) { CHAT.seen[w] = at; keepSeen(); }
+  if (at > (CHAT.told[w] || 0)) { // as the server has the time: to the nanosecond
+    CHAT.told[w] = at;
+    fetch('/api/act', {method: 'POST', body: new URLSearchParams({action: 'chat-seen', arg: w, text: last.at, token: TOKEN})}).catch(() => { CHAT.told[w] = 0; });
+  }
 }
 function keepSeen() { try { localStorage.setItem('rota.chatSeen', JSON.stringify(CHAT.seen)); } catch (e) { /* this browser keeps it until the page reloads */ } }
 // switchChat opens another chat in the window; what was typed in each stays with it
@@ -883,9 +892,9 @@ function hereText() {
   return w.length ? `${w.join(', ')} ${w.length > 1 ? 'are' : 'is'} online` : 'No agent is online';
 }
 // chatList: the chats: the Team's, then each agent's, the agents at work first, as online (at work:
-// it stops its work to talk with you, or talks with you now) or offline (not its turn: what you write
-// it goes to its mail); the open one marked, a dot on one with something you have not seen, and the
-// light of one answering blinking. A tap opens it.
+// it stops its work to talk with you, or talks with you now) or offline (not its turn: it answers
+// what you write it at its next run); the open one marked, a dot on one with something you have not
+// seen, and the light of one answering blinking. A tap opens it.
 function chatList() {
   const chats = [{name: 'team'}, ...[...CHAT.agents].sort((a, b) => b.online - a.online)];
   return `<div class="cwp" role="tablist" aria-label="Chats">${chats.map(p => {
@@ -935,8 +944,8 @@ async function applyCard(id) {
 // and its Team or agent typing while it answers
 function chatBody() {
   const msgs = chatMsgs(), a = chatAgent(), busy = CHAT.busy.includes(CHAT.with);
-  if (!msgs.length && !busy) return `<div class="sys">${a ? (a.online ? `${esc(a.name)} is ${esc(a.note)}.` : `${esc(a.name)} is offline, ${esc(a.note)}. What you write it here waits in its mail until its next run.`)
-    : `${CHAT.team ? 'Ask the Team what anyone is doing, or tell it what to change. ' : ''}To talk with an agent, open its chat above, or write @ and its name: online, it stops its work to talk with you; offline, it reads it at its next run.`}</div>`;
+  if (!msgs.length && !busy) return `<div class="sys">${a ? (a.online ? `${esc(a.name)} is ${esc(a.note)}.` : `${esc(a.name)} is offline, ${esc(a.note)}. What you write it here, it answers here at its next run, first thing.`)
+    : `${CHAT.team ? 'Ask the Team what anyone is doing, or tell it what to change. ' : ''}To talk with an agent, open its chat above, or write @ and its name: online, it stops its work to talk with you; offline, it answers you there at its next run.`}</div>`;
   let h = '', prev = null;
   for (const m of msgs) {
     if (!m.from) { prev = null; h += `<div class="sys">${m.html}</div>`; continue; }
@@ -955,7 +964,7 @@ function chatChips() {
   return `<div class="cwc">${chips.map(c => `<button data-csay="${esc(c)}">${esc(c)}</button>`).join('')}</div>`;
 }
 // mentions, in the Team's chat: after @, the agents to name, the online ones first, each online or
-// offline; once one is named, where what is written goes: to it, in its own chat, or to its mail
+// offline; once one is named, that what is written goes to its own chat, and when it answers there
 function mentionsHTML() {
   if (CHAT.with !== 'team') return '';
   const text = S.vals.chat || '', m = text.match(/(?:^|\s)@([A-Za-z0-9_.-]*)$/);
@@ -966,7 +975,7 @@ function mentionsHTML() {
   const a = chatTo(text);
   if (!a || a === 'team') return '';
   return a.online ? `<div class="cwhint on">${esc(a.name)} is ${esc(a.note)}. This opens your chat with it.</div>`
-    : `<div class="cwhint">${esc(a.name)} is offline, ${esc(a.note)}. It reads this then.</div>`;
+    : `<div class="cwhint">${esc(a.name)} is offline, ${esc(a.note)}: it answers at its next run. This opens your chat with it.</div>`;
 }
 // chatTo: where what the human writes goes, as the server reads it: to the agent its first @ names,
 // the name as it is, or to the Team; null when that names no agent
@@ -1276,10 +1285,14 @@ function composeHTML() {
 
 let shownOpen = null; // the thread the phone showed last: it slides in only when it opens
 const FOLDERS = ['inbox', 'reviews', 'waiting', 'starred', 'snoozed', 'sent', 'all', 'issues']; // the mail's
-// route opens the page the address names: #team, #settings, #agent:<name>, #run:<id>
+// route opens the page the address names: #team, #settings, #agent:<name>, #run:<id>; #chat=<name> opens a chat
 function route() {
   let h = '';
   try { h = decodeURIComponent(location.hash.slice(1)); } catch (e) { return; } // not an address of the app's
+  if (/^chat=[A-Za-z0-9_.-]+$/.test(h)) { // from a notification: that chat, over whatever page is open
+    history.replaceState(history.state, '', location.pathname + location.search);
+    openChat(undefined, h.slice(5)); return;
+  }
   if (FOLDERS.includes(h)) { // a folder of the mail, from an old page's link
     if (!leaveOK()) { writeStep(false, placeNow(), shown); return; }
     history.replaceState(null, '', location.pathname); S.view = h; S.open = null; S.ptab = 'mail'; S.q = null; S.f = {}; S.keepRead.clear(); S.sel.clear();

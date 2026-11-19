@@ -140,7 +140,8 @@ func TestLivePagesUpdateInPlaceWhenTheTeamChanges(t *testing.T) {
 }
 
 // The app offers notifications for this device: a service worker, a manifest for a phone's home
-// screen, the team's key, the open questions the worker shows, and posts that need the page's token.
+// screen, the team's key, what the worker shows (an open question here), the open questions a worker
+// from before shows, and posts that need the page's token.
 func TestThePagesOfferNotificationsForQuestions(t *testing.T) {
 	root, srv := team(t)
 	write(t, filepath.Join(root, "questions", "20261029-1700-alpha-ab12.json"), `{"agent":"alpha","asked":"2026-10-29T17:00:00Z","text":"Is production on gpt-5?"}`)
@@ -153,8 +154,11 @@ func TestThePagesOfferNotificationsForQuestions(t *testing.T) {
 	resp, _ := http.Get(srv.URL + "/sw.js")
 	b, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
-	if resp.Header.Get("Content-Type") != "application/javascript" || !strings.Contains(string(b), "showNotification") || !strings.Contains(string(b), "/questions.json") {
+	if resp.Header.Get("Content-Type") != "application/javascript" || !strings.Contains(string(b), "showNotification") || !strings.Contains(string(b), "/notify.json") {
 		t.Fatalf("the service worker: %s", resp.Header.Get("Content-Type"))
+	}
+	if body := get(t, srv, "/notify.json"); !strings.Contains(body, `"title":"alpha asks you"`) || !strings.Contains(body, `"body":"Is production on gpt-5?"`) || !strings.Contains(body, `"url":"/#questions"`) {
+		t.Fatalf("what the worker shows: %s", body)
 	}
 	if body := get(t, srv, "/manifest.webmanifest"); !strings.Contains(body, `"display": "standalone"`) || !strings.Contains(body, "/mark-512.png") {
 		t.Fatal("a manifest a phone can install from")
@@ -382,7 +386,8 @@ func TestServeStopsWithItsContext(t *testing.T) {
 }
 
 // The phone is told of an agent's answer the human has not seen: the worker shows the newest of
-// the questions and those answers, and a tap opens the review.
+// what the human hears of, which the pages say (notify.json), and a tap opens the review; a worker
+// from before reads the answers themselves.
 func TestThePhoneHearsOfAnswers(t *testing.T) {
 	root, srv := team(t)
 	write(t, filepath.Join(root, ".open.json"), `{"time":"`+time.Now().Format(time.RFC3339)+`","repos":{"o/app":{"1":{"title":"one","pr":true,`+
@@ -391,8 +396,11 @@ func TestThePhoneHearsOfAnswers(t *testing.T) {
 		!strings.Contains(body, `"name":"app#1"`) || !strings.Contains(body, `"page":"/review/o/app/1/"`) {
 		t.Fatalf("the answers the human has not seen: %s", body)
 	}
-	if body := get(t, srv, "/sw.js"); !strings.Contains(body, `get("/answers.json")`) || !strings.Contains(body, `" answered you on "`) {
-		t.Fatalf("the worker shows answers too: %s", body)
+	if body := get(t, srv, "/sw.js"); !strings.Contains(body, `fetch("/notify.json"`) {
+		t.Fatalf("the worker shows what the pages say: %s", body)
+	}
+	if body := get(t, srv, "/notify.json"); !strings.Contains(body, `"title":"dev answered you on app#1"`) || !strings.Contains(body, `"url":"/review/o/app/1/"`) {
+		t.Fatalf("the newest of what the human hears of: %s", body)
 	}
 	tm, _ := core.Open(root, "rota.conf")
 	tm.SeenReview("o/app", 1, time.Date(2026, 11, 5, 12, 0, 1, 0, time.UTC))
@@ -588,8 +596,11 @@ func TestTheAppReadsAndActsOnTheMail(t *testing.T) {
 	if code, out := act(url.Values{"token": {token}, "action": {"explode"}, "id": {"pr:o/app#1"}}); code != 400 || out["error"] == "" {
 		t.Fatalf("nonsense: %d %v", code, out)
 	}
-	if code, _ := act(url.Values{"token": {token}, "action": {"prefs"}, "arg": {`{"split":false,"focus":3,"after":"list","notify":"all"}`}}); code != 200 {
+	if code, _ := act(url.Values{"token": {token}, "action": {"prefs"}, "arg": {`{"split":false,"focus":3,"after":"list","notify":"all","chat":"off"}`}}); code != 200 {
 		t.Fatalf("prefs: %d", code)
+	}
+	if code, _ := act(url.Values{"token": {token}, "action": {"prefs"}, "arg": {`{"split":false,"focus":3,"after":"list","notify":"all","chat":"loud"}`}}); code != 400 {
+		t.Fatal("the chat's notifications are all or off")
 	}
 	if code, out := act(url.Values{"token": {token}, "action": {"list"}, "id": {"issues"}, "repo": {"o/app"}, "order": {"oldest"}}); code != 200 {
 		t.Fatalf("what narrows Issues: %d %v", code, out)
@@ -1365,6 +1376,7 @@ func TestTheTeamChatInTheApp(t *testing.T) {
 	type chat struct {
 		Msgs []struct {
 			ID, With, From, HTML string
+			At                   time.Time
 			Change               *core.ChatChange
 		}
 		Team bool
@@ -1443,8 +1455,15 @@ func TestTheTeamChatInTheApp(t *testing.T) {
 			t.Fatalf("message %d is %q in %q's chat, want %q: %+v", i, m.From, m.With, want, c.Msgs)
 		}
 	}
-	if ths := tm.MessageThreads(); len(ths) != 1 || ths[0].To != "alpha" || ths[0].Said[0].Text != "Rebase it, please." {
-		t.Fatalf("alpha, not at work, gets it in its mail: %+v", ths)
+	if ths := tm.MessageThreads(); len(ths) != 0 || !strings.Contains(tm.NotesText(tm.Notes("alpha")), "in the team chat: Rebase it, please.\n") {
+		t.Fatalf("alpha, not at work, gets it from the chat at its next shift, not in its mail: %+v", ths)
+	}
+	at := c.Msgs[len(c.Msgs)-1].At // the page says the human saw alpha's chat up to there, as the server has the time
+	if code, _ := act(url.Values{"token": {token}, "action": {"chat-seen"}, "arg": {"alpha"}, "text": {at.Format(time.RFC3339Nano)}}); code != 200 || !tm.ChatSeenAt("alpha").Equal(at) {
+		t.Fatalf("seen: %d %v", code, tm.ChatSeenAt("alpha"))
+	}
+	if code, _ := act(url.Values{"token": {token}, "action": {"chat-seen"}, "arg": {"alpha"}, "text": {"yesterday"}}); code != 400 {
+		t.Fatal("seen up to a time")
 	}
 	resp, _ := http.Get(srv.URL + "/api/chat")
 	tag := resp.Header.Get("ETag")

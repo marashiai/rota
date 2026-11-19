@@ -135,14 +135,15 @@ developer answers in the thread. Approve when you're happy.
 
 Ask the Team what anyone is doing, or tell it what to change: it proposes the change and you apply
 it. Each agent has its own chat beside the Team's: while it works, it stops its work and talks with
-you there, its whole attention on you, and goes back to its work once you're done.
+you there, its whole attention on you, and goes back to its work once you're done. When it isn't
+working, it answers you there first thing in its next shift.
 
 <p align="center"><img src="docs/demos/chat.gif" width="860" alt="The team chat: the Team answers, and the working developer replies"></p>
 
 ### On your phone
 
-The same inbox works on your phone, with a notification when an agent asks you something
-([how](#manage-it-remotely-with-tailscale)).
+The same inbox works on your phone, with notifications: at once for what an agent or the Team says you
+in the chat, and for your mail as you choose ([how](#manage-it-remotely-with-tailscale)).
 
 <p align="center"><img src="docs/demos/phone.gif" width="300" alt="The inbox on a phone"></p>
 
@@ -163,8 +164,10 @@ machines can run its shifts. Nothing is opened to the internet.
    `https://<machine>.<tailnet>.ts.net`, and shows that address under the switch.
 4. Open that address on your phone. On an iPhone, add it to the Home Screen first (Share, Add to Home
    Screen) and open it from there. Then turn on notifications in
-   **Settings › Notifications › This device**: you get one when an agent asks you something or answers
-   your review.
+   **Settings › Notifications › This device**. Chat is what needs you now: you hear at once of what an
+   agent or the Team says you there, unless you saw it. Messages are your mail, which you read when
+   you choose: you hear of what lands in Focused (an agent asks you something or answers your review),
+   of all of it, or of none.
 
 On another computer, open the same address in a browser. For the console, SSH into the team machine
 over the tailnet and run `rota` (on a Mac, turn on Remote Login in System Settings › General › Sharing).

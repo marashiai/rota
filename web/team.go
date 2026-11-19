@@ -486,6 +486,12 @@ func (s *site) teamAct(t *core.Team, action, arg, text string) (said string, ok 
 			return "", true, err
 		}
 		said = "removed " + name
+	case "chat-seen": // arg: a chat, "team" or an agent's; text: when the newest message the human saw in it was said
+		at, perr := time.Parse(time.RFC3339Nano, text)
+		if perr != nil {
+			return "", true, fmt.Errorf("seen up to when?")
+		}
+		err = t.ChatSeen(arg, at)
 	case "chat": // text: what the human writes in the team chat; arg: the chat, an agent's, or "" for the Team's
 		root, conf := s.root, s.conf
 		_, err = t.ChatSendTo(arg, text, func() { core.WakeTeam(root, conf) })

@@ -98,8 +98,12 @@ func (t *Team) agentChat(agent string, last int) (string, bool) {
 			head = a.Name + " is at work, and talking with the human in this chat now: its work waits until they are done."
 		case p.Online:
 			head = a.Name + " is at work: what the human writes it here reaches it after the step it is on, and begins a talk."
+		case t.Steerable(a.Name):
+			head = a.Name + " is " + p.Note + ": what the human writes it here reaches it after the step it is on, and it answers here as that shift ends."
+		case a.Host != "":
+			head = a.Name + " is not at work (" + p.Note + "): what the human writes it here waits for its next shift, away from the chat, which answers here as it ends."
 		default:
-			head = a.Name + " is not at work (" + p.Note + "): what the human writes it here waits in its mail until its next run."
+			head = a.Name + " is not at work (" + p.Note + "): what the human writes it here waits for its next shift, which answers here, first thing."
 		}
 	}
 	var msgs []ChatMsg

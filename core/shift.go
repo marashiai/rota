@@ -111,6 +111,13 @@ func (t *Team) brief(a *Agent, s *schedule) (Job, map[string]string, []Note, err
 	}
 	notes := t.Notes(a.Name)
 	inbox := t.NotesText(notes)
+	if len(chatIDs(notes)) > 0 { // the human's words from the chat wait for its answer there, first thing
+		how := chatWaits
+		if remote {
+			how = chatAway
+		}
+		inbox += "\n" + how + "\n"
+	}
 	tmpl := DefaultBrief
 	if b, err := os.ReadFile(t.Path(briefFile)); err == nil {
 		tmpl = string(b)
@@ -275,7 +282,8 @@ func (t *Team) shift(ctx context.Context, s *schedule, a *Agent, u *Usage, h *hu
 	stopWatch()
 	<-steered                      // it sends nothing more
 	os.Remove(t.steerFile(a.Name)) // before record looks for notes that did not reach the shift
-	during := append(steer.during(), t.endTalk(a.Name)...)
+	heard, talked := t.endTalk(a.Name)
+	during := append(steer.during(), heard...)
 	slices.SortStableFunc(during, func(x, y Note) int { return x.At.Compare(y.At) })
 	if logFile != nil {
 		if st, _ := logFile.Stat(); st != nil && st.Size() == 0 && strings.TrimSpace(res.Output) != "" {
@@ -299,7 +307,9 @@ func (t *Team) shift(ctx context.Context, s *schedule, a *Agent, u *Usage, h *hu
 	case sessionKept || r.Status == "stopped" || r.Status == "pool" || r.Status == "hours" || r.Status == "timeout":
 		t.dropResume(a.Name)
 	}
-	return t.record(ctx, a, r, res, text, read, during, vars, s.now.Add(time.Since(began)), keep)
+	err = t.record(ctx, a, r, res, text, read, during, vars, s.now.Add(time.Since(began)), keep)
+	t.chatAfterShift(a.Name, talked, r.Status == "interrupted" && r.Session != "") // after its final message's answers
+	return err
 }
 
 // watchPool stops a running shift when the team pool runs out: it reads the weekly window as

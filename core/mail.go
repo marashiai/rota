@@ -132,10 +132,11 @@ type MailPrefs struct {
 	Split  bool   `json:"split"`  // Focused and Other; off, one inbox
 	Focus  int    `json:"focus"`  // how many Focused shows at most
 	After  string `json:"after"`  // after an answer or an archive, "next" opens the next one, "list" goes back to the list
-	Notify string `json:"notify"` // what the phone hears of: focused, all or off
+	Notify string `json:"notify"` // what the human's devices hear of the mail, which they read when they choose: focused, all or off
+	Chat   string `json:"chat"`   // what they hear of the chat, at once: all (what an agent or the Team says them there) or off
 }
 
-var defaultMailPrefs = MailPrefs{Split: true, Focus: 5, After: "next", Notify: "focused"}
+var defaultMailPrefs = MailPrefs{Split: true, Focus: 5, After: "next", Notify: "focused", Chat: "all"}
 
 // Mail is the human's mail now.
 type Mail struct {
@@ -369,14 +370,19 @@ func (c *Config) markMail(id, action, arg string, now time.Time) (was mailMark, 
 // mailPrefs is how the human likes their inbox, as they set it last.
 func (c *Config) mailPrefs() MailPrefs {
 	if s, _, _ := c.readMail(); s.Prefs != nil {
-		return *s.Prefs
+		p := *s.Prefs
+		if p.Chat == "" { // set before the chat had a setting of its own
+			p.Chat = defaultMailPrefs.Chat
+		}
+		return p
 	}
 	return defaultMailPrefs
 }
 
-// Notifies says whether the human's phone hears of something of importance (high, "" or low)
-// that needs them, as they chose: everything, what Focused shows (all but the unimportant), or
-// nothing.
+// Notifies says whether the human's devices hear of something in their mail of importance (high,
+// "" or low), as they chose: everything, what Focused shows (all but the unimportant), or nothing.
+// The mail is what they read when they choose; the chat, what needs them now, has a setting of its
+// own (NotifiesChat).
 func (c *Config) Notifies(importance string) bool {
 	switch c.mailPrefs().Notify {
 	case "off":
@@ -387,8 +393,15 @@ func (c *Config) Notifies(importance string) bool {
 	return importance != "low"
 }
 
+// NotifiesChat says whether the human's devices hear at once of what an agent or the Team says them
+// in the chat, which they have not seen, as they chose.
+func (c *Config) NotifiesChat() bool { return c.mailPrefs().Chat != "off" }
+
 // SetMailPrefs keeps how the human likes their inbox.
 func (c *Config) SetMailPrefs(p MailPrefs) error {
+	if p.Chat == "" { // a page from before the chat had a setting of its own
+		p.Chat = c.mailPrefs().Chat
+	}
 	if err := p.check(); err != nil {
 		return err
 	}
@@ -404,6 +417,8 @@ func (p MailPrefs) check() error {
 		return fmt.Errorf("after an answer: next or list")
 	case p.Notify != "focused" && p.Notify != "all" && p.Notify != "off":
 		return fmt.Errorf("notify about focused, all or off")
+	case p.Chat != "all" && p.Chat != "off":
+		return fmt.Errorf("notify about the chat: all or off")
 	}
 	return nil
 }

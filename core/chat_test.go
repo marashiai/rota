@@ -31,9 +31,10 @@ func lastChat(t *testing.T, team *Team) ChatMsg {
 }
 
 // The human writes to the Team, which is woken to answer; to an agent at work here, whose shift
-// reads it after its current step as a note from the chat; or to one that is not at work, which
-// gets it as a message in the mail, and the chat says so. An agent that is not one is refused, and
-// only an agent says something in the chat as itself: never as the Team or the human.
+// reads it after its current step as a note from the chat; or to one that is not at work, whose
+// next shift gets it from the chat, not the mail, and answers it there: it asks for that shift,
+// and the chat says so, once. An agent that is not one is refused, and only an agent says
+// something in the chat as itself: never as the Team or the human.
 func TestTheHumanWritesTheTeamOrAnAgent(t *testing.T) {
 	root, team := chatTeam(t)
 	woken := 0
@@ -55,11 +56,24 @@ func TestTheHumanWritesTheTeamOrAnAgent(t *testing.T) {
 	if _, err := team.ChatSend("@dev rebase #673", wake); err != nil {
 		t.Fatal(err)
 	}
-	if m := lastChat(t, team); m.From != "" || !strings.Contains(m.Text, "dev is not working now") {
-		t.Fatalf("the chat says where it went: %+v", m)
+	away := lastChat(t, team)
+	if away.From != "" || away.To != "dev" || away.Answer != "" || away.Text != "dev is not at work now: its next shift answers you here, first thing." {
+		t.Fatalf("the chat says when dev answers: %+v", away)
 	}
-	if ths := team.MessageThreads(); len(ths) != 1 || ths[0].To != "dev" || ths[0].Said[0].Text != "rebase #673" {
-		t.Fatalf("dev gets it as a message: %+v", ths)
+	if notes := inboxText(team, "dev"); !strings.Contains(notes, "from the human in the team chat: rebase #673\n") || len(team.MessageThreads()) != 0 {
+		t.Fatalf("dev's next shift gets it from the chat, not the mail: %s %+v", notes, team.MessageThreads())
+	}
+	if _, err := os.Stat(filepath.Join(team.askedDir(), "dev")); err != nil {
+		t.Fatal("the human's words ask for dev's next shift")
+	}
+	if m, _ := team.ChatSend("@dev and #674", wake); lastChat(t, team).ID != m.ID || !strings.Contains(inboxText(team, "dev"), "in the team chat: and #674\n") {
+		t.Fatalf("the chat says it once: %+v", team.Chat(3))
+	}
+	team.ChatSay("dev", "On it.", false) // its next shift answers
+	team.setPaused("dev", true)
+	team.ChatSendTo("dev", "thanks", wake)
+	if m := lastChat(t, team); m.Text != "dev is paused: once you resume it, its next shift answers you here, first thing." {
+		t.Fatalf("after its words, the chat says it again, and why: %+v", m)
 	}
 	for _, bad := range []string{"", "@nobody hello", strings.Repeat("x", chatMax+1)} {
 		if _, err := team.ChatSend(bad, wake); err == nil {
@@ -121,8 +135,9 @@ func TestEachChatIsItsOwn(t *testing.T) {
 		{ChatMsg{Re: "c2", State: "applied"}, "team"},
 		{ChatMsg{From: "qa", Text: "Testing."}, "qa"},
 		{ChatMsg{Text: "qa went back to its work.", To: "qa"}, "qa"},
-		{ChatMsg{Text: "dev is not working now. It reads your message at its next run and answers in your inbox; until then the message waits in Waiting."}, "dev"},
+		{ChatMsg{Text: "dev is not working now. It reads your message at its next run and answers in your inbox; until then the message waits in Waiting."}, "dev"}, // as rota said it before its lines named their agent
 		{ChatMsg{Text: "dev is not working now"}, "team"},
+		{ChatMsg{Text: "dev is not at work now: its next shift answers you here, first thing.", To: "dev"}, "dev"},
 	} {
 		if got := c.m.With(); got != c.with {
 			t.Errorf("%+v is in %q's chat, want %q's", c.m, got, c.with)
@@ -1579,5 +1594,34 @@ func TestWhatHoldsTheTeamHoldsEachAgent(t *testing.T) {
 	write(t, filepath.Join(empty, "rota.conf"), "usage: off\nlisten: off\n")
 	if b, _ := json.Marshal(open(t, empty).ChatPresence(time.Now())); string(b) != "[]" {
 		t.Errorf("no agent: %s", b)
+	}
+}
+
+// rota's line as the human writes an agent that is not here to answer now says when it answers,
+// in its chat: its next shift, first thing, once it is on again or resumed; one that runs on
+// another machine, as its shift there ends.
+func TestRotaSaysWhenAnAgentAnswers(t *testing.T) {
+	root, _ := chatTeam(t)
+	write(t, filepath.Join(root, "agents", "ops.md"), "---\nenabled: true\nhost: mini\n---\nops runs\n")
+	write(t, filepath.Join(root, "agents", "old.md"), "---\nenabled: false\n---\nold\n")
+	team := open(t, root)
+	team.setPaused("qa", true)
+	for _, c := range []struct{ agent, says string }{
+		{"dev", "dev is not at work now: its next shift answers you here, first thing."},
+		{"qa", "qa is paused: once you resume it, its next shift answers you here, first thing."},
+		{"old", "old is off: once it is on again, its next shift answers you here, first thing."},
+		{"ops", "ops is not at work now: its next shift, away from the chat, answers you here as it ends."},
+	} {
+		if got := team.awayText(team.Agent(c.agent)); got != c.says {
+			t.Errorf("%s: %q, want %q", c.agent, got, c.says)
+		}
+	}
+	os.MkdirAll(team.Path(steerDir), 0o755)
+	os.WriteFile(team.steerFile("ops"), []byte(strconv.Itoa(os.Getpid())), 0o644) // at work on another machine
+	if m, err := team.ChatSendTo("ops", "how far are you?", nil); err != nil || lastChat(t, team).ID == m.ID || lastChat(t, team).Text != "ops is at work on another machine, away from the chat: it gets your words after the step it is on, and answers you here as that shift ends." {
+		t.Fatalf("at work elsewhere: %+v %v", lastChat(t, team), err)
+	}
+	if _, err := os.Stat(filepath.Join(team.askedDir(), "ops")); err == nil || !strings.Contains(inboxText(team, "ops"), "in the team chat: how far are you?") {
+		t.Fatal("its shift there gets it, and asks for none")
 	}
 }

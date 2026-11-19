@@ -80,12 +80,14 @@ in an agent's shift:
                     for, whatever the order says
   ask <question> [--subject "<a few words>"] [--option "<answer>"]... [--recommend "<answer>"]
         [--step "<step>"]... [--importance high|low] [--about <repo>#<n>]
-                    ask the human now: they are notified; prints the question's id. Options are
-                    the answers they tap, steps make a to-do they tick and mark done
+                    ask the human in their mail, which they read when they choose (what needs
+                    them now, say in the team chat); prints the question's id. Options are the
+                    answers they tap, steps make a to-do they tick and mark done
   wait <id>         wait up to 8 minutes for the answer; says whether to keep waiting
   say [--end] <text>
-                    an agent at work talks with the human in the team chat: its work waits
-                    until the talk is over; --end says its last words in it, and ends it
+                    say something in the team chat, where the human hears of it at once: answer
+                    what they wrote you there, or, when you need them now, begin a talk; in a
+                    talk, your work waits until it is over, and --end says your last words in it
   listen            in a talk, wait up to 90 seconds for the human's next words; says when the
                     talk is over: neither said anything for talk_minutes
   reply <id> <answer>
@@ -385,7 +387,7 @@ func command(ctx context.Context, args []string, root, conf string, now time.Tim
 		if err != nil {
 			return err
 		}
-		fmt.Printf("asked; the human is notified. Keep working on what does not depend on it; rota wait %s waits for the answer.\n", id)
+		fmt.Printf("asked in the human's mail, which they read when they choose. Keep working on what does not depend on it; rota wait %s waits for the answer.\n", id)
 		return nil
 	case "wait":
 		id, err := arg(1, "a question's id, from rota ask")
@@ -412,7 +414,7 @@ func command(ctx context.Context, args []string, root, conf string, now time.Tim
 	case "say":
 		agent := os.Getenv("ROTA_AGENT")
 		if agent == "" {
-			return fmt.Errorf("rota say is for an agent's shift on the organizer's machine")
+			return fmt.Errorf("rota say is for an agent's shift on the organizer's machine; elsewhere, answer the human with a line @human say: <answer> in your final message's last section")
 		}
 		words, last := args[1:], false
 		if len(words) > 0 && words[0] == "--end" {
@@ -425,7 +427,7 @@ func command(ctx context.Context, args []string, root, conf string, now time.Tim
 		case last:
 			fmt.Println("said in the team chat; the talk is over: go back to your work where you left it.")
 		case t.Talking(agent):
-			fmt.Println("said in the team chat. Now rota listen for the human's next words.")
+			fmt.Println("said in the team chat; the human hears of it at once. Now rota listen for their answer.")
 		default:
 			fmt.Println("said in the team chat.")
 		}
@@ -433,7 +435,7 @@ func command(ctx context.Context, args []string, root, conf string, now time.Tim
 	case "listen":
 		agent := os.Getenv("ROTA_AGENT")
 		if agent == "" {
-			return fmt.Errorf("rota listen is for an agent's shift on the organizer's machine")
+			return fmt.Errorf("rota listen is for an agent's shift on the organizer's machine; elsewhere there is no talk: answer the human with a line @human say: <answer> in your final message's last section")
 		}
 		park, _ := time.Parse(time.RFC3339, os.Getenv("ROTA_PARK_BY"))
 		h, err := t.Listen(agent, 90*time.Second, park) // within the Bash tool's default timeout
@@ -444,7 +446,7 @@ func command(ctx context.Context, args []string, root, conf string, now time.Tim
 			fmt.Print(t.HeardText(h))
 			fmt.Println("Answer with rota say, then rota listen again. When they are done, end the talk with rota say --end <what you go back to>.")
 		case h.Quiet:
-			fmt.Printf("neither of you said anything for %g minutes: the talk is over, and the chat says so. Go back to your work where you left it.\n", t.TalkMinutes)
+			fmt.Printf("neither of you said anything for %g minutes: the talk is over, and the chat says so. If you still need their answer, ask it in their mail with rota ask, and go on with other work; else go back to your work where you left it.\n", t.TalkMinutes)
 		case h.Ended:
 			fmt.Println("you are not talking with the human: go on with your work.")
 		case h.Park:

@@ -1457,7 +1457,7 @@ func threadWords(th Thread) string {
 
 // prefsText is how the human's inbox works, as text, by the names the Team sets it with.
 func prefsText(p MailPrefs) map[string]string {
-	return map[string]string{"split": strconv.FormatBool(p.Split), "focus": strconv.Itoa(p.Focus), "after": p.After, "notify": p.Notify}
+	return map[string]string{"split": strconv.FormatBool(p.Split), "focus": strconv.Itoa(p.Focus), "after": p.After, "notify": p.Notify, "chat": p.Chat}
 }
 
 // withPrefs is p with the settings set, given as text; an empty one takes the default.
@@ -1477,8 +1477,10 @@ func withPrefs(p MailPrefs, set map[string]string) (MailPrefs, error) {
 			p.After = v
 		case "notify":
 			p.Notify = v
+		case "chat":
+			p.Chat = v
 		default:
-			return p, fmt.Errorf("the inbox has no setting %s: notify, focus, split or after", k)
+			return p, fmt.Errorf("the inbox has no setting %s: notify, chat, focus, split or after", k)
 		}
 		if err != nil {
 			return p, fmt.Errorf("%s: %q is not one", k, v)

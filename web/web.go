@@ -56,6 +56,18 @@ func Serve(ctx context.Context, root, conf string, port int, tailnet bool) error
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	go func() { <-ctx.Done(); srv.Close() }()
+	go func() { // while the pages are served, the phones hear of what is said in the chat
+		for ctx.Err() == nil {
+			if t, err := core.Open(root, conf); err == nil {
+				t.WatchChat(ctx)
+				return
+			}
+			select {
+			case <-ctx.Done():
+			case <-time.After(30 * time.Second): // no team folder yet
+			}
+		}
+	}()
 	tailnetDone := make(chan struct{})
 	if tailnet {
 		go func() { defer close(tailnetDone); serveTailnet(ctx, srv, port) }()
@@ -260,6 +272,7 @@ func Handler(root, conf string, port int) http.Handler {
 		w.Header().Set("Cache-Control", "no-cache")
 		fmt.Fprint(w, serviceWorker)
 	})
+	mux.HandleFunc("/notify.json", s.notifyJSON)
 	mux.HandleFunc("/questions.json", s.questionsJSON)
 	mux.HandleFunc("/answers.json", s.answersJSON)
 	mux.HandleFunc("/push/", s.push)
@@ -760,7 +773,21 @@ func (s *site) questionsJSON(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(out)
 }
 
-// answersJSON is the agents' answers the human has not seen, for the service worker.
+// notifyJSON is what a device shows when it is told something, for the service worker: the
+// newest of what the human chose to hear of, in the chat or in their mail.
+func (s *site) notifyJSON(w http.ResponseWriter, r *http.Request) {
+	t, err := core.Open(s.root, s.conf)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	json.NewEncoder(w).Encode(t.Notice(time.Now()))
+}
+
+// answersJSON is the agents' answers the human has not seen, for a service worker from before
+// notify.json.
 func (s *site) answersJSON(w http.ResponseWriter, r *http.Request) {
 	t, err := core.Open(s.root, s.conf)
 	if err != nil {
@@ -831,17 +858,12 @@ const manifest = `{"name": "rota", "short_name": "rota", "start_url": "/", "scop
 // newest; off the tailnet it says only that an agent needs them.
 const serviceWorker = `self.addEventListener("install", function () { self.skipWaiting(); });
 self.addEventListener("activate", function (e) { e.waitUntil(self.clients.claim()); });
-self.addEventListener("push", function (e) {
-  function note(title, body, tag, url) {
-    return self.registration.showNotification(title, {body: body, tag: tag || "rota-questions", renotify: true, icon: "/mark-192.png", data: {url: url || "/#questions"}});
+self.addEventListener("push", function (e) { // the push says nothing: what to show comes from the pages
+  function note(n) {
+    return self.registration.showNotification(n.title, {body: n.body, tag: n.tag || "rota", renotify: true, icon: "/mark-192.png", data: {url: n.url || "/"}});
   }
-  function get(path) { return fetch(path, {cache: "no-store"}).then(function (r) { return r.json(); }); }
-  e.waitUntil(Promise.all([get("/questions.json"), get("/answers.json")]).then(function (both) {
-    var qs = both[0], as = both[1], q = qs[qs.length - 1], a = as[as.length - 1];
-    if (a && (!q || Date.parse(a.at) > Date.parse(q.asked))) return note(a.agent + " answered you on " + a.name, a.text, "rota-answers", a.page);
-    if (!q) return note("rota", "Notifications work on this device; nothing waits for you now.");
-    return qs.length == 1 ? note(q.agent + " asks you", q.text) : note(qs.length + " questions for you", q.agent + ": " + q.text);
-  }).catch(function () { return note("rota", "An agent asks or answers you."); }));
+  e.waitUntil(fetch("/notify.json", {cache: "no-store"}).then(function (r) { return r.json(); }).then(note)
+    .catch(function () { return note({title: "rota", body: "An agent asks or tells you something."}); }));
 });
 self.addEventListener("notificationclick", function (e) {
   e.notification.close();

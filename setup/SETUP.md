@@ -218,11 +218,11 @@ Then ask about these, each with the recommended answer as the default:
    carry this machine's git identity (`git config user.name` and `user.email`); if they should carry
    another, step 5 sets it.
 5. **Remote access.** Whether they want to manage the team from their phone and other computers, with
-   a notification when an agent asks them something. rota does that over Tailscale: it serves the
-   inbox on their tailnet only, never on the internet, and without a login, so anyone on their tailnet
-   can use it. Recommend "Yes, over Tailscale" when Tailscale worked in step 1, else "Later": they can
-   turn it on any time with Settings › Team › Open on my phone. Installing Tailscale is theirs to do
-   (the app from tailscale.com, signed in on this machine and their phone).
+   notifications: at once for the chat, and for their mail as they choose. rota does that over
+   Tailscale: it serves the inbox on their tailnet only, never on the internet, and without a login, so
+   anyone on their tailnet can use it. Recommend "Yes, over Tailscale" when Tailscale worked in step 1,
+   else "Later": they can turn it on any time with Settings › Team › Open on my phone. Installing
+   Tailscale is theirs to do (the app from tailscale.com, signed in on this machine and their phone).
 
 ### Confirm before you create anything
 

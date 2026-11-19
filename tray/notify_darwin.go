@@ -84,8 +84,10 @@ import (
 )
 
 // Notifications are macOS's own, from rota.app: each question is one, with a field to answer
-// it right there; clicking it opens the answer dialog. Outside the app bundle macOS offers no
-// notifications to a program, and when it refuses the app, osascript shows a plain one.
+// it right there; clicking it opens the answer dialog. What an agent or the Team says the human
+// in the chat is one too, for each chat, which a click opens. Each comes as the human chose to
+// hear of their mail and of the chat. Outside the app bundle macOS offers no notifications to a
+// program, and when it refuses the app, osascript shows a plain one.
 
 var bundled bool // the notification center is set up: the program runs as rota.app
 
@@ -111,6 +113,16 @@ func notifyQuestion(q core.Question) bool { return notify(q.ID, q.Agent+" asks y
 // click opens the pull request's review.
 func notifyAnswer(id string, a core.Answer) bool {
 	return notify(id, a.By+" answered you on "+a.Name, a.Text, false)
+}
+
+// notifyChat shows what an agent or the Team said the human in the chat, under its chat's id: a
+// newer message in the same chat takes its place, and a click opens the chat.
+func notifyChat(m core.ChatMsg) bool {
+	who := m.From
+	if who == "team" {
+		who = "Team"
+	}
+	return notify(chatPrefix+m.With(), who, core.ChatNoticeText(m), false)
 }
 
 // notify shows a notification under id, with a field to answer when it is a question; false

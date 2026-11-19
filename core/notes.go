@@ -193,10 +193,11 @@ func (c *Config) NoteHead(n Note) string {
 	if n.Message { // the agent answers it by its id
 		who += ", message " + n.ID
 	}
-	if n.Chat {
-		who += " in the team chat"
+	day := "2006-01-02"
+	if n.Chat { // how long they have waited for its answer
+		who, day = who+" in the team chat", day+" 15:04"
 	}
-	return n.At.In(c.Zone.Location).Format("2006-01-02") + " from " + who
+	return n.At.In(c.Zone.Location).Format(day) + " from " + who
 }
 
 // Address is where a note can go: an agent's general notes, or those about one pull request
@@ -705,8 +706,11 @@ func (s *steering) lookLocked(send func(string) bool) (quietLine bool) {
 	}
 	if len(b.notes) > 0 {
 		b.text = s.t.NotesText(b.notes)
-		if s.talks && len(chatIDs(b.notes)) > 0 { // the human's first words: what to do now
+		switch chat := len(chatIDs(b.notes)) > 0; {
+		case chat && s.talks: // the human's first words: what to do now
 			b.text += "\n" + talkBegins + "\n"
+		case chat: // on another machine: how to answer them
+			b.text += "\n" + chatAway + "\n"
 		}
 		s.sent = append(s.sent, b) // before it is sent: claude may echo it at once
 	}
