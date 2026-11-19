@@ -40,6 +40,31 @@ type chatTalk struct {
 	For     []Note    `json:"for,omitempty"`     // what the human wrote since, for rota listen
 	Heard   []Note    `json:"heard,omitempty"`   // what rota listen brought in this shift's talks: read
 	Ended   string    `json:"ended,omitempty"`   // why the last one ended: end (the agent ended it) or quiet
+	Stop    *talkStop `json:"stop,omitempty"`    // the human stopped the agent: what the organizer's steering tells the shift, at its next look
+}
+
+// talkStop is the human stopping an agent at work here that has their words (chatedit.go): the shift
+// is told to answer none of them, and its answer, under way in a talk, is cut off first.
+type talkStop struct {
+	Cut   bool     `json:"cut,omitempty"`   // it answers them now, in a talk: its turn stops at once
+	Words []string `json:"words,omitempty"` // the human's words it is not to answer
+}
+
+// stopText is what the shift is told when the human stopped it: in a talk, to listen for their next
+// words, which may be the ones they stopped it on, edited.
+func stopText(st talkStop, talking bool) string {
+	var quoted []string
+	for _, w := range st.Words {
+		quoted = append(quoted, "«"+FirstLine(strings.Join(strings.Fields(w), " "), 200)+"»")
+	}
+	what := "what they wrote you last"
+	if len(quoted) > 0 {
+		what += ", " + strings.Join(quoted, " ")
+	}
+	if !talking {
+		return "The human stopped you in the team chat: do not answer " + what + ". Go on with your work."
+	}
+	return "The human stopped you in the team chat: do not answer " + what + ", and drop what you did for it. They write again, or edit it: run rota listen now for their next words, and go on with the talk."
 }
 
 // talkBegins follows the human's first words in a talk, as the shift gets them: what to do now,
@@ -255,7 +280,7 @@ func (c *Config) sayInTalk(agent string, last, first bool) error {
 		tk.heard(now)
 		tk.Last = now
 	case !last && c.Steerable(agent) && (first || c.wroteTo(agent, now.Add(-c.talkQuiet()))):
-		tk = chatTalk{Open: true, Since: now, Last: now, Heard: tk.Heard}
+		tk = chatTalk{Open: true, Since: now, Last: now, Heard: tk.Heard, Stop: tk.Stop}
 	default:
 		return nil
 	}

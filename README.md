@@ -138,7 +138,8 @@ it. Each agent has its own chat beside the Team's: while it works, it stops its 
 you there, its whole attention on you, and goes back to its work once you're done. When it isn't
 working, it answers you there first thing in its next shift. The chat floats over every screen, also
 a pull request's review, and knows what you have open: ask "is this ready?" on a review and the agent
-that wrote it gets the file and line you are on.
+that wrote it gets the file and line you are on. As in any chat, you can stop an answer as it comes,
+and edit what you wrote until it's answered.
 
 <p align="center"><img src="docs/demos/chat.gif" width="860" alt="The team chat: the Team answers, and the working developer replies"></p>
 

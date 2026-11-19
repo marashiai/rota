@@ -459,6 +459,13 @@ button.row{width:100%;text-align:left}
 .bub.mb{padding:8px 12px}
 .bub.me{align-self:flex-end;background:var(--accent);color:var(--on-accent);border-radius:16px 16px 5px 16px}
 .bub.me .small{color:inherit;opacity:.8}
+.bub.me.ced{opacity:.55} /* being edited */
+.mfoot{align-self:flex-end;display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--ink3);margin:-2px 4px 0}
+.mfoot .link{font-size:11.5px;color:var(--ink3);font-weight:600;padding:2px 0}
+@media (hover:hover){.mfoot .link{opacity:.75}.mfoot .link:hover{opacity:1;color:var(--accent)}}
+.cwi .cstop{color:var(--red)} /* Stop, while the Team or the agent answers */
+.cwi .cstop svg{fill:currentColor;width:16px;height:16px}
+.cctx.cedit{background:color-mix(in srgb,var(--amber) 16%,transparent)} /* the box holds words being edited */
 .sys{align-self:center;font-size:12.5px;color:var(--ink3);text-align:center;padding:2px 8px;max-width:92%}
 .chg{align-self:stretch;border:1px solid var(--line);border-radius:12px;padding:10px 12px;font-size:14px;background:var(--surface);margin:2px 0}
 .chg .f{font-size:12.5px;color:var(--ink3);font-weight:600;margin-bottom:2px}

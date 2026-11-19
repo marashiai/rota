@@ -366,7 +366,9 @@ type apiChatMsg struct {
 	From   string           `json:"from,omitempty"`
 	To     string           `json:"to,omitempty"`
 	HTML   string           `json:"html"`
-	About  string           `json:"about,omitempty"` // the human's: what was on their screen as they wrote it
+	About  string           `json:"about,omitempty"`  // the human's: what was on their screen as they wrote it
+	Text   string           `json:"text,omitempty"`   // the human's words as they wrote them, for editing them
+	Edited bool             `json:"edited,omitempty"` // the human's: they edited them
 	Change *core.ChatChange `json:"change,omitempty"`
 }
 
@@ -387,7 +389,11 @@ func (s *site) chatJSON(w http.ResponseWriter, r *http.Request) {
 		if m.From == "" {
 			html = esc(m.Text)
 		}
-		out.Msgs = append(out.Msgs, apiChatMsg{ID: m.ID, At: m.At, With: m.With(), From: m.From, To: m.To, HTML: html, About: m.About, Change: m.Change})
+		x := apiChatMsg{ID: m.ID, At: m.At, With: m.With(), From: m.From, To: m.To, HTML: html, About: m.About, Edited: m.Edits != "", Change: m.Change}
+		if m.From == "you" {
+			x.Text = m.Text
+		}
+		out.Msgs = append(out.Msgs, x)
 	}
 	for _, p := range out.Agents {
 		if p.Online {
@@ -496,6 +502,11 @@ func (s *site) teamAct(t *core.Team, action, arg, text, about string) (said stri
 	case "chat": // text: what the human writes in the team chat; arg: the chat, an agent's, or "" for the Team's; about: what is on their screen
 		root, conf := s.root, s.conf
 		_, err = t.ChatSendAbout(arg, text, about, func() { core.WakeTeam(root, conf) })
+	case "chat-stop": // arg: the chat whose answer the human stops: an agent's, or "" for the Team's
+		said, err = t.ChatStop(arg)
+	case "chat-edit": // arg: the human's words in the chat they edit; text: their new words
+		root, conf := s.root, s.conf
+		_, err = t.ChatEdit(arg, text, func() { core.WakeTeam(root, conf) })
 	case "chat-apply": // arg: the change's id
 		said, err = t.ChatApply(arg)
 	case "chat-cancel":

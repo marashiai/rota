@@ -45,7 +45,7 @@ const I = {
 let M = null; // threads, members, repos, prefs, top: as /api/mail last said
 const S = {view: 'inbox', tab: 'focused', open: null, drawer: false, q: null, f: {}, keepRead: new Set(), compose: null, sel: new Set(), reply: false, vals: {}, drafts: {}, focusSearch: false, autoOpen: true,
   aTab: 'messages', roleDraft: null, adv: null, edits: {}, sent: null, weights: Object.create(null), wbase: null, tc: {open: false, min: false}, pchat: false, ctxOff: '', // weights: by an agent's name, which may be any // tc: the desktop's chat window; pchat: the phone's chat, open over the screen; ctxOff: what was on the screen that the human chose not to send with what they write
-  repos: false, repoAdding: ''}; // repos: the team's repositories open in Settings; repoAdding: the one GitHub is asked about
+  repos: false, repoAdding: '', cedit: null}; // repos: the team's repositories open in Settings; repoAdding: the one GitHub is asked about; cedit: the human's words in the chat they edit, {id, draft}: what they were writing before
 // BUSY: what the human started on a thread that GitHub takes a few seconds to do, by the thread's
 // id: Approving, or Sending a note. Where its button was, a spinner says so until it is done; kept
 // by id, it outlasts the mail being read anew meanwhile, and the same is not started twice.
@@ -890,6 +890,7 @@ function keepSeen() { try { localStorage.setItem('rota.chatSeen', JSON.stringify
 // switchChat opens another chat in the window; what was typed in each stays with it
 function switchChat(w) {
   if (w === CHAT.with) return;
+  if (S.cedit) { S.vals.chat = S.cedit.draft; S.cedit = null; } // the words edited stay as they were
   CHAT.drafts[CHAT.with] = S.vals.chat || '';
   CHAT.with = w; S.vals.chat = CHAT.drafts[w] || '';
   try { localStorage.setItem('rota.chat', w); } catch (e) { /* this browser keeps it until the page reloads */ }
@@ -956,11 +957,15 @@ function chatBody() {
   if (!msgs.length && !busy) return `<div class="sys">${a ? (a.online ? `${esc(a.name)} is ${esc(a.note)}.` : `${esc(a.name)} is offline, ${esc(a.note)}. What you write it here, it answers here at its next run, first thing.`)
     : `${CHAT.team ? 'Ask the Team what anyone is doing, or tell it what to change. ' : ''}To talk with an agent, open its chat above, or write @ and its name: online, it stops its work to talk with you; offline, it answers you there at its next run.`}</div>`;
   let h = '', prev = null, about = '';
+  const mine = editable();
   for (const m of msgs) {
     if (!m.from) { prev = null; h += `<div class="sys">${m.html}</div>`; continue; }
     if (m.from === 'you') { // what was on the screen, over the first of the human's words about it
       if (m.about && m.about !== about) h += `<div class="cabout">${I.eye}<span>${esc(m.about)}</span></div>`;
-      about = m.about || ''; prev = 'you'; h += `<div class="bub me">${m.html}</div>`; continue;
+      const ed = S.cedit && S.cedit.id === m.id, can = mine.has(m.id) && !ed;
+      about = m.about || ''; prev = 'you'; h += `<div class="bub me${ed ? ' ced' : ''}">${m.html}</div>`;
+      if (m.edited || can || ed) h += `<div class="mfoot">${ed ? 'Editing…' : m.edited ? 'Edited' : ''}${can ? `<button class="link" data-cedit="${esc(m.id)}">Edit</button>` : ''}</div>`;
+      continue;
     }
     const first = prev !== m.from; prev = m.from;
     h += `<div class="grp${first ? '' : ' cont'}">${first ? av(m.from, 26) : '<span class="avsp"></span>'}<div class="col">${first ? `<div class="nm">${m.from === 'team' ? 'Team' : esc(m.from)} · ${esc(when(m.at))}</div>` : ''}${m.html ? `<div class="bub mb">${m.html}</div>` : ''}${m.change ? changeCard(m) : ''}</div></div>`;
@@ -1008,8 +1013,70 @@ function chatPane(mode) { // mode: dock (the desktop's window), sheet (over the 
       `<button class="ib" data-cclose title="Close" aria-label="Close the chat">${I.x}</button>`;
   return `<div class="cwh"${mode === 'dock' ? ' data-cmin' : ''}>${head}
     ${tools}</div>
-    ${chatList()}<div class="cwb" data-cbody>${chatBody()}</div>${chatChips()}<div class="cwc" id="mentions">${mentionsHTML()}</div>${ctxChip()}
-    <div class="cwi"><textarea id="chatin" rows="1" placeholder="${esc(say)}" aria-label="${esc(a ? 'Message ' + a.name : 'Message the team')}">${esc(S.vals.chat || '')}</textarea><button class="ib" data-csend aria-label="Send">${I.send}</button></div>`;
+    ${chatList()}<div class="cwb" data-cbody>${chatBody()}</div>${chatChips()}<div class="cwc" id="mentions">${mentionsHTML()}</div>${S.cedit ? editChip() : ctxChip()}
+    <div class="cwi"><textarea id="chatin" rows="1" placeholder="${esc(S.cedit ? 'Edit your message' : say)}" aria-label="${esc(S.cedit ? 'Edit your message' : a ? 'Message ' + a.name : 'Message the team')}">${esc(S.vals.chat || '')}</textarea>${stopBtn()}<button class="ib" data-csend aria-label="${S.cedit ? 'Save' : 'Send'}" title="${S.cedit ? 'Save' : 'Send'}">${S.cedit ? I.check : I.send}</button></div>`;
+}
+// editable: the human's words in the open chat that whoever they wrote has not answered: those after
+// its last words, as the server allows; they edit those, stopped or not
+function editable(w = CHAT.with) {
+  const msgs = chatMsgs(w), them = w === 'team' ? 'team' : w;
+  let i = msgs.length;
+  while (i > 0 && msgs[i - 1].from !== them) i--;
+  return new Set(msgs.slice(i).filter(m => m.from === 'you' && !m.local).map(m => m.id));
+}
+// stopBtn: while the Team or the agent answers in the open chat, Stop: it stops, and the human writes
+// again, or edits what they wrote
+function stopBtn() {
+  if (!CHAT.busy.includes(CHAT.with)) return '';
+  const who = CHAT.with === 'team' ? 'the Team' : CHAT.with;
+  return `<button class="ib cstop" data-cstop aria-label="Stop ${esc(who)}" title="Stop ${esc(who)}: then write again, or edit what you wrote">${I.stop}</button>`;
+}
+// editChip: above the box, while the human edits their words: Escape or its × leaves them as they were
+const editChip = () => `<div class="cctx cedit">${I.pen}<span>Editing your message</span><button class="ib" data-ceditx aria-label="Cancel editing" title="Cancel (Esc)">${I.x}</button></div>`;
+// chatStop stops whoever answers in chat w: the chat shows it at once, and says so
+async function chatStop(w) {
+  CHAT.busy = CHAT.busy.filter(x => x !== w);
+  render();
+  await post({action: 'chat-stop', arg: w === 'team' ? '' : w});
+  CHAT.tag = null; await loadChat();
+}
+// chatEditStart: the human's words go back in the box to edit; whoever answers them stops first
+async function chatEditStart(id) {
+  const m = CHAT.msgs.find(x => x.id === id);
+  if (!m) return;
+  const w = chatOf(m);
+  if (w !== CHAT.with) switchChat(w);
+  S.cedit = {id, draft: S.cedit ? S.cedit.draft : S.vals.chat || ''};
+  S.vals.chat = m.text || '';
+  render(); fitChatIn();
+  const el = document.getElementById('chatin'); if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
+  if (CHAT.busy.includes(w)) await chatStop(w);
+}
+// chatEditCancel leaves the human's words as they were, and brings back what they were writing
+function chatEditCancel() {
+  if (!S.cedit) return;
+  S.vals.chat = S.cedit.draft; S.cedit = null;
+  render(); fitChatIn();
+  const el = document.getElementById('chatin'); if (el) el.focus();
+}
+// chatSaveEdit puts the human's new words in place of the ones they edit: at the chat's end, as what
+// they wrote now, which whoever they wrote answers. Refused, they are in the box to edit still.
+async function chatSaveEdit(text) {
+  const e = S.cedit;
+  text = (text || '').trim();
+  if (!e || !text) return;
+  const m = CHAT.msgs.find(x => x.id === e.id), w = m ? chatOf(m) : CHAT.with;
+  S.cedit = null; S.vals.chat = e.draft;
+  if (!m || text === m.text) { render(); return; } // nothing changed
+  const shown = {...m, id: 'local' + (++CHAT.local), local: true, text, html: `<p>${esc(text)}</p>`, edited: true, at: new Date().toISOString()};
+  CHAT.msgs = CHAT.msgs.filter(x => x !== m).concat(shown); // at once, where the server keeps it
+  const a = chatAgent(w), who = w === 'team' ? (CHAT.team ? 'team' : '') : a && a.online ? a.name : ''; // who answers it here
+  if (who && !CHAT.busy.includes(who)) CHAT.busy = CHAT.busy.concat(who);
+  render(); chatToEnd();
+  const said = await post({action: 'chat-edit', arg: e.id, text});
+  CHAT.msgs = CHAT.msgs.filter(x => x !== shown); // the server's copy takes its place
+  if (said === null) { S.cedit = e; S.vals.chat = text; CHAT.busy = CHAT.busy.filter(x => x !== who); }
+  CHAT.tag = null; await loadChat(); render();
 }
 // screenContext: what the human has open, which goes with what they write in the chat: words that
 // say it to whoever answers, and the agent behind it, whose chat opens first; null over a list. In a
@@ -1096,6 +1163,7 @@ function openChat(prefill, w) {
 // chatSend: what the human writes, in the open chat; in the Team's, an @ and an agent's name writes to
 // that agent, and opens its chat
 async function chatSend(text) {
+  if (S.cedit) return chatSaveEdit(text);
   text = (text || '').trim();
   if (!text) return;
   S.vals.chat = '';
@@ -1752,6 +1820,9 @@ document.addEventListener('click', e => {
   if (d.cclose !== undefined) { e.stopPropagation(); closeChat(); return; }
   if (d.cctxoff !== undefined) { const c = screenContext(); S.ctxOff = c ? c.about : ''; render(); const el = document.getElementById('chatin'); if (el) el.focus(); return; }
   if (d.csend !== undefined) { chatSend((document.getElementById('chatin') || {}).value); return; }
+  if (d.cstop !== undefined) { chatStop(CHAT.with); return; }
+  if (d.cedit) { chatEditStart(d.cedit); return; }
+  if (d.ceditx !== undefined) { chatEditCancel(); return; }
   if (d.csay) { chatSend(d.csay); return; }
   if (d.askteam !== undefined) { const q = S.q; S.q = null; S.f = {}; openChat('', 'team'); chatSend(q); return; }
   if (d.cwith) { openChat(undefined, d.cwith); return; }
@@ -1884,6 +1955,7 @@ document.addEventListener('keydown', e => {
   if (M && (e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 's' && barShown()) { e.preventDefault(); saveNow(); return; } // as the bar's Save
   if (EMBED) {
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.keyCode !== 229 && document.activeElement.id === 'chatin') { e.preventDefault(); chatSend(document.activeElement.value); }
+    else if (e.key === 'Escape' && S.cedit) chatEditCancel();
     else if (e.key === 'Escape') closeChat();
     return;
   }
@@ -1894,6 +1966,7 @@ document.addEventListener('keydown', e => {
   const typing = ['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName);
   if (e.key === 'Escape') {
     if (document.getElementById('sheet').classList.contains('open')) { document.getElementById('sscrim').click(); return; }
+    if (S.cedit) { chatEditCancel(); return; } // the words edited stay as they were
     if (S.pchat && !desk()) { S.pchat = false; render(); return; } // the phone's chat, over the screen
     if (S.compose) S.compose = null; else if (searching()) { S.q = null; S.f = {}; document.activeElement.blur(); } else if (S.reply) S.reply = false; else if (S.open && !desk()) S.open = null; else if (S.view === 'keys' || S.view === 'settings' && !unsaved()) { if (backTo('inbox')) return; S.view = 'inbox'; }
     else if (S.view.startsWith('run:')) { S.view = 'agent:' + S.view.slice(20); loadPage(); }

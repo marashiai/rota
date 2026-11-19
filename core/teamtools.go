@@ -123,7 +123,7 @@ func (t *Team) agentChat(agent string, last int) (string, bool) {
 	for i := len(msgs) - 1; i >= 0; i-- {
 		m := msgs[i]
 		who := map[string]string{"you": "the human", "": "rota"}[m.From]
-		line := m.At.Local().Format("Mon 2006-01-02 15:04") + " " + or(who, m.From) + ": " + strings.ReplaceAll(m.Text+onScreen(m.About), "\n", "\n  ")
+		line := m.At.Local().Format("Mon 2006-01-02 15:04") + " " + or(who, m.From) + ": " + strings.ReplaceAll(editedMark(m)+m.Text+onScreen(m.About), "\n", "\n  ")
 		if size += len(line) + 1; size > toolOutMax {
 			lines = append(lines, "… (older messages cut here: ask for fewer with last)")
 			break

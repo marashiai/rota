@@ -39,7 +39,9 @@ type ChatMsg struct {
 	From   string            `json:"from,omitempty"` // you, team or an agent; "" for what rota itself says
 	To     string            `json:"to,omitempty"`   // the agent the human wrote to; on rota's line, the agent it says something of
 	Text   string            `json:"text,omitempty"`
-	About  string            `json:"about,omitempty"` // the human's: what they had on their screen as they wrote it, as the app said it
+	About  string            `json:"about,omitempty"`  // the human's: what they had on their screen as they wrote it, as the app said it
+	Edits  string            `json:"edits,omitempty"`  // the human's: their words this replaces, which they edited (chatedit.go)
+	Unread []string          `json:"unread,omitempty"` // rota's line that the human stopped an agent: their words, by id, that never reached it
 	Change *ChatChange       `json:"change,omitempty"`
 	Re     string            `json:"re,omitempty"`     // the change this line is about
 	Answer string            `json:"answer,omitempty"` // the Team's or an agent's, or rota's line for one: the human's last message it answers
@@ -126,7 +128,8 @@ func (c *Config) Chat(n int) []ChatMsg {
 }
 
 // chatRead reads the chat: its last tail bytes (0: all of it), its last n messages (0: all), each
-// change with its state; and the line that applied each change, by its id.
+// change with its state; and the line that applied each change, by its id. The human's words they
+// edited are gone: their new words, at the end, replace them.
 func (c *Config) chatRead(tail int64, n int) ([]ChatMsg, map[string]ChatMsg) {
 	applied := map[string]ChatMsg{}
 	f, err := os.Open(c.Path(chatFile))
@@ -140,6 +143,7 @@ func (c *Config) chatRead(tail int64, n int) ([]ChatMsg, map[string]ChatMsg) {
 	var msgs []ChatMsg
 	at := map[string]int{}
 	worked := map[string]time.Time{} // when a change's work last said how far it got
+	edited := map[string]bool{}      // the human's words they edited
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 64<<10), 4<<20)
 	for sc.Scan() {
@@ -157,6 +161,9 @@ func (c *Config) chatRead(tail int64, n int) ([]ChatMsg, map[string]ChatMsg) {
 			}
 			continue
 		}
+		if m.Edits != "" {
+			edited[m.Edits] = true
+		}
 		at[m.ID] = len(msgs)
 		msgs = append(msgs, m)
 	}
@@ -164,6 +171,9 @@ func (c *Config) chatRead(tail int64, n int) ([]ChatMsg, map[string]ChatMsg) {
 		if ch := msgs[at[id]].Change; ch.State == "working" && time.Since(when) > workStale {
 			ch.State = "stopped"
 		}
+	}
+	if len(edited) > 0 {
+		msgs = slices.DeleteFunc(msgs, func(m ChatMsg) bool { return m.From == "you" && edited[m.ID] })
 	}
 	if n > 0 && len(msgs) > n {
 		msgs = msgs[len(msgs)-n:]
@@ -978,13 +988,14 @@ func (c *Config) TeamWaits() bool {
 // changes it proposes become cards for the human to apply. Its answer names the last message it
 // answers, so the next turn begins after it.
 func (t *Team) teamTurn() {
+	began := time.Now() // a stop from here on is this turn's: before it reads what it answers
 	pending := t.teamPending()
 	if len(pending) == 0 {
 		return
 	}
 	var asked []string
 	for _, m := range pending {
-		asked = append(asked, m.Text+onScreen(m.About))
+		asked = append(asked, editedMark(m)+m.Text+onScreen(m.About))
 	}
 	last := pending[len(pending)-1].ID
 	st, brief := t.teamState(), briefSum(t.teamBrief())
@@ -993,10 +1004,13 @@ func (t *Team) teamTurn() {
 	}
 	defer os.Remove(t.Path(".chat-busy"))
 	question := t.teamSnapshot() + "\n\nThe human writes:\n\n" + strings.Join(asked, "\n\n")
-	text, session, err := t.teamAsk(question, st.Session)
-	if err != nil && st.Session != "" && sessionGone.MatchString(err.Error()) { // its session is gone: a new one
+	text, session, err := t.teamAsk(question, st.Session, began)
+	if err != nil && st.Session != "" && sessionGone.MatchString(err.Error()) && !t.teamStopped(began) { // its session is gone: a new one
 		st.Session = ""
-		text, session, err = t.teamAsk(question, "")
+		text, session, err = t.teamAsk(question, "", began)
+	}
+	if t.teamStopped(began) { // the human stopped it: what it said, if anything, answers nothing they still ask
+		return
 	}
 	if err != nil { // said, and answered so: asked again, it answers anew
 		t.chatAppend(ChatMsg{Text: "The Team could not answer: " + FirstLine(err.Error(), 200), Answer: last})
@@ -1161,15 +1175,31 @@ func (t *Team) teamAgents(st Status) string {
 	return b.String()
 }
 
-// teamAsk runs one turn of the Team's Claude session: the question, the answer, and its session.
+// teamAsk runs one turn of the Team's Claude session: the question, the answer, and its session. A
+// stop of the human's since the turn began ends it.
 // The Team reaches what is in rota's scope, and nothing else: Claude's restricted mode confines
 // its file tools to the team folder, its working directory, and runs no commands; rota's own
 // tools read the team's work on GitHub, each checking that it is the team's; none of the human's
 // settings or other MCP servers. What it changes, it proposes.
-func (t *Team) teamAsk(question, session string) (string, string, error) {
+func (t *Team) teamAsk(question, session string, began time.Time) (string, string, error) {
 	os.WriteFile(t.Path(".chat-busy"), []byte("team"), 0o644) // each try: the chat says it answers
 	ctx, cancel := context.WithTimeout(context.Background(), teamTimeout)
 	defer cancel()
+	look, watched := teamStopLook, make(chan struct{})
+	go func() { // the human's stop ends it, from whichever process they stop it in
+		defer close(watched)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(look):
+				if t.teamStopped(began) {
+					cancel()
+				}
+			}
+		}
+	}()
+	defer func() { cancel(); <-watched }() // it looks no more once the turn is over
 	args := []string{"-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose",
 		"--restricted", "--strict-mcp-config", "--permission-mode", "default"}
 	if t.ChatModel != "" {
@@ -1279,7 +1309,7 @@ A proposal is one line. A value is one line; an empty one takes the default.
 
 How the organizer chooses who runs, which is how the team comes with each question: it starts one shift at a time, at each look. An agent may start when it is due (its interval since its last run, or a retry's wait), in its hours, not paused, with work to do, its host ready, and the pool lets it: the only hard limit is the team pool, team_pct of Claude's weekly window, used by the period it paces (a week, or a seventh of it each day), split into fair shares, each agent's its weight's part of all the enabled agents' weights; what a higher-priority agent (a lower number) can still use of its share is held for it. An agent whose share is used starts only on what is free: what the others cannot use before the pool fills again, when one of its shifts fits in it; otherwise it waits until the pool fills again. Of those that may start, the human's requests go first, in the order asked but one whose agent owns the hours it is in before the others; then an agent in hours it owns; then the one that has waited longest. While Claude's usage cannot be read, no shift starts; while the team is paused, only what the human asks for. Run now, the human's request (PROPOSE "run"), skips the agent's interval, a retry's wait, its hours, its pause, its waiting for work and what is held for higher priority, and puts it ahead of every agent the human did not ask for; it skips neither the team pool nor its own fair share nor its host: such an agent still waits. Each agent's line says whether it may start, or why it waits and when it runs next, what a Run now would do, and a run asked for that has not started; rota.log is the organizer's own log, day by day. So before you say an agent will run, read its line: when it waits, say why and when, and what would let it start sooner, which is the human's to decide: a larger weight for it (its share), less for others, or a larger team_pct; never propose a run as if it starts when its line says it waits, and never blame the organizer for what its line explains. What you proposed comes back with what rota answered when it was applied: read it, and say it.
 
-Each agent has its own chat with the human, beside this one: there the human talks with it, and it answers itself, there and never in the mail: while it works, after the step it is on; when it is not at work, first thing in its next shift, which the human's words ask for. In this chat, the human's @<name> writes to it there. What the human writes may end with what was on their screen as they wrote, "(on their screen: …)", such as a pull request's review at a file's line, or an issue: what "this" means to them. Read an agent's chat with your agent_chat tool when what they said, or how their talk goes, matters to what the human asks you; the team as it comes with each question says which agent talks with the human now. Never speak as an agent: say what its journal or its chat says it did.`
+Each agent has its own chat with the human, beside this one: there the human talks with it, and it answers itself, there and never in the mail: while it works, after the step it is on; when it is not at work, first thing in its next shift, which the human's words ask for. In this chat, the human's @<name> writes to it there. What the human writes may end with what was on their screen as they wrote, "(on their screen: …)", such as a pull request's review at a file's line, or an issue: what "this" means to them. The human may stop you as you answer, as in any chat; what they wrote after that is what they ask now. Words of theirs that begin "(edited)" replace what they wrote before, which they edited: answer the new words as if the old were never said. Read an agent's chat with your agent_chat tool when what they said, or how their talk goes, matters to what the human asks you; the team as it comes with each question says which agent talks with the human now. Never speak as an agent: say what its journal or its chat says it did.`
 
 // sessionVars are what a Claude Code session puts in the environment of what it runs: its id, its
 // messaging socket and token. A claude rota starts gets none of them: an agent must not reach the

@@ -694,6 +694,13 @@ func (s *steering) lookLocked(send func(string) bool) (quietLine bool) {
 		tk.end("quiet")
 	}
 	changed := quiet
+	if st := tk.Stop; st != nil { // the human stopped it (chatedit.go): told before anything else reaches it
+		tk.Stop, changed = nil, true
+		if st.Cut && tk.Open {
+			send(stopTurn) // its answer under way stops at once
+		}
+		send(stopText(*st, tk.Open))
+	}
 	s.mu.Lock()
 	gone := maps.Clone(s.read) // briefed, sent, or taken and on their way out of the inbox
 	maps.Copy(gone, ids(s.took))

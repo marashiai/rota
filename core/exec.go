@@ -128,6 +128,10 @@ func execShift(ctx context.Context, c *Config, job Job, onLine func(string), not
 		for {
 			select {
 			case text := <-notes:
+				if text == stopTurn {
+					in.interrupt()
+					continue
+				}
 				in.send(text)
 			case <-cctx.Done():
 				return
@@ -136,7 +140,7 @@ func execShift(ctx context.Context, c *Config, job Job, onLine func(string), not
 	}()
 	var out bytes.Buffer
 	lw := newLineWriter(&out, func(line string) {
-		if isResult(line) { // claude has finished: with its input closed it exits
+		if isResult(line) && in.ends(line) { // claude has finished: with its input closed it exits
 			in.close()
 		}
 		if onLine != nil {
@@ -200,6 +204,41 @@ type shiftInput struct {
 	mu     sync.Mutex
 	w      io.WriteCloser
 	closed bool
+	cut    int // turns cut off (interrupt) whose result has not come yet: it does not end the shift
+}
+
+// stopTurn, sent to a running shift among its notes, cuts its turn off at once, as the human's stop
+// in the team chat does (chatedit.go): what claude does stops, as with Esc, and the shift goes on
+// with what is sent next.
+const stopTurn = "\x00rota: stop the turn"
+
+// interrupt cuts claude's turn off: it ends with an error_during_execution result, and claude takes
+// the next message.
+func (in *shiftInput) interrupt() {
+	in.mu.Lock()
+	if in.closed {
+		in.mu.Unlock()
+		return
+	}
+	in.cut++
+	in.mu.Unlock()
+	b, _ := json.Marshal(map[string]any{"type": "control_request", "request_id": "rota-stop-" + randHex(4), "request": map[string]string{"subtype": "interrupt"}})
+	in.w.Write(append(b, '\n'))
+}
+
+// ends says whether claude's result ends the shift: not the result of a turn it cut off.
+func (in *shiftInput) ends(line string) bool {
+	var r struct {
+		Subtype string `json:"subtype"`
+	}
+	json.Unmarshal([]byte(line), &r)
+	in.mu.Lock()
+	defer in.mu.Unlock()
+	if in.cut > 0 && r.Subtype == "error_during_execution" {
+		in.cut--
+		return false
+	}
+	return true
 }
 
 // send writes a message, unless the input is closed; a claude that has exited reads nothing.
