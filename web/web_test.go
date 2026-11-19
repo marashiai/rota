@@ -1364,8 +1364,8 @@ func TestTheTeamChatInTheApp(t *testing.T) {
 	}
 	type chat struct {
 		Msgs []struct {
-			ID, From, HTML string
-			Change         *core.ChatChange
+			ID, With, From, HTML string
+			Change               *core.ChatChange
 		}
 		Team bool
 	}
@@ -1377,7 +1377,7 @@ func TestTheTeamChatInTheApp(t *testing.T) {
 	if c := read(); c.Team || len(c.Msgs) != 1 || c.Msgs[0].Change == nil || c.Msgs[0].Change.Why != "slow <b>stack</b>" {
 		t.Fatalf("the chat: %+v", c)
 	}
-	if raw := get(t, srv, "/api/chat"); !strings.Contains(raw, `"busy":""`) { // the page shows the Team typing until it hears it is not
+	if raw := get(t, srv, "/api/chat"); !strings.Contains(raw, `"busy":[]`) { // the page shows the Team typing until it hears it is not
 		t.Fatalf("an empty busy is not said: %s", raw)
 	}
 	token := regexp.MustCompile(`data-token="([0-9a-f]+)"`).FindStringSubmatch(get(t, srv, "/"))[1]
@@ -1433,6 +1433,18 @@ func TestTheTeamChatInTheApp(t *testing.T) {
 	}
 	if code, said := act(url.Values{"token": {token}, "action": {"chat"}, "text": {"@nobody hi"}}); code != 400 || !strings.Contains(said, "no agent is called nobody") {
 		t.Fatalf("to no agent: %d %s", code, said)
+	}
+	if code, _ := act(url.Values{"token": {token}, "action": {"chat"}, "arg": {"alpha"}, "text": {"Rebase it, please."}}); code != 200 { // in alpha's chat: no @ needed
+		t.Fatalf("in alpha's chat: %d", code)
+	}
+	c = read()
+	for i, want := range []string{"team you", "team ", "alpha you", "alpha "} { // the Team's chat, with rota's line that the Team is off; alpha's, with rota's line that alpha is not at work
+		if m := c.Msgs[len(c.Msgs)-4+i]; m.With+" "+m.From != want {
+			t.Fatalf("message %d is %q in %q's chat, want %q: %+v", i, m.From, m.With, want, c.Msgs)
+		}
+	}
+	if ths := tm.MessageThreads(); len(ths) != 1 || ths[0].To != "alpha" || ths[0].Said[0].Text != "Rebase it, please." {
+		t.Fatalf("alpha, not at work, gets it in its mail: %+v", ths)
 	}
 	resp, _ := http.Get(srv.URL + "/api/chat")
 	tag := resp.Header.Get("ETag")

@@ -26,6 +26,7 @@ const (
 	mailFile     = ".mail.json"     // the human's marks on their mail: read, starred, snoozed, archived, moved; and how they like it
 	resumeDir    = ".resume"        // .resume/<agent>.json: an interrupted shift's session, resumed by its next shift
 	steerDir     = ".steer"         // .steer/<agent>: while its shift runs and takes notes, the organizer's pid
+	talkDir      = ".talk"          // .talk/<agent>.json: its running shift's talk with the human in the chat
 	heldDir      = ".paused-agents" // .paused-agents/<agent>: the human paused it, until resumed
 	diskDir      = ".disk"          // .disk/<agent>.json: the size of its work folder, as measured after its last shift
 	openFile     = ".open.json"     // the team's open pull requests and issues, as GitHub last listed them

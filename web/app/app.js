@@ -537,7 +537,7 @@ function teamPage() {
   const T = TEAM.team;
   if (!T) return `<div class="ltitle">Team</div>` + loadingText('The team');
   const ctl = !T.organizer ? `<button class="btn" data-teamact="start">${I.play}Start</button>` : T.paused ? `<button class="btn" data-teamact="resume">${I.play}Resume</button>` : `<button class="btn" data-teamact="pause">${I.pause}Pause</button>`;
-  let h = `<div class="ltitle">Team</div><div class="tpad"><div class="card tcard"><div class="trow"><div class="tx"><b>${esc(T.title)}</b>${T.line ? `<div class="small">${esc(T.line)}</div>` : ''}</div><button class="btn" data-chat>${I.chat}Chat</button>${ctl}</div>`;
+  let h = `<div class="ltitle">Team</div><div class="tpad"><div class="card tcard"><div class="trow"><div class="tx"><b>${esc(T.title)}</b>${T.line ? `<div class="small">${esc(T.line)}</div>` : ''}</div><button class="btn" data-cwith="team">${I.chat}Chat</button>${ctl}</div>`;
   if (T.budget) h += `<div class="meter"><i style="width:${+T.fill || 0}%"></i></div><div class="small">${esc(T.budget)}${T.free ? ' · ' + esc(T.free) : ''}</div>`;
   if (T.usage) h += `<div class="small">Claude: ${esc(T.usage)}</div>`;
   h += `<button class="link" data-view="shares">Rebalance the agents' shares…</button>`;
@@ -556,7 +556,7 @@ function agentPage() {
   if (!A) return h + `</div>` + loadingText(name);
   const working = A.state === 'working', n = esc(name), online = CHAT.here.includes(name); // online: in the chat, as the chat routes it
   h += `<div class="top">${av(name, 64, true)}<div><h2>${n}</h2><div class="ln">${STATE[A.state] ? `<span class="state st-${esc(A.state)}">${esc(STATE[A.state])}</span> ` : ''}${esc(A.line || '')}</div>${A.why ? `<div class="wait">${esc(A.why)}</div>` : ''}${!online && CHAT.agents.length ? `<div class="pline"><i></i>Offline: a message waits for its next run</div>` : ''}</div></div>
-    <div class="acts">${online ? `<button class="btn p" data-chat="@${n} ">${I.chat}Chat now</button>` : ''}<button class="btn${online ? '' : ' p'}" data-composeto="${n}">${I.pen}Message</button>${working
+    <div class="acts">${online ? `<button class="btn p" data-cwith="${n}">${I.chat}Chat now</button>` : ''}<button class="btn${online ? '' : ' p'}" data-composeto="${n}">${I.pen}Message</button>${working
       ? `<button class="btn" data-teamact="cancel" data-arg="${n}">${I.stop}Stop</button>` : `<button class="btn" data-teamact="run" data-arg="${n}">${I.play}Run now</button>`}${A.paused
       ? `<button class="btn" data-teamact="resume" data-arg="${n}">${I.play}Resume</button>` : `<button class="btn" data-teamact="pause" data-arg="${n}">${I.pause}Pause</button>`}</div>
     ${working && A.live ? `<div class="live">$ ${esc(A.live)}</div>` : ''}
@@ -825,11 +825,13 @@ function repoTeam(name) {
     teamPost({action: 'agent-set', arg: name, text: JSON.stringify({repos: was})});
   } : null);
 }
-// ---------- the team chat: one, as a call: the Team always in it, an agent while it works ----------
-// An agent is online, in the chat, while it works: its turn; offline, what the human writes it goes
-// to its mail, and it reads it at its next run. The chat says who is which, and why.
+// ---------- the team chat: a chat with the Team, always there, and one with each agent ----------
+// An agent is online, in its chat, while it works: its turn; offline, what the human writes it goes
+// to its mail, and it reads it at its next run. The chats say who is which, and why; the window shows
+// one at a time (CHAT.with), and each message is in one (its with).
 // It reads /api/chat whenever the team folder changes; what the human writes goes to /api/act.
-const CHAT = {msgs: [], busy: '', here: [], agents: [], team: true, tag: null, asked: 0, shown: 0, local: 0, applying: {}}; // asked, shown: readings, in order: an older one is not shown over a newer; applying: cards tapped, until the server says how they stand
+const CHAT = {msgs: [], busy: [], here: [], agents: [], team: true, tag: null, asked: 0, shown: 0, local: 0, applying: {}, with: 'team', seen: {}, drafts: {}}; // asked, shown: readings, in order: an older one is not shown over a newer; applying: cards tapped, until the server says how they stand; with: the chat open, "team" or an agent's name; seen: by chat, when the human last had it open; drafts: what was typed in each chat but the open one
+try { CHAT.with = localStorage.getItem('rota.chat') || 'team'; const s = JSON.parse(localStorage.getItem('rota.chatSeen')); if (s && typeof s === 'object') CHAT.seen = s; } catch (e) { /* no storage: the Team's chat, all seen from now */ }
 async function loadChat() {
   const n = ++CHAT.asked;
   try {
@@ -841,13 +843,38 @@ async function loadChat() {
     CHAT.shown = n;
     const pres = () => JSON.stringify(CHAT.agents.map(p => [p.name, p.online]));
     const mine = CHAT.msgs.filter(m => m.local), was = pres(); // mine: sent, not yet in what the server says
+    const dot = chatDot();
     Object.assign(CHAT, data, {tag});
-    CHAT.agents = CHAT.agents || []; CHAT.here = CHAT.here || [];
+    CHAT.agents = CHAT.agents || []; CHAT.here = CHAT.here || []; CHAT.busy = CHAT.busy || [];
+    if (CHAT.with !== 'team' && !CHAT.agents.some(x => x.name === CHAT.with)) switchChat('team'); // an agent no longer on the team
     if (S.view.startsWith('agent:') && pres() !== was && !typing()) render(); // its page says whether it is online
     const recent = CHAT.msgs.slice(-10).filter(x => x.from === 'you');
     CHAT.msgs = CHAT.msgs.concat(mine.filter(m => !recent.some(x => x.html.includes(esc(m.text)))));
+    for (const w of new Set(CHAT.msgs.map(chatOf))) if (!(w in CHAT.seen)) CHAT.seen[w] = lastAt(w); // a chat not seen on this device before: what it holds is not new
     if (chatShown() && (!typing() || document.activeElement.id === 'chatin')) render(); // a new line shows at the end, unless the human reads further up
+    else if (chatDot() !== dot && !typing()) render(); // the chat's dot: someone answers, or said something not seen
+    keepSeen();
   } catch (e) { /* the next change reads it again */ }
+}
+// the chats: each message is in one, the Team's ("team") or an agent's
+const chatOf = m => m.with || 'team';
+const chatMsgs = (w = CHAT.with) => CHAT.msgs.filter(m => chatOf(m) === w);
+const chatAgent = (w = CHAT.with) => w === 'team' ? null : CHAT.agents.find(x => x.name === w) || null;
+const lastAt = w => Math.max(0, ...chatMsgs(w).map(m => Date.parse(m.at) || 0));
+// unread: what others said in a chat since the human last had it open on this device
+const unread = w => chatMsgs(w).some(m => m.from !== 'you' && (Date.parse(m.at) || 0) > (CHAT.seen[w] || 0));
+const chatDot = () => CHAT.busy.length > 0 || [...new Set(CHAT.msgs.map(chatOf))].some(unread); // on the chat's button: someone answers, or something new
+function markSeen() {
+  const at = chatShown() ? lastAt(CHAT.with) : 0;
+  if (at > (CHAT.seen[CHAT.with] || 0)) { CHAT.seen[CHAT.with] = at; keepSeen(); }
+}
+function keepSeen() { try { localStorage.setItem('rota.chatSeen', JSON.stringify(CHAT.seen)); } catch (e) { /* this browser keeps it until the page reloads */ } }
+// switchChat opens another chat in the window; what was typed in each stays with it
+function switchChat(w) {
+  if (w === CHAT.with) return;
+  CHAT.drafts[CHAT.with] = S.vals.chat || '';
+  CHAT.with = w; S.vals.chat = CHAT.drafts[w] || '';
+  try { localStorage.setItem('rota.chat', w); } catch (e) { /* this browser keeps it until the page reloads */ }
 }
 const chatShown = () => desk() ? S.tc.open && !S.tc.min : S.ptab === 'chat';
 function chatToEnd() { const b = document.querySelector('[data-cbody]'); if (b) b.scrollTop = b.scrollHeight; }
@@ -855,11 +882,18 @@ function hereText() {
   const w = CHAT.here;
   return w.length ? `${w.join(', ')} ${w.length > 1 ? 'are' : 'is'} online` : 'No agent is online';
 }
-// presenceRow: every agent, online (at work: it answers here) or offline (not its turn: what you write
-// it goes to its mail); a tap names it in what you write
-function presenceRow() {
-  if (!CHAT.agents.length) return '';
-  return `<div class="cwp" role="list" aria-label="Agents in the chat">${[...CHAT.agents].sort((a, b) => b.online - a.online).map(p => `<button role="listitem" class="pres${p.online ? ' on' : ''}" data-cto="${esc(p.name)}" aria-label="${esc(p.name)}, ${p.online ? 'online' : 'offline'}" title="${esc(p.online ? `${p.name} is online: it answers here` : `${p.name} is offline, ${p.note}`)}"><i></i>${esc(p.name)}</button>`).join('')}</div>`;
+// chatList: the chats: the Team's, then each agent's, the agents at work first, as online (at work:
+// it stops its work to talk with you, or talks with you now) or offline (not its turn: what you write
+// it goes to its mail); the open one marked, a dot on one with something you have not seen, and the
+// light of one answering blinking. A tap opens it.
+function chatList() {
+  const chats = [{name: 'team'}, ...[...CHAT.agents].sort((a, b) => b.online - a.online)];
+  return `<div class="cwp" role="tablist" aria-label="Chats">${chats.map(p => {
+    const team = p.name === 'team', on = team ? CHAT.team : p.online, cur = CHAT.with === p.name, nu = !cur && unread(p.name);
+    const state = team ? (CHAT.team ? 'answers for the team' : 'off') : p.talking ? 'talking with you' : p.online ? 'online' : 'offline';
+    const title = team ? (CHAT.team ? 'The Team answers for the whole team' : 'The Team is off: chat_model in Settings turns it on') : p.online ? `${p.name} is ${p.note}` : `${p.name} is offline, ${p.note}`;
+    return `<button role="tab" aria-selected="${cur}" class="pres${on ? ' on' : ''}${cur ? ' cur' : ''}${CHAT.busy.includes(p.name) ? ' busy' : ''}" data-cwith="${esc(p.name)}" aria-label="${esc(team ? 'Team' : p.name)}, ${state}${nu ? ', new' : ''}" title="${esc(title)}"><i></i>${esc(team ? 'Team' : p.name)}${nu ? '<b class="nd"></b>' : ''}</button>`;
+  }).join('')}</div>`;
 }
 // changeCard: what the Team proposes, which the human applies with a tap and undoes where that can be done
 function changeCard(m) {
@@ -897,47 +931,80 @@ async function applyCard(id) {
   delete CHAT.applying[id];
   render();
 }
-// chatBody: the conversation, each run of one sender's lines under its name, as a group chat shows them
+// chatBody: the open chat, each run of one sender's lines under its name, as a chat app shows them,
+// and its Team or agent typing while it answers
 function chatBody() {
-  if (!CHAT.msgs.length) return `<div class="sys">${CHAT.team ? 'Ask the Team what anyone is doing, or tell it what to change. ' : ''}Write @ and an agent’s name to reach it: online, it answers here; offline, it reads it at its next run.</div>`;
+  const msgs = chatMsgs(), a = chatAgent(), busy = CHAT.busy.includes(CHAT.with);
+  if (!msgs.length && !busy) return `<div class="sys">${a ? (a.online ? `${esc(a.name)} is ${esc(a.note)}.` : `${esc(a.name)} is offline, ${esc(a.note)}. What you write it here waits in its mail until its next run.`)
+    : `${CHAT.team ? 'Ask the Team what anyone is doing, or tell it what to change. ' : ''}To talk with an agent, open its chat above, or write @ and its name: online, it stops its work to talk with you; offline, it reads it at its next run.`}</div>`;
   let h = '', prev = null;
-  for (const m of CHAT.msgs) {
+  for (const m of msgs) {
     if (!m.from) { prev = null; h += `<div class="sys">${m.html}</div>`; continue; }
-    if (m.from === 'you') { prev = 'you'; h += `<div class="bub me">${m.to ? `<span class="small">@${esc(m.to)}</span> ` : ''}${m.html}</div>`; continue; }
+    if (m.from === 'you') { prev = 'you'; h += `<div class="bub me">${m.html}</div>`; continue; }
     const first = prev !== m.from; prev = m.from;
     h += `<div class="grp${first ? '' : ' cont'}">${first ? av(m.from, 26) : '<span class="avsp"></span>'}<div class="col">${first ? `<div class="nm">${m.from === 'team' ? 'Team' : esc(m.from)} · ${esc(when(m.at))}</div>` : ''}${m.html ? `<div class="bub mb">${m.html}</div>` : ''}${m.change ? changeCard(m) : ''}</div></div>`;
   }
-  if (CHAT.busy === 'team') h += `<div class="grp">${av('team', 26)}<div class="col"><div class="nm">Team</div><div class="typing"><i></i><i></i><i></i></div></div></div>`;
+  if (busy) h += `<div class="grp">${av(CHAT.with, 26)}<div class="col"><div class="nm">${a ? esc(a.name) : 'Team'}</div><div class="typing"><i></i><i></i><i></i></div></div></div>`; // it answers: the Team, or the agent at work
   return h;
 }
+// chatChips: what to ask, in a chat where the human has not written yet
 function chatChips() {
-  if (CHAT.msgs.some(m => m.from === 'you')) return '';
-  const chips = ['What is everyone doing?', 'Who needs me, and why?', 'What did the team do today?'];
-  if (CHAT.here[0]) chips.push(`@${CHAT.here[0]} what are you doing?`);
+  if (chatMsgs().some(m => m.from === 'you')) return '';
+  const chips = chatAgent() ? ['What are you working on?', 'What do you need from me?', 'What is next?']
+    : ['What is everyone doing?', 'Who needs me, and why?', 'What did the team do today?'].concat(CHAT.here[0] ? [`@${CHAT.here[0]} what are you doing?`] : []);
   return `<div class="cwc">${chips.map(c => `<button data-csay="${esc(c)}">${esc(c)}</button>`).join('')}</div>`;
 }
-// mentions: after @, the agents to name, the online ones first, each online or offline; once one is
-// named, where what is written goes: to it here, or to its mail
+// mentions, in the Team's chat: after @, the agents to name, the online ones first, each online or
+// offline; once one is named, where what is written goes: to it, in its own chat, or to its mail
 function mentionsHTML() {
+  if (CHAT.with !== 'team') return '';
   const text = S.vals.chat || '', m = text.match(/(?:^|\s)@([A-Za-z0-9_.-]*)$/);
   if (m) {
     const p = m[1].toLowerCase();
-    return CHAT.agents.filter(x => x.name.toLowerCase().startsWith(p)).slice(0, 6).map(x => `<button data-mention="${esc(x.name)}">${av(x.name, 18)}@${esc(x.name)} <span class="${x.online ? 'pon' : 'small'}">${x.online ? 'online' : 'offline · ' + esc(x.note)}</span></button>`).join('');
+    return CHAT.agents.filter(x => x.name.toLowerCase().startsWith(p)).slice(0, 6).map(x => `<button data-mention="${esc(x.name)}">${av(x.name, 18)}@${esc(x.name)} <span class="${x.online ? 'pon' : 'small'}">${x.talking ? 'talking with you' : x.online ? 'online' : 'offline · ' + esc(x.note)}</span></button>`).join('');
   }
-  const to = text.match(/(?:^|\s)@([A-Za-z0-9_][A-Za-z0-9_.-]*)/), a = to && CHAT.agents.find(x => x.name === to[1]); // as the server reads it: the name as it is
-  if (!a) return '';
-  return a.online ? `<div class="cwhint on">${esc(a.name)} is online: it answers here.</div>`
+  const a = chatTo(text);
+  if (!a || a === 'team') return '';
+  return a.online ? `<div class="cwhint on">${esc(a.name)} is ${esc(a.note)}. This opens your chat with it.</div>`
     : `<div class="cwhint">${esc(a.name)} is offline, ${esc(a.note)}. It reads this then.</div>`;
 }
-function chatPane(tab) {
-  const w = CHAT.here;
-  return `<div class="cwh"${tab ? '' : ' data-cmin'}>${av('team', 30, true)}<div class="tt"><b>Team</b><span class="here">${w.length ? `<span class="ppl">${w.map(n => av(n, 18)).join('')}</span>` : ''}${esc(hereText())}</span></div>
-    ${tab ? `<button class="ib" data-view="team" title="Everyone on the team">${I.team}</button>` : `<button class="ib" data-cmin title="${S.tc.min ? 'Open' : 'Minimize'}">${I.minus}</button><button class="ib" data-cclose title="Close">${I.x}</button>`}</div>
-    ${presenceRow()}<div class="cwb" data-cbody>${chatBody()}</div>${chatChips()}<div class="cwc" id="mentions">${mentionsHTML()}</div>
-    <div class="cwi"><textarea id="chatin" rows="1" placeholder="${CHAT.team ? 'Message the Team, or @ an agent' : '@ an agent'}" aria-label="Message the team">${esc(S.vals.chat || '')}</textarea><button class="ib" data-csend aria-label="Send">${I.send}</button></div>`;
+// chatTo: where what the human writes goes, as the server reads it: to the agent its first @ names,
+// the name as it is, or to the Team; null when that names no agent
+function chatTo(text) {
+  const at = text.match(/(?:^|\s)@([A-Za-z0-9_][A-Za-z0-9_.-]*)/);
+  if (!at || at[1].toLowerCase() === 'team') return 'team';
+  return CHAT.agents.find(x => x.name === at[1]) || null;
 }
-// openChat: the dock on the desktop, the Chat tab on the phone; what was typed comes along
-function openChat(prefill) {
+// chatPane: the open chat: who it is with, the chats, what was said, and what the human writes
+function chatPane(tab) {
+  const w = CHAT.here, a = chatAgent();
+  markSeen();
+  const head = a ? `${av(a.name, 30, true)}<div class="tt"><b>${esc(a.name)}</b><span class="here">${esc(a.online ? a.note : 'offline, ' + a.note)}</span></div>`
+    : `${av('team', 30, true)}<div class="tt"><b>Team</b><span class="here">${w.length ? `<span class="ppl">${w.map(n => av(n, 18)).join('')}</span>` : ''}${esc(hereText())}</span></div>`;
+  const say = a ? `Message ${a.name}` : CHAT.team ? 'Message the Team, or @ an agent' : '@ an agent';
+  return `<div class="cwh"${tab ? '' : ' data-cmin'}>${head}
+    ${tab ? `<button class="ib" data-view="${a ? 'agent:' + esc(a.name) : 'team'}" title="${a ? esc(a.name) + '’s page' : 'Everyone on the team'}">${I.team}</button>` : `<button class="ib" data-cmin title="${S.tc.min ? 'Open' : 'Minimize'}">${I.minus}</button><button class="ib" data-cclose title="Close">${I.x}</button>`}</div>
+    ${chatList()}<div class="cwb" data-cbody>${chatBody()}</div>${chatChips()}<div class="cwc" id="mentions">${mentionsHTML()}</div>
+    <div class="cwi"><textarea id="chatin" rows="1" placeholder="${esc(say)}" aria-label="${esc(a ? 'Message ' + a.name : 'Message the team')}">${esc(S.vals.chat || '')}</textarea><button class="ib" data-csend aria-label="Send">${I.send}</button></div>`;
+}
+// fitChatIn: the box the human writes in the chat grows with what is typed, a line at a time, to near
+// half the chat, and only then scrolls; drawn anew, it keeps that size. The talk above keeps its last
+// line in view when it was there.
+function fitChatIn() {
+  const el = document.getElementById('chatin');
+  if (!el) return;
+  const b = document.querySelector('[data-cbody]'), atEnd = b && b.scrollHeight - b.scrollTop - b.clientHeight < 32;
+  const pane = el.closest('.cw, .cfull'), max = Math.max(120, Math.round((pane ? pane.clientHeight : innerHeight) * .45));
+  el.style.height = 'auto';
+  const full = el.scrollHeight;
+  el.style.height = Math.min(full, max) + 'px';
+  el.style.overflowY = full > max ? 'auto' : 'hidden';
+  if (b && atEnd) b.scrollTop = b.scrollHeight;
+}
+// openChat: the dock on the desktop, the Chat tab on the phone, with the chat w ("team" or an agent's)
+// or the one open; what was typed comes along
+function openChat(prefill, w) {
+  if (w) switchChat(w);
   if (prefill !== undefined) S.vals.chat = prefill;
   if (desk()) S.tc = {open: true, min: false}; else { S.ptab = 'chat'; S.open = null; }
   if (searching()) { S.q = null; S.f = {}; S.keepRead.clear(); } // as search's own X: its filters were the search's
@@ -945,17 +1012,23 @@ function openChat(prefill) {
   const el = document.getElementById('chatin');
   if (el && desk()) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
 }
+// chatSend: what the human writes, in the open chat; in the Team's, an @ and an agent's name writes to
+// that agent, and opens its chat
 async function chatSend(text) {
   text = (text || '').trim();
   if (!text) return;
   S.vals.chat = '';
-  const id = 'local' + (++CHAT.local), msg = {id, local: true, text, from: 'you', html: `<p>${esc(text)}</p>`, at: new Date().toISOString()};
+  let w = CHAT.with;
+  if (w === 'team') { const to = chatTo(text); if (to && to !== 'team') w = to.name; }
+  switchChat(w); // what was typed in that chat before stays there
+  const a = chatAgent(w), who = w === 'team' ? (CHAT.team ? 'team' : '') : a && a.online ? a.name : ''; // who answers it here: the Team, or the agent at work
+  const id = 'local' + (++CHAT.local), msg = {id, local: true, with: w, text, from: 'you', html: `<p>${esc(text)}</p>`, at: new Date().toISOString()};
   CHAT.msgs.push(msg);
-  if (!/(?:^|\s)@(?!team\b)[A-Za-z0-9_]/i.test(text) && CHAT.team) CHAT.busy = 'team';
+  if (who && !CHAT.busy.includes(who)) CHAT.busy = CHAT.busy.concat(who);
   render(); chatToEnd();
-  const said = await post({action: 'chat', text});
+  const said = await post({action: 'chat', text, arg: w === 'team' ? '' : w});
   CHAT.msgs = CHAT.msgs.filter(m => m.id !== id); // the server's copy takes its place
-  if (said === null) { if (!S.vals.chat) S.vals.chat = text; CHAT.busy = ''; render(); return; } // a newer draft stays
+  if (said === null) { if (!S.vals.chat) S.vals.chat = text; CHAT.busy = CHAT.busy.filter(x => x !== who); render(); return; } // a newer draft stays
   CHAT.tag = null; loadChat();
 }
 // ---------- notifications on this device ----------
@@ -1095,7 +1168,7 @@ function phoneHTML() {
   h += `<div class="list">${searching() && searchEmpty() ? searchStart() : chatTab ? '' : listBody()}</div>`;
   if (chatTab) h += `<div class="cfull tab">${chatPane(true)}</div>`;
   if (!searching() && !sel && !pageView() && S.view !== 'keys' && !chatTab) h += `<button class="fab" data-compose>${I.pen}Message</button>`; // only over the mail: an agent's page has its own, and it would cover a setting
-  if (!searching() && !sel) h += `<div class="pfoot">${saveBar()}<nav class="bnav">${[['mail', 'Mail', I.mail], ['chat', 'Chat', I.chat]].map(([v, l, ic]) => `<button class="${S.ptab === v ? 'on' : ''}" data-ptab="${v}"><span class="pill">${ic}</span>${l}${v === 'chat' && CHAT.busy ? '<span class="dot"></span>' : ''}</button>`).join('')}</nav></div>`;
+  if (!searching() && !sel) h += `<div class="pfoot">${saveBar()}<nav class="bnav">${[['mail', 'Mail', I.mail], ['chat', 'Chat', I.chat]].map(([v, l, ic]) => `<button class="${S.ptab === v ? 'on' : ''}" data-ptab="${v}"><span class="pill">${ic}</span>${l}${v === 'chat' && chatDot() ? '<span class="dot"></span>' : ''}</button>`).join('')}</nav></div>`;
   else { barWas = ''; document.body.classList.remove('unsaved'); } // no bar under a search or a selection
   h += `</div>`;
   if (S.open) { const [tools, body] = paneOf(S.open, true); h += `<div class="over${S.open !== shownOpen ? ' slide' : ''}" id="over"><div class="tbar">${tools}</div>${body}</div>`; }
@@ -1111,7 +1184,7 @@ function deskHTML() {
    <div class="gbar"><div class="brand"><img class="mk" src="/mark.png" alt="">rota</div>
      <div class="gsearch${searching() ? ' on' : ''}"><div class="box2"><span class="ib">${I.search}</span><input id="dq" value="${esc(S.q || '')}" placeholder="Search messages, agents and #numbers" autocomplete="off">${searching() ? `${filterBtn()}<button class="ib" data-endsearch aria-label="Close search">${I.x}</button>` : ''}</div>
        ${searching() && searchEmpty() ? `<div class="gdrop">${searchStart()}</div>` : ''}</div>
-     <div class="gright"><button class="gstat" data-view="team" title="${esc(M.top.Title)}">${statusMini()}<span>${esc(M.top.State)}</span></button>${M.top.Budget ? `<button class="gbud" data-view="team" title="The team's budget">${esc(M.top.Budget)}<b><i style="width:${M.top.Fill}%"></i></b></button>` : ''}<button class="ib${S.tc.open ? ' on' : ''}" data-chat title="Team chat">${I.chat}</button><button class="ib" data-view="settings" title="Settings">${I.gear}</button></div></div>
+     <div class="gright"><button class="gstat" data-view="team" title="${esc(M.top.Title)}">${statusMini()}<span>${esc(M.top.State)}</span></button>${M.top.Budget ? `<button class="gbud" data-view="team" title="The team's budget">${esc(M.top.Budget)}<b><i style="width:${M.top.Fill}%"></i></b></button>` : ''}<button class="ib cbtn${S.tc.open ? ' on' : ''}" data-chat title="Team chat">${I.chat}${!chatShown() && chatDot() ? '<span class="dot"></span>' : ''}</button><button class="ib" data-view="settings" title="Settings">${I.gear}</button></div></div>
    <div class="cols${wide ? ' full' : ''}">
      <nav class="side" aria-label="Folders"><button class="compose-btn" data-compose>${I.pen}New message</button>${nav()}</nav>
      <section class="lp">${S.view === 'inbox' && !searching() ? `<div class="lhead">${tabsHTML('ltabs')}${sel ? `<div class="ltool"><button class="ib" data-clearsel aria-label="Clear">${I.x}</button><b>${sel} selected</b><span class="sp"></span><button class="ib" data-bulk="archive" title="Archive">${I.archive}</button><button class="ib" data-bulk="snooze" title="Snooze">${I.clock}</button><button class="ib" data-bulk="read" title="Mark read">${I.mail}</button></div>` : ''}</div>` : ''}${listBody()}${saveBar()}</section>
@@ -1309,6 +1382,7 @@ function render() {
   const winY = window.scrollY, sameOpen = S.open === shownOpen;
   const cb = document.querySelector('[data-cbody]'), chatTop = cb && cb.scrollTop, chatEnd = cb && cb.scrollHeight - cb.scrollTop - cb.clientHeight < 32; // the chat: read at its end, which new lines move, or further up
   document.getElementById('root').innerHTML = (desk() ? deskHTML() : phoneHTML()) + composeHTML();
+  fitChatIn(); // drawn anew, the chat's box holds what is typed in it as before
   for (const sel in keep) { const el = document.querySelector(sel); if (el && (sel !== '.rp' && sel !== '#over' || sameOpen)) el.scrollTop = keep[sel]; }
   const nb = document.querySelector('[data-cbody]'); if (nb) nb.scrollTop = !cb || chatEnd ? nb.scrollHeight : chatTop; // one that appears anew opens at its end
   if (!desk() && !S.open) window.scrollTo(0, winY);
@@ -1522,8 +1596,8 @@ document.addEventListener('click', e => {
   if (d.cclose !== undefined) { e.stopPropagation(); S.tc.open = false; render(); return; }
   if (d.csend !== undefined) { chatSend((document.getElementById('chatin') || {}).value); return; }
   if (d.csay) { chatSend(d.csay); return; }
-  if (d.askteam !== undefined) { const q = S.q; S.q = null; S.f = {}; openChat(''); chatSend(q); return; }
-  if (d.cto) { S.vals.chat = '@' + d.cto + ' ' + (S.vals.chat || '').replace(/^@[A-Za-z0-9_.-]+\s*/, ''); render(); const el = document.getElementById('chatin'); if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); } return; }
+  if (d.askteam !== undefined) { const q = S.q; S.q = null; S.f = {}; openChat('', 'team'); chatSend(q); return; }
+  if (d.cwith) { openChat(undefined, d.cwith); return; }
   if (d.mention) { S.vals.chat = (S.vals.chat || '').replace(/@[A-Za-z0-9_.-]*$/, '@' + d.mention + ' '); render(); const el = document.getElementById('chatin'); if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); } return; }
   if (d.capply) { applyCard(d.capply); return; }
   if (d.cno) { post({action: 'chat-cancel', arg: d.cno}).then(() => { CHAT.tag = null; loadChat(); }); return; }
@@ -1619,8 +1693,8 @@ document.addEventListener('input', e => {
   const id = e.target.id;
   if (id === 'q' || id === 'dq') { S.q = e.target.value; render(); return; }
   if (id === 'roletext') { S.roleDraft = e.target.value; paintBar(); return; }
-  if (id === 'chatin') { // it grows with what is typed, to five lines
-    S.vals.chat = e.target.value; e.target.style.height = 'auto'; e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px';
+  if (id === 'chatin') { // it grows with what is typed
+    S.vals.chat = e.target.value; fitChatIn();
     const m = document.getElementById('mentions'); if (m) m.innerHTML = mentionsHTML(); return;
   }
   if (e.target.dataset.field) { fieldInput(e.target); return; }

@@ -66,11 +66,11 @@ func TestTheHumanWritesTheTeamOrAnAgent(t *testing.T) {
 			t.Errorf("%.20q is sent", bad)
 		}
 	}
-	if err := team.ChatSay("qa", "The stack waits for its database."); err != nil || lastChat(t, team).From != "qa" {
+	if err := team.ChatSay("qa", "The stack waits for its database.", false); err != nil || lastChat(t, team).From != "qa" {
 		t.Fatalf("an agent says: %v", err)
 	}
 	for _, who := range []string{"team", "you", "Team", "nobody", ""} {
-		if err := team.ChatSay(who, "I speak for the team."); err == nil {
+		if err := team.ChatSay(who, "I speak for the team.", false); err == nil {
 			t.Errorf("%q says something in the chat", who)
 		}
 	}
@@ -78,6 +78,55 @@ func TestTheHumanWritesTheTeamOrAnAgent(t *testing.T) {
 	off := open(t, root)
 	if _, err := off.ChatSend("hello?", wake); err != nil || woken != 1 || !strings.Contains(lastChat(t, off).Text, "The Team is off") {
 		t.Fatalf("with no Team, the chat says so: %v %d", err, woken)
+	}
+}
+
+// The chat with the Team and the chat with each agent: what the human writes in an agent's goes to
+// that agent, with no @ needed; in the Team's, an @ and an agent's name writes to that agent, in
+// its chat. Each message is in one chat: the human's in the chat of whom they wrote to, the Team's
+// and each agent's in their own, rota's line in the chat of the agent it says something of, also
+// as said before it named the agent, or the Team's.
+func TestEachChatIsItsOwn(t *testing.T) {
+	_, team := chatTeam(t)
+	os.MkdirAll(team.Path(steerDir), 0o755)
+	os.WriteFile(team.steerFile("qa"), []byte(strconv.Itoa(os.Getpid())), 0o644) // qa is at work
+	if m, err := team.ChatSendTo("qa", "why is the stack down?", nil); err != nil || m.To != "qa" || m.With() != "qa" {
+		t.Fatalf("in qa's chat: %+v %v", m, err)
+	}
+	if m, err := team.ChatSendTo("qa", "@qa and the database?", nil); err != nil || m.With() != "qa" {
+		t.Fatalf("in qa's chat, its name too: %+v %v", m, err)
+	}
+	if notes := inboxText(team, "qa"); !strings.Contains(notes, "in the team chat: why is the stack down?\n") || !strings.Contains(notes, "in the team chat: and the database?\n") {
+		t.Fatalf("qa's shift reads them, without its name: %s", notes)
+	}
+	if m, err := team.ChatSendTo("qa", "@dev take over", nil); err != nil || m.To != "qa" {
+		t.Fatalf("in qa's chat, all of it goes to qa: %+v %v", m, err)
+	}
+	if m, err := team.ChatSendTo("", "@qa one more", nil); err != nil || m.With() != "qa" {
+		t.Fatalf("an @ in the Team's chat writes in qa's: %+v %v", m, err)
+	}
+	if m, err := team.ChatSendTo("team", "What is everyone doing?", nil); err != nil || m.To != "" || m.With() != "team" {
+		t.Fatalf("in the Team's chat: %+v %v", m, err)
+	}
+	if _, err := team.ChatSendTo("nobody", "hi", nil); err == nil {
+		t.Fatal("no chat with an agent that is none")
+	}
+	for _, c := range []struct {
+		m    ChatMsg
+		with string
+	}{
+		{ChatMsg{From: "team", Text: "All idle.", Answer: "c1"}, "team"},
+		{ChatMsg{From: "team", Change: &ChatChange{Agent: "qa"}}, "team"},
+		{ChatMsg{Text: "The Team is off: chat_model in Settings turns it on.", Answer: "c1"}, "team"},
+		{ChatMsg{Re: "c2", State: "applied"}, "team"},
+		{ChatMsg{From: "qa", Text: "Testing."}, "qa"},
+		{ChatMsg{Text: "qa went back to its work.", To: "qa"}, "qa"},
+		{ChatMsg{Text: "dev is not working now. It reads your message at its next run and answers in your inbox; until then the message waits in Waiting."}, "dev"},
+		{ChatMsg{Text: "dev is not working now"}, "team"},
+	} {
+		if got := c.m.With(); got != c.with {
+			t.Errorf("%+v is in %q's chat, want %q's", c.m, got, c.with)
+		}
 	}
 }
 
@@ -242,11 +291,11 @@ func TestTheTeamAnswersInItsSession(t *testing.T) {
 	team.ChatSend("What is everyone doing?", nil)
 	done := make(chan struct{})
 	go func() { team.teamTurn(); close(done) }()
-	waitFor(t, "the Team to answer", func() bool { return team.ChatBusy() == "team" })
+	waitFor(t, "the Team to answer", func() bool { return slices.Equal(team.ChatBusy(), []string{"team"}) })
 	team.ChatSend("And qa?", nil) // while it answers
 	<-done
-	if team.ChatBusy() != "" {
-		t.Fatal("still busy")
+	if busy := team.ChatBusy(); len(busy) != 0 {
+		t.Fatalf("still busy: %v", busy)
 	}
 	if m := lastChat(t, team); m.From != "team" || m.Text != "triage is working; the rest are idle." {
 		t.Fatalf("its answer: %+v", m)

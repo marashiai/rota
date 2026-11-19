@@ -134,7 +134,8 @@ developer answers in the thread. Approve when you're happy.
 ### Talk to the team
 
 Ask the Team what anyone is doing, or tell it what to change: it proposes the change and you apply
-it. Write `@` and an agent's name to reach it; while it works, it answers right there.
+it. Each agent has its own chat beside the Team's: while it works, it stops its work and talks with
+you there, its whole attention on you, and goes back to its work once you're done.
 
 <p align="center"><img src="docs/demos/chat.gif" width="860" alt="The team chat: the Team answers, and the working developer replies"></p>
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -128,8 +129,9 @@ func TestTheTeamReadsGitHubWithItsTool(t *testing.T) {
 		}
 		names = append(names, tool.Name)
 	}
-	if strings.Join(names, ",") != "github" || "mcp__rota__"+names[0] != teamToolNames[0] {
-		t.Fatalf("the Team's tools: %v", names)
+	slices.Sort(names)
+	if strings.Join(names, ",") != "agent_chat,github" || !slices.Contains(teamToolNames, "mcp__rota__github") || !slices.Contains(teamToolNames, "mcp__rota__agent_chat") {
+		t.Fatalf("the Team's tools: %v, allowed %v", names, teamToolNames)
 	}
 	call := func(args ...string) (string, bool) {
 		t.Helper()

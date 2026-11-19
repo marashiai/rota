@@ -42,6 +42,7 @@ type Config struct {
 	MaxAttempts   int     `key:"max_attempts" default:"3" check:">=1" help:"only a shift that finishes ok is a run; anything else is retried, at most this many attempts in all"`
 	RetryMinutes  float64 `key:"retry_minutes" default:"15" check:">0" help:"wait before the first retry; doubles with every attempt"`
 	AnswerMinutes float64 `key:"answer_minutes" default:"30" check:">0" help:"how long an agent may wait in its shift for your answer to its question (rota wait) before it sets that work aside"`
+	TalkMinutes   float64 `key:"talk_minutes" default:"5" check:">0" help:"how long an agent at work, its work stopped while you talk with it in the chat, waits for your next words before it goes back to its work"`
 	TriageModel   string  `key:"triage_model" default:"haiku" suggest:"haiku|sonnet|off" help:"the model that judges whether a failed shift is worth retrying; off: always retry"`
 	ReportModel   string  `key:"report_model" default:"sonnet" suggest:"haiku|sonnet|opus|off" help:"the model that rewrites your report into a short executive summary when a shift ends with something you should know; off: the report lists what each shift said"`
 	ChatModel     string  `key:"chat_model" default:"sonnet" suggest:"haiku|sonnet|opus|off" help:"the model of the Team in the chat, which answers you about the team and proposes changes you apply; off: no Team, only the agents at work"`

@@ -626,10 +626,12 @@ var steerEvery = 2 * time.Second
 // steering brings a running shift the notes that arrive in its agent's inbox: each batch goes
 // to it as a message, and counts as read once claude echoes it, which it does when the message
 // enters the conversation; the inbox then drops it. A batch claude never took stays there for
-// the next shift.
+// the next shift. One with the human's words from the chat begins a talk (talk.go): while it goes
+// on, the human's words wait for rota listen, and every other note for the talk's end.
 type steering struct {
 	t     *Team
 	agent string
+	talks bool            // a shift on this machine: the human talks with it in the chat (talk.go)
 	read  map[string]bool // the notes the shift was briefed with
 	mu    sync.Mutex
 	sent  []batch // sent, not yet taken
@@ -650,38 +652,97 @@ func (s *steering) watch(ctx context.Context, send func(string) bool) {
 			return
 		case <-time.After(steerEvery):
 		}
-		unlock, err := s.t.lockInbox(s.agent) // a note deleted meanwhile is deleted before it is sent, or after
-		if err != nil {
-			continue
-		}
-		s.mu.Lock()
-		gone := maps.Clone(s.read) // briefed, sent, or taken and on their way out of the inbox
-		maps.Copy(gone, ids(s.took))
-		for _, b := range s.sent {
-			maps.Copy(gone, ids(b.notes))
-		}
-		var b batch
-		for _, n := range s.t.Notes(s.agent) {
-			if !gone[n.ID] {
-				b.notes = append(b.notes, n)
-			}
-		}
-		if len(b.notes) > 0 {
-			b.text = s.t.NotesText(b.notes)
-			s.sent = append(s.sent, b) // before it is sent: claude may echo it at once
-		}
-		s.mu.Unlock()
-		if len(b.notes) > 0 && !send(noteHeader+"\n\n"+b.text) {
-			s.mu.Lock()
-			s.sent = slices.DeleteFunc(s.sent, func(x batch) bool { return x.notes[0].ID == b.notes[0].ID })
-			s.mu.Unlock()
-		}
-		unlock()
+		s.look(send)
 	}
 }
 
+// look is one look at the inbox, under its lock: a note deleted meanwhile is deleted before it is
+// sent, or after; and the talk, which the human's words in the chat begin, and their silence ends.
+// The chat says so after the inbox's lock, as everyone writes it.
+func (s *steering) look(send func(string) bool) {
+	if s.lookLocked(send) {
+		s.t.sayQuiet(s.agent)
+	}
+}
+
+// lookLocked is look under the inbox's lock. It says whether a talk went quiet with no word of the
+// human's left for rota listen to bring: those begin another talk at once, and the chat says that.
+func (s *steering) lookLocked(send func(string) bool) (quietLine bool) {
+	unlock, err := s.t.lockInbox(s.agent)
+	if err != nil {
+		return false
+	}
+	defer unlock()
+	var tk chatTalk
+	if s.talks {
+		tk = s.t.loadTalk(s.agent)
+	}
+	now := time.Now()
+	quiet := tk.quiet(now, s.t.talkQuiet())
+	if quiet {
+		quietLine = len(tk.For) == 0
+		tk.end("quiet")
+	}
+	changed := quiet
+	s.mu.Lock()
+	gone := maps.Clone(s.read) // briefed, sent, or taken and on their way out of the inbox
+	maps.Copy(gone, ids(s.took))
+	for _, b := range s.sent {
+		maps.Copy(gone, ids(b.notes))
+	}
+	maps.Copy(gone, ids(tk.Heard)) // the talk's: brought by rota listen, or waiting for it
+	maps.Copy(gone, ids(tk.For))
+	var b batch
+	for _, n := range s.t.Notes(s.agent) {
+		switch {
+		case gone[n.ID]:
+		case tk.Open && n.Chat: // the human's next words, for rota listen
+			tk.For, tk.Last, changed = append(tk.For, n), now, true
+		case tk.Open: // a note waits for the talk's end
+		default:
+			b.notes = append(b.notes, n)
+		}
+	}
+	if len(b.notes) > 0 {
+		b.text = s.t.NotesText(b.notes)
+		if s.talks && len(chatIDs(b.notes)) > 0 { // the human's first words: what to do now
+			b.text += "\n" + talkBegins + "\n"
+		}
+		s.sent = append(s.sent, b) // before it is sent: claude may echo it at once
+	}
+	s.mu.Unlock()
+	if len(b.notes) > 0 {
+		if !send(noteHeader + "\n\n" + b.text) {
+			s.mu.Lock()
+			s.sent = slices.DeleteFunc(s.sent, func(x batch) bool { return x.notes[0].ID == b.notes[0].ID })
+			s.mu.Unlock()
+		} else if chat := chatIDs(b.notes); s.talks && len(chat) > 0 { // the human talks to it: a talk begins
+			tk = chatTalk{Open: true, Since: now, Last: now, Opening: chat, Heard: tk.Heard}
+			changed = true
+		}
+	}
+	if changed {
+		if err := s.t.saveTalk(s.agent, tk); err != nil {
+			fmt.Fprintln(os.Stderr, "warn: the talk with the human is not kept:", err)
+		}
+	}
+	return quietLine
+}
+
+// chatIDs are the ids of the human's words from the chat among notes.
+func chatIDs(notes []Note) []string {
+	var chat []string
+	for _, n := range notes {
+		if n.Chat {
+			chat = append(chat, n.ID)
+		}
+	}
+	return chat
+}
+
 // taken is claude's echo of a batch: its notes are read, and leave the inbox. The inbox's lock
-// is taken without holding s.mu, which watch takes inside it.
+// is taken without holding s.mu, which watch takes inside it. The human's first words in a talk,
+// taken, start its clock: the agent answers them now.
 func (s *steering) taken(text string) {
 	s.mu.Lock()
 	var read []Note
@@ -692,10 +753,18 @@ func (s *steering) taken(text string) {
 		}
 	}
 	s.mu.Unlock()
-	if read != nil {
-		if err := s.t.dropNotes(s.agent, ids(read)); err != nil {
-			fmt.Fprintln(os.Stderr, "warn: the notes the shift read stay in its inbox:", err)
-		}
+	if read == nil {
+		return
+	}
+	if err := s.t.dropNotes(s.agent, ids(read)); err != nil {
+		fmt.Fprintln(os.Stderr, "warn: the notes the shift read stay in its inbox:", err)
+	}
+	if chat := chatIDs(read); s.talks && len(chat) > 0 {
+		s.t.changeTalk(s.agent, func(tk *chatTalk) {
+			if tk.Open && len(tk.Opening) > 0 {
+				tk.Opening, tk.Last = slices.DeleteFunc(tk.Opening, func(id string) bool { return slices.Contains(chat, id) }), time.Now()
+			}
+		})
 	}
 }
 

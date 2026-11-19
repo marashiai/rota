@@ -502,8 +502,9 @@ func (m *monitor) step(e Event) {
 var updateGrace = 15 * time.Minute
 
 // takeUpdate stops the running shift for a newly installed rota, between its tool calls or while
-// it only waits for the human's answer, or once updateGrace has passed: it resumes where it
-// stopped in the new rota, which the organizer runs as soon as the shift is recorded.
+// it only waits for the human's answer, but not while it talks with the human in the chat, or once
+// updateGrace has passed: it resumes where it stopped in the new rota, which the organizer runs as
+// soon as the shift is recorded.
 func (o *organizer) takeUpdate(now time.Time) {
 	if _, ready := o.self.check(now); !ready {
 		return
@@ -519,6 +520,9 @@ func (o *organizer) takeUpdate(now time.Time) {
 	rest := o.begun // a shift still preparing has no session yet to resume
 	for _, waits := range o.open {
 		rest = rest && waits
+	}
+	if o.running != nil && o.Talking(o.running.Agent) {
+		rest = false
 	}
 	if !rest && now.Sub(o.newSince) < updateGrace {
 		return

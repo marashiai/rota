@@ -177,6 +177,7 @@ func (t *Team) shift(ctx context.Context, s *schedule, a *Agent, u *Usage, h *hu
 	if os.MkdirAll(t.Path(steerDir), 0o755) == nil {
 		os.WriteFile(t.steerFile(a.Name), []byte(strconv.Itoa(os.Getpid())), 0o644)
 	}
+	os.Remove(t.talkFile(a.Name)) // no talk yet: one an earlier shift left is over
 	if lockErr == nil {
 		unlock()
 	}
@@ -203,7 +204,7 @@ func (t *Team) shift(ctx context.Context, s *schedule, a *Agent, u *Usage, h *hu
 		label = a.Host + "/" + a.Name
 	}
 	sessionKept := false
-	steer := &steering{t: t, agent: a.Name, read: ids(read)}
+	steer := &steering{t: t, agent: a.Name, talks: a.Host == "", read: ids(read)}
 	onLine := func(line string) { // every line claude prints, here or forwarded from the host
 		if logFile != nil {
 			logFile.WriteString(line + "\n")
@@ -274,6 +275,8 @@ func (t *Team) shift(ctx context.Context, s *schedule, a *Agent, u *Usage, h *hu
 	stopWatch()
 	<-steered                      // it sends nothing more
 	os.Remove(t.steerFile(a.Name)) // before record looks for notes that did not reach the shift
+	during := append(steer.during(), t.endTalk(a.Name)...)
+	slices.SortStableFunc(during, func(x, y Note) int { return x.At.Compare(y.At) })
 	if logFile != nil {
 		if st, _ := logFile.Stat(); st != nil && st.Size() == 0 && strings.TrimSpace(res.Output) != "" {
 			logFile.WriteString(res.Output) // a failure message, never streamed
@@ -296,7 +299,7 @@ func (t *Team) shift(ctx context.Context, s *schedule, a *Agent, u *Usage, h *hu
 	case sessionKept || r.Status == "stopped" || r.Status == "pool" || r.Status == "hours" || r.Status == "timeout":
 		t.dropResume(a.Name)
 	}
-	return t.record(ctx, a, r, res, text, read, steer.during(), vars, s.now.Add(time.Since(began)), keep)
+	return t.record(ctx, a, r, res, text, read, during, vars, s.now.Add(time.Since(began)), keep)
 }
 
 // watchPool stops a running shift when the team pool runs out: it reads the weekly window as

@@ -83,7 +83,11 @@ in an agent's shift:
                     ask the human now: they are notified; prints the question's id. Options are
                     the answers they tap, steps make a to-do they tick and mark done
   wait <id>         wait up to 8 minutes for the answer; says whether to keep waiting
-  say <text>        an agent at work answers the human in the team chat
+  say [--end] <text>
+                    an agent at work talks with the human in the team chat: its work waits
+                    until the talk is over; --end says its last words in it, and ends it
+  listen            in a talk, wait up to 90 seconds for the human's next words; says when the
+                    talk is over: neither said anything for talk_minutes
   reply <id> <answer>
                     answer the human's message <id> (a note from the human names its id)
   withdraw <id>     withdraw your question that no longer needs an answer
@@ -393,6 +397,8 @@ func command(ctx context.Context, args []string, root, conf string, now time.Tim
 		switch {
 		case errors.Is(err, core.ErrDismissed):
 			fmt.Println("the human dismissed this question without an answer: go on without it, and do not ask it again unless something about it changes.")
+		case errors.Is(err, core.ErrTalk):
+			fmt.Printf("the human is talking to you in the team chat: their words reach you now. Talk with them first; once the talk is over, rota wait %s waits for the answer again.\n", id)
 		case err != nil:
 			return err
 		case answer != "":
@@ -408,10 +414,44 @@ func command(ctx context.Context, args []string, root, conf string, now time.Tim
 		if agent == "" {
 			return fmt.Errorf("rota say is for an agent's shift on the organizer's machine")
 		}
-		if err := t.ChatSay(agent, strings.Join(args[1:], " ")); err != nil {
+		words, last := args[1:], false
+		if len(words) > 0 && words[0] == "--end" {
+			words, last = words[1:], true
+		}
+		if err := t.ChatSay(agent, strings.Join(words, " "), last); err != nil {
 			return err
 		}
-		fmt.Println("said in the team chat.")
+		switch {
+		case last:
+			fmt.Println("said in the team chat; the talk is over: go back to your work where you left it.")
+		case t.Talking(agent):
+			fmt.Println("said in the team chat. Now rota listen for the human's next words.")
+		default:
+			fmt.Println("said in the team chat.")
+		}
+		return nil
+	case "listen":
+		agent := os.Getenv("ROTA_AGENT")
+		if agent == "" {
+			return fmt.Errorf("rota listen is for an agent's shift on the organizer's machine")
+		}
+		park, _ := time.Parse(time.RFC3339, os.Getenv("ROTA_PARK_BY"))
+		h, err := t.Listen(agent, 90*time.Second, park) // within the Bash tool's default timeout
+		switch {
+		case err != nil:
+			return err
+		case len(h.Notes) > 0:
+			fmt.Print(t.HeardText(h))
+			fmt.Println("Answer with rota say, then rota listen again. When they are done, end the talk with rota say --end <what you go back to>.")
+		case h.Quiet:
+			fmt.Printf("neither of you said anything for %g minutes: the talk is over, and the chat says so. Go back to your work where you left it.\n", t.TalkMinutes)
+		case h.Ended:
+			fmt.Println("you are not talking with the human: go on with your work.")
+		case h.Park:
+			fmt.Println("your shift ends soon: tell the human with rota say --end, and put your work away.")
+		default:
+			fmt.Printf("the human has not written yet: rota listen again. The talk ends by itself once neither of you said anything for %g minutes.\n", t.TalkMinutes)
+		}
 		return nil
 	case "reply":
 		agent := os.Getenv("ROTA_AGENT")

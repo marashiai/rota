@@ -621,7 +621,7 @@ func (c *Config) Stamp() string {
 		}
 	}
 	add(c.Path(c.File))
-	for _, f := range []string{stateFile, spendFile, hostsFile, ".paused", ".run-now", logDir, openFile, queueFile, seenFile, mailFile, filterFile(ReviewsTab), filterFile(IssuesTab), steerDir, chatFile, ".chat-busy"} {
+	for _, f := range []string{stateFile, spendFile, hostsFile, ".paused", ".run-now", logDir, openFile, queueFile, seenFile, mailFile, filterFile(ReviewsTab), filterFile(IssuesTab), steerDir, talkDir, chatFile, ".chat-busy"} {
 		add(c.Path(f))
 	}
 	for _, dir := range []string{journalDir, reportsDir, questionsDir, inboxDir, agentsDir, updatesDir, sentDir} {

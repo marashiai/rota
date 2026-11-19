@@ -104,8 +104,9 @@ func (e Event) Summary(level string) string {
 		return fmt.Sprintf("claude started, %d tools", e.Tools)
 	case e.Kind == "tool":
 		return FirstLine(e.Tool+" "+e.Arg, 120)
-	case e.Kind == "inbox":
-		return FirstLine("took a note: "+strings.Join(strings.Fields(e.Text), " "), 120)
+	case e.Kind == "inbox": // the notes, without what a talk's first words tell the shift to do
+		notes, _, _ := strings.Cut(e.Text, talkBegins)
+		return FirstLine("took a note: "+strings.Join(strings.Fields(notes), " "), 120)
 	case e.Kind == "text" && level == "all":
 		return `"` + FirstLine(e.Text, 100) + `"`
 	case e.Kind == "end":

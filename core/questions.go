@@ -45,6 +45,10 @@ type Question struct {
 // ErrDismissed is what waiting for an answer the human dismissed brings.
 var ErrDismissed = errors.New("the human dismissed the question without an answer")
 
+// ErrTalk is what waiting for an answer brings when the human talks to the agent in the chat: their
+// words wait for the wait to end, and reach the shift then (talk.go).
+var ErrTalk = errors.New("the human is talking to you in the team chat")
+
 // Questions are the open questions, oldest first.
 func (c *Config) Questions() []Question {
 	files, _ := filepath.Glob(filepath.Join(c.Path(questionsDir), "*.json"))
@@ -258,7 +262,8 @@ func (c *Config) Withdraw(agent, id string) error {
 // WaitAnswer waits for the answer to a question, at most max, no longer than answer_minutes
 // after it was asked, and not past end, when the shift must have its work put away: the answer,
 // or "" and whether waiting longer can still bring one. A question closed unanswered is an
-// error: ErrDismissed when the human dismissed it.
+// error: ErrDismissed when the human dismissed it. It gives way to the human talking to the agent
+// in the chat: ErrTalk, and waiting again can still bring the answer.
 func (c *Config) WaitAnswer(id string, max time.Duration, end time.Time) (string, bool, error) {
 	if filepath.Base(id) != id {
 		return "", false, fmt.Errorf("no question %s", id)
@@ -281,6 +286,8 @@ func (c *Config) WaitAnswer(id string, max time.Duration, end time.Time) (string
 			return "", false, ErrDismissed
 		case !q.Withdrawn.IsZero():
 			return "", false, fmt.Errorf("question %s was withdrawn", id)
+		case c.talkWaits(q.Agent):
+			return "", true, ErrTalk
 		case time.Since(q.Asked) >= time.Duration(c.AnswerMinutes*float64(time.Minute)) || !end.IsZero() && time.Now().After(end):
 			return "", false, nil
 		case time.Since(start) >= max:

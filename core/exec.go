@@ -366,7 +366,7 @@ func claudeArgs(c *Config, a *Agent) []string {
 	if a.DisallowedTools != "" {
 		args = append(args, "--disallowedTools", a.DisallowedTools)
 	}
-	tools := "Bash(rota say *)" // every agent may answer the human in the team chat
+	tools := "Bash(rota say *),Bash(rota listen),Bash(rota listen *)" // every agent may talk with the human in the team chat
 	if a.Tools != "" {
 		tools = a.Tools + "," + tools
 	}

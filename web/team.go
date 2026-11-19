@@ -353,7 +353,7 @@ func (s *site) runJSON(w http.ResponseWriter, r *http.Request) {
 // is in it (the agents at work) and why each other is not, and whether the Team is.
 type apiChat struct {
 	Msgs   []apiChatMsg    `json:"msgs"`
-	Busy   string          `json:"busy"` // always said: "" ends the "typing" the page shows once it sent a message
+	Busy   []string        `json:"busy"` // who answers now, the Team ("team") or an agent; always said: [] ends the "typing" the page shows once it sent a message
 	Here   []string        `json:"here"`
 	Agents []core.Presence `json:"agents"` // every agent, online or why offline
 	Team   bool            `json:"team"`
@@ -362,6 +362,7 @@ type apiChat struct {
 type apiChatMsg struct {
 	ID     string           `json:"id"`
 	At     time.Time        `json:"at"`
+	With   string           `json:"with"` // the chat it is in: the Team's ("team"), or an agent's
 	From   string           `json:"from,omitempty"`
 	To     string           `json:"to,omitempty"`
 	HTML   string           `json:"html"`
@@ -376,16 +377,16 @@ func (s *site) chatJSON(w http.ResponseWriter, r *http.Request) {
 	}
 	msgs := t.Chat(300)
 	out := apiChat{Msgs: []apiChatMsg{}, Busy: t.ChatBusy(), Here: []string{}, Agents: t.ChatPresence(time.Now()), Team: t.ChatModel != "off"}
-	if out.Busy == "" && t.TeamWaits() { // a question a stop of rota left unanswered
+	if !slices.Contains(out.Busy, "team") && t.TeamWaits() { // a question a stop of rota left unanswered
 		core.WakeTeam(s.root, s.conf)
-		out.Busy = "team"
+		out.Busy = append([]string{"team"}, out.Busy...)
 	}
 	for _, m := range msgs {
 		html := string(markdown(m.Text)) // escaped there, as the mail's
 		if m.From == "" {
 			html = esc(m.Text)
 		}
-		out.Msgs = append(out.Msgs, apiChatMsg{ID: m.ID, At: m.At, From: m.From, To: m.To, HTML: html, Change: m.Change})
+		out.Msgs = append(out.Msgs, apiChatMsg{ID: m.ID, At: m.At, With: m.With(), From: m.From, To: m.To, HTML: html, Change: m.Change})
 	}
 	for _, p := range out.Agents {
 		if p.Online {
@@ -485,9 +486,9 @@ func (s *site) teamAct(t *core.Team, action, arg, text string) (said string, ok 
 			return "", true, err
 		}
 		said = "removed " + name
-	case "chat": // text: what the human writes in the team chat
+	case "chat": // text: what the human writes in the team chat; arg: the chat, an agent's, or "" for the Team's
 		root, conf := s.root, s.conf
-		_, err = t.ChatSend(text, func() { core.WakeTeam(root, conf) })
+		_, err = t.ChatSendTo(arg, text, func() { core.WakeTeam(root, conf) })
 	case "chat-apply": // arg: the change's id
 		said, err = t.ChatApply(arg)
 	case "chat-cancel":

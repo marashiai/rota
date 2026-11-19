@@ -4050,8 +4050,9 @@ func TestSettingsSavedAtOnceKeepEachOther(t *testing.T) {
 }
 
 // A newly installed rota takes over a running shift: the shift stops between its steps, or while
-// it only waits for the human's answer, or once the grace is over; once, and only after its claude
-// began, so it has a session to resume. Steps are told apart by their calls' ids.
+// it only waits for the human's answer, but not while it talks with the human, or once the grace is
+// over; once, and only after its claude began, so it has a session to resume. Steps are told apart
+// by their calls' ids.
 func TestANewRotaStopsTheRunningShiftBetweenItsSteps(t *testing.T) {
 	exe := filepath.Join(t.TempDir(), "rota")
 	write(t, exe, "old")
@@ -4104,6 +4105,17 @@ func TestANewRotaStopsTheRunningShiftBetweenItsSteps(t *testing.T) {
 		stopped(0, "a wait beside a step")
 		answer("t2")
 		stopped(1, "the wait left alone, it stops")
+
+		shift()
+		o.step(Event{Kind: "start"})
+		os.MkdirAll(team.Path(steerDir), 0o755)
+		os.WriteFile(team.steerFile("qa"), []byte(strconv.Itoa(os.Getpid())), 0o644)
+		team.saveTalk("qa", chatTalk{Open: true, Since: time.Now(), Last: time.Now()})
+		o.running = &Running{Agent: "qa"}
+		stopped(0, "a talk with the human is not cut short")
+		team.saveTalk("qa", chatTalk{Ended: "end"})
+		stopped(1, "the talk over, it stops")
+		o.running = nil
 
 		shift()
 		updateGrace = 50 * time.Millisecond

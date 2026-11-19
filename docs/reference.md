@@ -394,40 +394,56 @@ alike. It is where you use rota:
 - **Messages**: write an agent (New message, or Message on its page) about anything, or about one of its
   pull requests or issues. Your message waits in Waiting until the agent reads it, and its answer comes
   to your inbox; you can take back one it has not read yet.
-- **The team chat**: one chat for you and the whole team, docked on a computer and a tab on a phone. On
-  a computer, its left and top edges and the corner between them drag, as the panes' dividers do. The
-  Team, rota itself, may do anything within rota's scope, and nothing outside it: that is its one rule.
-  The scope is rota itself, its agents, and their work and what they did: the team folder, all of it
-  (settings, roles, journals, reports, logs, memory, secrets, and the agents' checkouts under `work/`),
-  and on GitHub the team's repositories' pull requests, issues, releases, workflow runs and labels.
-  Outside are the rest of this machine, other repositories, a repository's settings and deployed systems.
-  It reads what is in scope itself, before it answers: the team folder with Claude's file tools, which
-  restricted mode confines to it, and GitHub live with rota's own `github` tool, gh commands that only
-  read, which rota refuses for any other repository; with each question it also gets the team as the
-  organizer sees it (as `rota status` shows it: the pool, each agent's share and use, why each waits and
-  until when, what a Run now would do, and a run asked for that has not started), your mail, the open
-  pull requests and what came of what it proposed, with what rota answered when you applied it; so it
-  says what the organizer will do, not what it guesses: a Run now for an agent whose fair share is used
-  still waits, and its card says so, and until when, before you tap. It changes things by proposing them,
-  a card you apply with a tap: tell it "go with B" and it answers what the agent asked; it writes an
-  agent, ticks a to-do's steps, files your mail, and changes settings, roles, pauses, runs and agents; in
-  the team's repositories it approves a pull request, sends a note on it or merges it, closes or reopens
-  a pull request or an issue, puts labels on or takes them off, comments, opens an issue, and makes any
-  other change of their work as a gh command (a rerun, a branch deleted, a release edited), all on GitHub
-  as you, each checked to be the team's work and not a repository's settings. A merge you ask for is
-  yours: it squash-merges also one that carries the `hold_label` or waits for what it depends on, leaves its
-  labels on, merges one stacked on another after it and rebases
+- **The team chat**: a chat with the Team and one with each agent, docked on a computer and a tab on a
+  phone. It shows one chat at a time; the row under its header opens another: the Team's, then each
+  agent's, those at work first, each online or offline, a dot on one with something you have not seen
+  and a blinking light on one answering now. What you write goes to the chat's own Team or agent, with
+  no `@` needed; in the Team's chat, `@` and an agent's name writes to that agent instead, and opens its
+  chat. An agent's page opens its chat too (Chat now). On a computer, its left and top edges and the
+  corner between them drag, as the panes' dividers do. The Team, rota itself, may do anything within
+  rota's scope, and nothing outside it: that is its one rule. The scope is rota itself, its agents, and
+  their work and what they did: the team folder, all of it (settings, roles, journals, reports, logs,
+  memory, secrets, and the agents' checkouts under `work/`), and on GitHub the team's repositories' pull
+  requests, issues, releases, workflow runs and labels. Outside are the rest of this machine, other
+  repositories, a repository's settings and deployed systems. It reads what is in scope itself, before
+  it answers: the team folder with Claude's file tools, which restricted mode confines to it, and GitHub
+  live with rota's own `github` tool, gh commands that only read, which rota refuses for any other
+  repository; your chat with any agent it reads with its `agent_chat` tool, when what you said there
+  matters to what you ask it; with each question it also gets the team as the organizer sees it (as
+  `rota status` shows it: the pool, each agent's share and use, why each waits and until when, what a
+  Run now would do, a run asked for that has not started, and which agent talks with you now), your
+  mail, the open pull requests and what came of what it proposed, with what rota answered when you
+  applied it; so it says what the organizer will do, not what it guesses: a Run now for an agent whose
+  fair share is used still waits, and its card says so, and until when, before you tap. It changes
+  things by proposing them, a card you apply with a tap: tell it "go with B" and it answers what the
+  agent asked; it writes an agent, ticks a to-do's steps, files your mail, and changes settings, roles,
+  pauses, runs and agents; in the team's repositories it approves a pull request, sends a note on it or
+  merges it, closes or reopens a pull request or an issue, puts labels on or takes them off, comments,
+  opens an issue, and makes any other change of their work as a gh command (a rerun, a branch deleted, a
+  release edited), all on GitHub as you, each checked to be the team's work and not a repository's
+  settings. A merge you ask for is yours: it squash-merges also one that carries the `hold_label` or
+  waits for what it depends on, leaves its labels on, merges one stacked on another after it and rebases
   those stacked on it, as `rota merge` does; one stacked on a pull request it does not merge goes into
   that one's branch, as its card says. A card shows at once that it is being done; a merge shows each
   pull request as it merges, and then that it merged or why not, and one that failed can be tried again.
   Undo works where that can be done (an answer, a run, an approval, a merge, a comment or a gh command
-  stays). It is a Claude session (`chat_model`, default sonnet, or off) that runs no commands and changes
-  nothing itself. An agent is online in the chat only while it works, during its turn: `@dev`
-  reaches its running shift after its current step, and it answers you there. Offline, when it is not
-  its turn, it gets your words as a message in its mail, which it reads at its next run. The chat shows
-  each agent online or offline under its header, and why and until when it is offline; as you write
-  `@` and a name it says which, and where your words go. An agent's page says it too, with Chat now
-  while it is online.
+  stays). It is a Claude session (`chat_model`, default sonnet, or off) that runs no commands and
+  changes nothing itself. An agent is online in its chat only while it works, during its turn: what you
+  write it there reaches its running shift after its current step (a long one, such as a test run,
+  finishes first; one that only waits for your answer, `rota wait`, gives way at once), and you talk, as
+  with a colleague at their desk: it stops its work and gives you its whole attention until the talk is
+  over. You talk with it as with the Team: the chat shows it typing until it answers you there (`rota
+  say`), and it waits for your next words (`rota listen`), which reach it at once; it looks things up or
+  does what you ask when it is quick, and nothing else reaches it meanwhile: a teammate's note, or your
+  message in the mail, waits for the talk's end. The talk is over when you say you are done (or it asks
+  whether there is anything else and you say no), when neither of you says anything for `talk_minutes`
+  (5), or with its shift; then it goes back to its work where it left it, and the chat says so. Your
+  first words tell it what to do even when your team's own `brief.md` predates talks. A new rota waits
+  for a talk to end before it takes over the running shift. Offline, when it is not its turn, it gets
+  your words as a message in its mail, which it reads at its next run. The chat shows each agent online,
+  talking with you, or offline under its header, and why and until when it is offline; as you write `@`
+  and a name it says which, and where your words go. An agent's page says it too, with Chat now while it
+  is online.
 - **Team**: whether the team works, the team pool and Claude's usage, and every agent, with Pause or
   Resume, and "Rebalance the agents' shares" (see "Rebalancing the shares"). Under each agent that does
   not run now though it could, its list and its page say why, by the organizer's own reasons: another
@@ -564,7 +580,8 @@ other: `@dev` for its general notes, or `@dev app#554` for one pull request or
 issue it works on. Those offered are the open ones (GitHub is asked at most every five minutes) it has
 notes waiting about or named in its journal entries of the last two weeks, most recent first.
 
-A note for an agent whose shift is running reaches that shift after its current step: the shift's
+A note for an agent whose shift is running reaches that shift after its current step (while you talk with
+it in the team chat, after the talk; see "The team chat"): the shift's
 `claude -p` reads stream-json input, the organizer looks at the inbox every two seconds and sends what is
 new as a message, and Claude echoes the message once it enters the conversation. Only then is the note
 read: it leaves the inbox, the journal entry quotes it under "Read while it ran", and the transcript shows
