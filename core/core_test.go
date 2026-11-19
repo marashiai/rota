@@ -3600,8 +3600,8 @@ func TestADraftIsNotForTheHumansReview(t *testing.T) {
 	}
 	for id, want := range map[string][2]string{
 		"pr:o/app#1": {"review", "Ready for your review."},
-		"pr:o/app#2": {"open", "A draft: an agent is working on it. It comes to your review once it is ready."},
-		"pr:o/app#3": {"approved", "You approved it. It is a draft again while an agent works on it, and merges once it is ready."},
+		"pr:o/app#2": {"open", "A draft: being worked on, or parked. It comes to your review once it is ready."},
+		"pr:o/app#3": {"approved", "You approved it. It is a draft again, and merges once it is ready."},
 	} {
 		if th := threads[id]; th.PR == nil || th.PR.State != want[0] || len(th.Msgs) == 0 || th.Msgs[0].Text != want[1] {
 			t.Fatalf("%s: %+v", id, th)

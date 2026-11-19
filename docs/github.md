@@ -25,12 +25,13 @@ repository setting: it only needs issues, pull requests, branches and labels.
 - **The developer** fixes issues in pull requests from its own branches (`developer/<issue>`),
   with what was wrong, what changed, the evidence, an independent review, and notes on what you should
   check: a draft while it works on one, ready for review once it is finished.
-- **Draft means the team is still on it.** A draft pull request is being worked on: the Reviews tab
-  does not ask for your review, and nothing merges it. Ready for review means finished. An agent that
-  starts work on one that is ready makes it a draft first, as any engineer does, so no one reviews or
-  merges it meanwhile, and marks it ready again once it is done; the triage makes one it sends back a
-  draft too. Your approval stays through it: an approved pull request
-  merges once it is ready again, with what was pushed since.
+- **Draft means the team is still on it.** A draft pull request is being worked on: the Reviews tab does
+  not ask for your review, and nothing merges it. Ready for review means finished. An agent that starts
+  work on one that is ready makes it a draft first, as any engineer does, so no one reviews or merges it
+  meanwhile, says why in a comment, and marks it ready again once it is done; the triage makes one it
+  sends back a draft too. An agent marks ready only its own work: a draft someone parked on purpose
+  stays one until they mark it ready. Your approval stays through it: an approved pull request merges
+  once it is ready again, with what was pushed since.
 - **The maintainer** keeps the team's pull requests mergeable, and may open small ones of its own from
   `maintainer/<topic>`.
 - **The triage** judges every open pull request, labels it, and merges the safe ones with `rota merge`.

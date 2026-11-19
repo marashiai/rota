@@ -588,9 +588,9 @@ func (t *Team) reviewThreads(labels map[string]string) []Thread {
 		if it.Draft { // an agent works on it
 			switch pr.State {
 			case "open":
-				say = "A draft: an agent is working on it. It comes to your review once it is ready."
+				say = "A draft: being worked on, or parked. It comes to your review once it is ready."
 			case "approved":
-				say = "You approved it. It is a draft again while an agent works on it, and merges once it is ready."
+				say = "You approved it. It is a draft again, and merges once it is ready."
 			}
 		}
 		first := Message{From: from, To: "you", At: it.Updated, Text: say}
