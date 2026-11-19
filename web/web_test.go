@@ -99,6 +99,9 @@ func TestLivePagesUpdateInPlaceWhenTheTeamChanges(t *testing.T) {
 	if body, js := get(t, srv, "/"), get(t, srv, "/app.js"); !strings.Contains(body, `<script src="/app.js?v=`) || !strings.Contains(js, "new EventSource('/events')") {
 		t.Fatal("the mail, the main page, reads itself again when the team changes")
 	}
+	if js := get(t, srv, "/app.js"); !strings.Contains(js, "onGitHub(t.id, 'Approving'") || !strings.Contains(js, "onGitHub(t.id, 'Sending'") || !strings.Contains(js, `aria-busy="true"`) {
+		t.Fatal("what GitHub takes a few seconds to do, an approval or a note, shows a spinner until it is done")
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	req, _ := http.NewRequestWithContext(ctx, "GET", srv.URL+"/events", nil)

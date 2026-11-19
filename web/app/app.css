@@ -405,7 +405,9 @@ a.btn.p{color:var(--on-accent)}
 .lnk{display:inline-flex;align-items:center;gap:6px;color:var(--accent);font-weight:600;font-size:14.5px;padding:8px 0 2px}
 .lnk svg{width:17px;height:17px}
 .btn:disabled{opacity:.45;cursor:default}
+.btn.busy:disabled{opacity:1;cursor:progress}.btn.p .spin{border-color:color-mix(in srgb,var(--on-accent) 35%,transparent);border-top-color:var(--on-accent)}
 .btn.p:disabled{background:var(--fill);border-color:var(--fill);color:var(--ink3);opacity:1}
+.btn.p.busy:disabled{background:var(--accent);border-color:var(--accent);color:var(--on-accent)} /* it works on it: as it was, with a spinner */
 .prof .mb{padding:4px 0 0}
 .roleed{width:100%;min-height:340px;border:1px solid var(--line);border-radius:12px;padding:10px 12px;background:var(--surface);font:15px/1.5 var(--mono);resize:vertical}
 .adv{margin-top:6px}

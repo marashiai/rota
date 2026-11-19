@@ -46,6 +46,10 @@ let M = null; // threads, members, repos, prefs, top: as /api/mail last said
 const S = {view: 'inbox', tab: 'focused', open: null, drawer: false, q: null, f: {}, keepRead: new Set(), compose: null, sel: new Set(), reply: false, vals: {}, drafts: {}, focusSearch: false, autoOpen: true,
   aTab: 'messages', roleDraft: null, adv: null, edits: {}, sent: null, weights: Object.create(null), wbase: null, tc: {open: false, min: false}, ptab: 'mail', // weights: by an agent's name, which may be any // tc: the desktop's chat window; ptab: the phone's Mail or Chat tab
   repos: false, repoAdding: ''}; // repos: the team's repositories open in Settings; repoAdding: the one GitHub is asked about
+// BUSY: what the human started on a thread that GitHub takes a few seconds to do, by the thread's
+// id: Approving, or Sending a note. Where its button was, a spinner says so until it is done; kept
+// by id, it outlasts the mail being read anew meanwhile, and the same is not started twice.
+const BUSY = {};
 const desk = () => matchMedia('(min-width:1000px)').matches;
 const find = id => M && M.threads.find(t => t.id === id);
 const member = n => M && M.members.find(m => m.name === n);
@@ -464,7 +468,7 @@ function threadPane(id) {
     if (m.options && t.qid) h += `<div class="smart">${m.options.map(o => `<button class="sr${o === m.recommend ? ' rec' : ''}" data-ans="${esc(t.id)}" data-v="${esc(o)}">${esc(o)}${o === m.recommend ? '<span class="r">RECOMMENDED</span>' : ''}</button>`).join('')}</div>`;
     if (m.steps && t.qid) h += `<div class="acts"><button class="btn p" data-done="${esc(t.id)}">${I.check}Mark done</button><button class="btn" data-wrong="${esc(t.id)}">Something went wrong</button></div>`;
     if (i === n - 1) {
-      if (t.pr) h += prCard(t) + `<div class="acts"><a class="btn p" href="${esc(t.review)}">${I.eye}${t.pr.answered ? 'Review the changes' : 'Review'}</a>${['review', 'waiting'].includes(t.pr.state) ? `<button class="btn" data-approve="${esc(t.id)}">${I.check}Approve</button>` : ''}</div>`;
+      if (t.pr) h += prCard(t) + `<div class="acts"><a class="btn p" href="${esc(t.review)}">${I.eye}${t.pr.answered ? 'Review the changes' : 'Review'}</a>${BUSY[t.id] === 'Approving' ? busyBtn('Approving') : ['review', 'waiting'].includes(t.pr.state) ? `<button class="btn" data-approve="${esc(t.id)}">${I.check}Approve</button>` : ''}</div>`;
       if (m.run) h += `<div class="acts"><a class="btn" href="${esc(m.run)}">${I.doc}View the run</a></div>`;
     }
     h += `</div></div>`;
@@ -473,7 +477,7 @@ function threadPane(id) {
   const to = peer(t), ask = !!t.qid;
   if (to && t.kind !== 'digest') {
     const label = S.wrong === t.id ? `What went wrong, and at which step?` : ask ? `Answer ${to}` : `Reply to ${to}`;
-    h += `<div class="replybar">${S.reply ? `<textarea id="rtext" placeholder="${esc(label)}">${esc(S.drafts[t.id] || '')}</textarea><div class="row2"><button class="btn" data-replyclose>Cancel</button><button class="btn p" data-send="${esc(t.id)}">${I.send}${ask ? 'Answer' : 'Send'}</button></div>` : `<button class="fake" data-replyopen>${av(to, 24)}${esc(label)}…</button>`}</div>`;
+    h += `<div class="replybar">${S.reply ? `<textarea id="rtext" placeholder="${esc(label)}">${esc(S.drafts[t.id] || '')}</textarea><div class="row2"><button class="btn" data-replyclose>Cancel</button>${BUSY[t.id] === 'Sending' ? busyBtn('Sending', true) : `<button class="btn p" data-send="${esc(t.id)}">${I.send}${ask ? 'Answer' : 'Send'}</button>`}</div>` : `<button class="fake" data-replyopen>${av(to, 24)}${esc(label)}…</button>`}</div>`;
   }
   return h;
 }
@@ -1547,10 +1551,13 @@ async function send(t, text) {
     leave(t.id); t.box = 'waiting'; delete t.seen;
     t.msgs.push({from: 'you', to, at: new Date().toISOString(), html: `<p>${esc(text)}</p>`, plain: text});
     toast(`Sent to ${to}. It comes back to your inbox when ${to} answers.`);
-  } else if (t.pr && t.pr.state !== 'approved') {
-    if (await post({action: 'review-note', id: t.id, text}) === null) return;
-    leave(t.id); t.box = 'waiting'; t.pr.state = 'waiting';
-    toast(`Sent to ${to}. It comes back to your inbox when ${to} answers.`);
+  } else if (t.pr && t.pr.state !== 'approved') { // GitHub takes it, and the agent is told: a few seconds
+    const said = await onGitHub(t.id, 'Sending', {action: 'review-note', id: t.id, text});
+    if (said === null) return;
+    const now = find(t.id) || t; // the mail may have been read anew meanwhile
+    leave(t.id); now.box = 'waiting'; if (now.pr) now.pr.state = 'waiting';
+    lastTag = null; load();
+    toast(said.startsWith('sent, but ') ? `Sent to ${to}, but ${said.slice(10)}` : `Sent to ${to}. It comes back to your inbox when ${to} answers.`);
   } else {
     if (await post({action: 'note', arg: to, about: t.ref || '', text}) === null) return;
     lastTag = null; load(); // the message is a thread of its own, under Waiting
@@ -1560,10 +1567,22 @@ async function send(t, text) {
   render();
 }
 async function approve(t) {
-  if (await post({action: 'approve', id: t.id}) === null) return;
-  leave(t.id); t.box = 'done'; t.pr.state = 'approved'; render();
-  toast('Approved: it merges once nothing holds it back');
+  const said = await onGitHub(t.id, 'Approving', {action: 'approve', id: t.id});
+  if (said === null) return;
+  const now = find(t.id) || t; // the mail may have been read anew meanwhile
+  leave(t.id); now.box = 'done'; if (now.pr) now.pr.state = 'approved';
+  lastTag = null; load(); render();
+  toast(said.startsWith('approved, but ') ? `Approved, but ${said.slice(14)}` : 'Approved: it merges once nothing holds it back');
 }
+// onGitHub posts what GitHub does for the thread id, as what (Approving or Sending), while BUSY says
+// so: what the server answered, or null when it did not work, which post says
+async function onGitHub(id, what, data) {
+  if (BUSY[id]) return null;
+  BUSY[id] = what; render();
+  try { return await post(data); } finally { delete BUSY[id]; render(); }
+}
+// busyBtn: the button of what GitHub is still doing: a spinner and what it does, not pressed again
+const busyBtn = (what, primary) => `<button class="btn${primary ? ' p' : ''} busy" disabled aria-busy="true"><span class="spin" aria-hidden="true"></span>${esc(what)}…</button>`;
 async function dismiss(t) {
   if (await post({action: 'dismiss', id: t.id}) === null) return;
   leave(t.id); t.box = 'done'; t.qid = ''; render(); toast(`Dismissed: ${peer(t)} is told`);
@@ -1657,7 +1676,7 @@ document.addEventListener('click', e => {
     }]);
     if (t.qid) opts.push(['Dismiss without an answer', `${peer(t)} is told, and does not ask again`, () => dismiss(t)]);
     if (t.url) opts.push(['Open on GitHub', t.label || '', () => window.open(t.url, '_blank', 'noopener')]);
-    if (t.pr && ['review', 'waiting'].includes(t.pr.state)) opts.push(['Approve', 'the team may merge it', () => approve(t)]);
+    if (t.pr && ['review', 'waiting'].includes(t.pr.state) && !BUSY[t.id]) opts.push(['Approve', 'the team may merge it', () => approve(t)]);
     if (t.review) opts.push(['Review', 'the whole change and each commit', () => { flushPlace(); location.href = t.review; }]);
     if (opts.length) sheet(t.subject, opts);
     return;
