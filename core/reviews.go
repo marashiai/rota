@@ -26,8 +26,8 @@ import (
 //
 // A pull request's draft state says whether the agents are done with it: a draft is being worked
 // on, and waits neither for the human's review nor for a merge; ready for review is finished. Its
-// author marks it ready once it is finished, and any agent that pushes to one makes it a draft
-// first, and ready again once it is done (the brief says so). The human's approval stays through
+// author marks it ready once it is finished, and any agent that starts work on one makes it a
+// draft first, and ready again once it is done (the brief says so). The human's approval stays through
 // that: an approved pull request merges once it is ready again, what was pushed since included.
 
 // OpenPR is an open pull request of the team's repositories, as the review queue lists it.

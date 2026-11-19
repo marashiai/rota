@@ -27,8 +27,9 @@ repository setting: it only needs issues, pull requests, branches and labels.
   check: a draft while it works on one, ready for review once it is finished.
 - **Draft means the team is still on it.** A draft pull request is being worked on: the Reviews tab
   does not ask for your review, and nothing merges it. Ready for review means finished. An agent that
-  pushes to one that is ready makes it a draft first, and marks it ready again once it is done; the
-  triage makes one it sends back a draft too. Your approval stays through it: an approved pull request
+  starts work on one that is ready makes it a draft first, as any engineer does, so no one reviews or
+  merges it meanwhile, and marks it ready again once it is done; the triage makes one it sends back a
+  draft too. Your approval stays through it: an approved pull request
   merges once it is ready again, with what was pushed since.
 - **The maintainer** keeps the team's pull requests mergeable, and may open small ones of its own from
   `maintainer/<topic>`.
