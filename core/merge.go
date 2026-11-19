@@ -143,7 +143,7 @@ func (t *Team) merge(ctx context.Context, repo string, n int, head string, human
 		return mergeOutcome{}, fmt.Errorf("%s is %s", name, strings.ToLower(pr.State))
 	case human: // what holds the team back is the human's to overrule
 	case pr.IsDraft:
-		return mergeOutcome{}, fmt.Errorf("%s is a draft: mark it ready first, if it is finished", name)
+		return mergeOutcome{}, fmt.Errorf("%s is a draft: an agent is working on it, and it merges once that agent marks it ready for review", name)
 	case pr.has(LeaveLabel):
 		return mergeOutcome{}, fmt.Errorf("%s carries %s: the human asked the team to leave it alone", name, LeaveLabel)
 	case t.HoldLabel != "" && pr.has(t.HoldLabel):

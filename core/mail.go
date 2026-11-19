@@ -582,9 +582,18 @@ func (t *Team) reviewThreads(labels map[string]string) []Thread {
 		if from == "" {
 			from = "team"
 		}
-		first := Message{From: from, To: "you", At: it.Updated, Text: map[string]string{
+		say := map[string]string{
 			"review": "Ready for your review.", "waiting": "Your notes wait for an answer.", "approved": "You approved it: it merges once nothing holds it back.",
-			"open": "Not ready for your review yet."}[pr.State]}
+			"open": "Not ready for your review yet."}[pr.State]
+		if it.Draft { // an agent works on it
+			switch pr.State {
+			case "open":
+				say = "A draft: an agent is working on it. It comes to your review once it is ready."
+			case "approved":
+				say = "You approved it. It is a draft again while an agent works on it, and merges once it is ready."
+			}
+		}
+		first := Message{From: from, To: "you", At: it.Updated, Text: say}
 		if p.Why != "" && q.By != "" {
 			first = Message{From: q.By, To: "you", At: q.Time, Text: p.Why}
 		}

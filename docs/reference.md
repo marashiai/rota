@@ -161,7 +161,8 @@ last, by repository and oldest first. Marks show where each stands, as GitHub ha
 label it carries that has one, ✅ for `rota:approved`, and ✋ for `rota:leave-alone`. Marks also say who waits on
 whom over its notes: ⏳ while a note you sent waits on an agent's answer, 💬 once an agent answered one
 since you last opened the review. Approved is the step after waiting for review, and so are ⏳ and 💬:
-then the `review_label` is not shown, though it stays on GitHub.
+then the `review_label` is not shown, though it stays on GitHub. A draft never asks for your review,
+whatever its labels: an agent is working on it, and it does once it is marked ready for review.
 The list narrows to one repository and to labels, as many as you like: it keeps the pull requests that
 carry every one. A pull request's labels are its own and those of the open issues it is for: those GitHub
 links to it (`Fixes #12`, or linked by hand), and those its title or the first line of its description
@@ -532,10 +533,10 @@ the cursor, `C` on the whole change, `r` replies, and each note is saved as you 
 pending review on GitHub, which only you see. `S` sends them as one review; rota then leaves a note
 about the pull request in the inbox of the agent that wrote it (its branch is `<agent>/…`, or it carries
 `rota:<agent>`), which wakes it. `A`, or the Send button when you have no drafts, approves the pull
-request: rota puts `rota:approved` on it and takes it out of draft at once, as gh's login on this
-machine, and every agent whose role merges (its tools allow `rota merge`) is told. Those two
-changes on GitHub are the whole record: rota keeps none of its own, and the label counts however it got
-there. Only when you last opened each review is kept here (`.seen.json`): what the review read then
+request: rota puts `rota:approved` on it at once, as gh's login on this machine, and every agent
+whose role merges (its tools allow `rota merge`) is told: it merges once it is ready for review, as a
+draft is still being worked on. The label on GitHub is the whole record: rota keeps none of its own,
+and it counts however it got there. Only when you last opened each review is kept here (`.seen.json`): what the review read then
 counts as seen. rota reads a pull request's notes with gloss again when GitHub says it changed, at most
 every 5 minutes, also while no page is open; when an agent has answered you since, the Reviews tab marks it
 💬, and your phone and the menu bar notify you, "dev answered you on app#12"; tapping it opens the

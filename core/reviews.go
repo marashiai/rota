@@ -21,8 +21,14 @@ import (
 // console. Every note lives on the pull request on GitHub; when the human sends notes, the agent
 // that wrote the pull request finds them in its inbox, which wakes it, and answers them with
 // gloss's commands (GLOSS_AUTHOR names it in its shift). When the human approves one, it gets
-// ApprovedLabel and leaves draft, and the agents whose role merges are told to merge it. GitHub is
-// the record of all of it: rota keeps none of its own.
+// ApprovedLabel, and the agents whose role merges are told to merge it. GitHub is the record of all
+// of it: rota keeps none of its own.
+//
+// A pull request's draft state says whether the agents are done with it: a draft is being worked
+// on, and waits neither for the human's review nor for a merge; ready for review is finished. Its
+// author marks it ready once it is finished, and any agent that pushes to one makes it a draft
+// first, and ready again once it is done (the brief says so). The human's approval stays through
+// that: an approved pull request merges once it is ready again, what was pushed since included.
 
 // OpenPR is an open pull request of the team's repositories, as the review queue lists it.
 type OpenPR struct {
@@ -38,6 +44,7 @@ type OpenPR struct {
 
 	own             []string // its own labels only
 	waits, answered bool     // the human waits on an agent's answer to their notes; an agent answered since they last looked
+	draft           bool     // an agent works on it: not for the human's review until it is ready
 }
 
 // Mark is where a pull request stands, as the Reviews tab shows it: Name is short, for its filter.
@@ -196,10 +203,14 @@ func (q ReviewQueue) Only(repo, mark string, labels ...string) ReviewQueue {
 // ForYou are the pull requests that wait on the human, in the queue's order: one whose notes an
 // agent answered since the human last opened its review, and one that asks for their review
 // (carries reviewLabel itself; when the team has none, any open one) and is neither approved nor
-// waiting on an agent's answer to their notes. The labels of the issues it is for do not count.
+// waiting on an agent's answer to their notes. The labels of the issues it is for do not count. A
+// draft is none of them: an agent works on it, and it comes to the human once it is ready.
 func (q ReviewQueue) ForYou(reviewLabel string) []OpenPR {
 	var out []OpenPR
 	for _, p := range q.PRs {
+		if p.draft {
+			continue
+		}
 		asks := reviewLabel == "" || hasLabel(p.own, reviewLabel)
 		if p.answered || asks && !hasLabel(p.own, ApprovedLabel) && !p.waits {
 			out = append(out, p)
@@ -379,7 +390,7 @@ func (t *Team) ReviewQueue() ReviewQueue {
 			}
 			pr := OpenPR{Repo: repo, Number: n, Title: it.Title, Name: shortRef(repos, repo) + "#" + strconv.Itoa(n)}
 			pr.Why, pr.Marks, pr.Labels = why[pr.Ref()], marks(it, labels, t.ReviewLabel, seen[pr.Ref()]), prLabels(it, open)
-			pr.own, pr.waits, pr.answered = it.Labels, it.Talk.Waiting > 0, it.Talk.Answered.After(seen[pr.Ref()])
+			pr.own, pr.waits, pr.answered, pr.draft = it.Labels, it.Talk.Waiting > 0, it.Talk.Answered.After(seen[pr.Ref()]), it.Draft
 			r, ok := rank[pr.Ref()]
 			if !ok {
 				r = len(o.PRs)
@@ -614,9 +625,9 @@ func Approved(ctx context.Context, c *review.Client, rv *review.Review) (bool, e
 }
 
 // ReviewSent tells the agents what the human did in a review of a pull request: the agent that
-// wrote it finds the notes they sent in its inbox; when they approved it, it gets ApprovedLabel and
-// is no longer a draft, and every agent whose role merges is told to merge it. The Reviews tab
-// shows it once GitHub is listed again.
+// wrote it finds the notes they sent in its inbox; when they approved it, it gets ApprovedLabel,
+// and every agent whose role merges is told to merge it. A draft stays one: an agent works on it,
+// and it merges once that agent marks it ready. The Reviews tab shows it once GitHub is listed again.
 func (t *Team) ReviewSent(ctx context.Context, repo string, number, sent int, approved bool) error {
 	ref := repo + "#" + strconv.Itoa(number)
 	var errs []error
@@ -643,9 +654,6 @@ func (t *Team) ReviewSent(ctx context.Context, repo string, number, sent int, ap
 		if labelled != nil {
 			errs = append(errs, fmt.Errorf("%s did not get %s, which is your approval: put it on by hand on GitHub (%w)", ref, ApprovedLabel, labelled))
 		}
-		if err := t.gh(ctx, nil, "pr", "ready", n, "-R", repo); err != nil {
-			errs = append(errs, fmt.Errorf("%s stays a draft: %w", ref, err))
-		}
 		mergers := t.mergers(repo)
 		switch {
 		case labelled != nil:
@@ -655,7 +663,7 @@ func (t *Team) ReviewSent(ctx context.Context, repo string, number, sent int, ap
 		}
 		for _, a := range mergers {
 			if err := t.LeaveNote(a, ref, "human", fmt.Sprintf("I approved this pull request: it carries %s. Merge it with \"rota merge %s <its head commit>\" once nothing holds it back: "+
-				"rota merge waits for its rollout and for what it depends on.", ApprovedLabel, ref)); err != nil {
+				"rota merge waits for its rollout and for what it depends on, and while it is a draft, for the agent working on it to mark it ready.", ApprovedLabel, ref)); err != nil {
 				errs = append(errs, err)
 			}
 		}

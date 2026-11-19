@@ -3243,9 +3243,9 @@ esac`)
 	}
 }
 
-// When the human approves a pull request, it gets rota:approved and is no longer a draft, and
-// every agent whose role merges (its tools allow rota merge) is told to merge it; the author
-// hears of it only with notes.
+// When the human approves a pull request, it gets rota:approved, and every agent whose role merges
+// (its tools allow rota merge) is told to merge it once it is ready: a draft stays one, as an agent
+// works on it. The author hears of it only with notes.
 func TestAnApprovalReachesTheAgentsThatMerge(t *testing.T) {
 	root := t.TempDir()
 	write(t, filepath.Join(root, "rota.conf"), "usage: off\nlisten: off\n")
@@ -3265,10 +3265,10 @@ func TestAnApprovalReachesTheAgentsThatMerge(t *testing.T) {
 	if err := team.ReviewSent(context.Background(), "o/app", 7, 0, true); err != nil {
 		t.Fatal(err)
 	}
-	if b, _ := os.ReadFile(log); !strings.Contains(string(b), "pr edit 7 -R o/app --add-label rota:approved\n") || !strings.Contains(string(b), "pr ready 7 -R o/app\n") {
-		t.Fatalf("an approval labels it and takes it out of draft:\n%s", b)
+	if b, _ := os.ReadFile(log); !strings.Contains(string(b), "pr edit 7 -R o/app --add-label rota:approved\n") || strings.Contains(string(b), "pr ready") {
+		t.Fatalf("an approval labels it, and leaves a draft one, as an agent works on it:\n%s", b)
 	}
-	if got := inboxText(team, "tri"); !strings.Contains(got, "## o/app#7\n") || !strings.Contains(got, "I approved this pull request: it carries rota:approved") || !strings.Contains(got, `"rota merge o/app#7 <its head commit>"`) {
+	if got := inboxText(team, "tri"); !strings.Contains(got, "## o/app#7\n") || !strings.Contains(got, "I approved this pull request: it carries rota:approved") || !strings.Contains(got, `"rota merge o/app#7 <its head commit>"`) || !strings.Contains(got, "while it is a draft, for the agent working on it to mark it ready") {
 		t.Fatalf("the agent that merges is told to merge it:\n%s", got)
 	}
 	if strings.Contains(inboxText(team, "dev"), "## o/app#7") || inboxText(team, "off") != "" || inboxText(team, "far") != "" {
@@ -3567,6 +3567,49 @@ func TestReviewQueueMarksWhereEachPullRequestStands(t *testing.T) {
 	team.Config.ReviewLabel = ""
 	if marks := team.ReviewQueue().PRs[0].Marks; len(marks) != 2 {
 		t.Fatalf("with no review label, every label shows: %q", marks)
+	}
+}
+
+// A draft is still being worked on: it never asks for the human's review, whatever its labels, and
+// the inbox says an agent works on it; approved, it merges once it is ready again. Ready for review,
+// it asks for theirs as the review label says, or always when the team has none.
+func TestADraftIsNotForTheHumansReview(t *testing.T) {
+	root := t.TempDir()
+	write(t, filepath.Join(root, "rota.conf"), "usage: off\nlisten: off\nreview_label: rota:needs-review\n")
+	write(t, filepath.Join(root, "agents", "dev.md"), "---\nenabled: true\nrepos: o/app\n---\ndev\n")
+	b, _ := json.Marshal(openList{Time: time.Now(), Repos: map[string]map[int]openItem{"o/app": {
+		1: {Title: "finished", PR: true, Head: "dev/1", Labels: []string{"rota:needs-review"}},
+		2: {Title: "being changed", PR: true, Head: "dev/2", Draft: true, Labels: []string{"rota:needs-review"}},
+		3: {Title: "approved, being changed", PR: true, Head: "dev/3", Draft: true, Labels: []string{"rota:needs-review", "rota:approved"}},
+		4: {Title: "not judged yet", PR: true, Head: "dev/4", Draft: true}}}})
+	write(t, filepath.Join(root, openFile), string(b))
+	team := open(t, root)
+	names := func() string {
+		var out []string
+		for _, p := range team.ReviewQueue().ForYou(team.ReviewLabel) {
+			out = append(out, p.Name)
+		}
+		return strings.Join(out, " ")
+	}
+	if got := names(); got != "app#1" {
+		t.Fatalf("for the human's review: %s", got)
+	}
+	threads := map[string]Thread{}
+	for _, th := range team.Mail(time.Now()).Threads {
+		threads[th.ID] = th
+	}
+	for id, want := range map[string][2]string{
+		"pr:o/app#1": {"review", "Ready for your review."},
+		"pr:o/app#2": {"open", "A draft: an agent is working on it. It comes to your review once it is ready."},
+		"pr:o/app#3": {"approved", "You approved it. It is a draft again while an agent works on it, and merges once it is ready."},
+	} {
+		if th := threads[id]; th.PR == nil || th.PR.State != want[0] || len(th.Msgs) == 0 || th.Msgs[0].Text != want[1] {
+			t.Fatalf("%s: %+v", id, th)
+		}
+	}
+	team.Config.ReviewLabel = ""
+	if got := names(); got != "app#1" {
+		t.Fatalf("with no review label, every one that is ready, and no draft: %s", got)
 	}
 }
 

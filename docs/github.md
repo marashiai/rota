@@ -22,9 +22,14 @@ repository setting: it only needs issues, pull requests, branches and labels.
 - **Scouts** (security, upstream, errors, seo, qa) open issues, and never change code or open pull
   requests. Before opening one, they search the open and the closed issues: an issue you closed stays
   closed.
-- **The developer** fixes issues in draft pull requests from its own branches (`developer/<issue>`),
+- **The developer** fixes issues in pull requests from its own branches (`developer/<issue>`),
   with what was wrong, what changed, the evidence, an independent review, and notes on what you should
-  check.
+  check: a draft while it works on one, ready for review once it is finished.
+- **Draft means the team is still on it.** A draft pull request is being worked on: the Reviews tab
+  does not ask for your review, and nothing merges it. Ready for review means finished. An agent that
+  pushes to one that is ready makes it a draft first, and marks it ready again once it is done; the
+  triage makes one it sends back a draft too. Your approval stays through it: an approved pull request
+  merges once it is ready again, with what was pushed since.
 - **The maintainer** keeps the team's pull requests mergeable, and may open small ones of its own from
   `maintainer/<topic>`.
 - **The triage** judges every open pull request, labels it, and merges the safe ones with `rota merge`.
