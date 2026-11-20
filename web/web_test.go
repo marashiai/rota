@@ -268,6 +268,17 @@ func TestThePagesRenderTheTeamFolder(t *testing.T) {
 			t.Errorf("%s: %+v, not %+v (%d)", step.path, f, step.want, resp.StatusCode)
 		}
 	}
+	for in, want := range map[string]string{ // what ends the sentence is not part of the link
+		"Screenshot: https://x.y/a/b-2-won.png. The review runs.": `Screenshot: <a href="https://x.y/a/b-2-won.png">https://x.y/a/b-2-won.png</a>. The review runs.`,
+		"see https://x.y/z, then https://x.y/q?a=1&b=2: done":     `see <a href="https://x.y/z">https://x.y/z</a>, then <a href="https://x.y/q?a=1&amp;b=2">https://x.y/q?a=1&amp;b=2</a>: done`,
+		`is it "https://x.y/z"?`:                                  `is it &#34;<a href="https://x.y/z">https://x.y/z</a>&#34;?`,
+		"(at https://x.y/z) and https://x.y/v1.2/file.txt!":       `(at <a href="https://x.y/z">https://x.y/z</a>) and <a href="https://x.y/v1.2/file.txt">https://x.y/v1.2/file.txt</a>!`,
+		"https://x.y/?a=1& and https://x.y/?b=2&.":                `<a href="https://x.y/?a=1&amp;">https://x.y/?a=1&amp;</a> and <a href="https://x.y/?b=2&amp;">https://x.y/?b=2&amp;</a>.`,
+	} {
+		if got := inlineHTML(in); got != want {
+			t.Errorf("%q:\n got %s\nwant %s", in, got, want)
+		}
+	}
 	if got := string(markdown("<script>x</script> *em* and **b** at https://x.y/z")); !strings.Contains(got, "&lt;script&gt;") || !strings.Contains(got, "<i>em</i>") || !strings.Contains(got, `<a href="https://x.y/z">`) {
 		t.Fatalf("markdown: %s", got)
 	}

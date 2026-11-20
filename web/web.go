@@ -949,7 +949,30 @@ func blocksHTML(b *strings.Builder, blocks []md.Block) {
 	}
 }
 
-var autolink = regexp.MustCompile(`https?://[^\s<)]+`)
+// autolink finds an address in text escaped for HTML. What ends the sentence after it is left out
+// of the link, as GitHub does: a full stop, a comma, a colon, a semicolon, ! or ?, and a quote mark,
+// escaped; the semicolon that ends an escaped character, as &amp; does, stays.
+var (
+	autolink  = regexp.MustCompile(`https?://[^\s<)]+`)
+	endEntity = regexp.MustCompile(`&(?:[A-Za-z]+|#[0-9]+);$`)
+)
+
+// linked is escaped text with its addresses as links.
+func linked(t string) string {
+	return autolink.ReplaceAllStringFunc(t, func(u string) string {
+		end := ""
+		for {
+			if q := strings.TrimSuffix(strings.TrimSuffix(u, "&#34;"), "&#39;"); q != u {
+				end, u = u[len(q):]+end, q
+			} else if n := len(u); n > 0 && strings.IndexByte(".,:;!?", u[n-1]) >= 0 && !endEntity.MatchString(u) {
+				end, u = u[n-1:]+end, u[:n-1]
+			} else {
+				break
+			}
+		}
+		return `<a href="` + u + `">` + u + `</a>` + end
+	})
+}
 
 func inlineHTML(s string) string {
 	var b strings.Builder
@@ -961,7 +984,7 @@ func inlineHTML(s string) string {
 		case sp.Link != "" && (strings.HasPrefix(sp.Link, "http://") || strings.HasPrefix(sp.Link, "https://")):
 			t = `<a href="` + esc(sp.Link) + `">` + t + `</a>`
 		default:
-			t = autolink.ReplaceAllString(t, `<a href="$0">$0</a>`)
+			t = linked(t)
 		}
 		if sp.Bold {
 			t = "<b>" + t + "</b>"
