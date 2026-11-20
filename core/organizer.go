@@ -48,6 +48,7 @@ func Organize(ctx context.Context, root, conf string) error {
 	go o.watch(ctx)
 	o.hub = newHub(t.Config)
 	go o.followListen(ctx, root, conf) // hosts join where the settings say, as they change
+	go o.watchRepos(ctx, root, conf)   // the agents' triggers on GitHub
 	kicked, warned := false, ""
 	for {
 		o.updateSelf(ctx, self)    // between shifts: a new rota takes this process's place
@@ -116,6 +117,33 @@ func Organize(ctx context.Context, root, conf string) error {
 					waiting = false // a new rota is installed: restart with it now, between shifts
 				}
 			}
+		}
+	}
+}
+
+// watchRepos looks at the repositories the agents' triggers watch, every watchEvery, for as long
+// as the organizer runs, and logs what reached whom; a failure, once until it changes.
+func (o *organizer) watchRepos(ctx context.Context, root, conf string) {
+	warned := ""
+	for {
+		if t, err := Open(root, conf); err == nil {
+			said, err := t.watchOnce(ctx, time.Now())
+			for _, s := range said {
+				logf("on %s", s)
+			}
+			msg := ""
+			if err != nil {
+				msg = err.Error()
+			}
+			if msg != warned && msg != "" {
+				logf("warn: watching GitHub for the triggers: %s", msg)
+			}
+			warned = msg
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(watchEvery):
 		}
 	}
 }

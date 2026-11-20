@@ -2601,9 +2601,9 @@ func TestSettingsAreSavedAllOrNone(t *testing.T) {
 func TestAnUntilDoneAgentWorksUntilNothingIsLeft(t *testing.T) {
 	root := t.TempDir()
 	write(t, filepath.Join(root, "rota.conf"), "usage: off\nlisten: off\n")
-	write(t, filepath.Join(root, "agents", "dev.md"), "---\nenabled: true\nuntil_done: true\npriority: 1\n---\ndev\n")
-	write(t, filepath.Join(root, "agents", "scout.md"), "---\nenabled: true\nevery: 1d\n---\nscout\n")
-	write(t, filepath.Join(root, "agents", "fixer.md"), "---\nenabled: true\nuntil_done: true\n---\nfixer\n")
+	write(t, filepath.Join(root, "agents", "dev.md"), "---\nenabled: true\nuntil_done: true\npriority: 1\nrepos: o/backend\non: note, issue-labeled:rota\n---\ndev\n")
+	write(t, filepath.Join(root, "agents", "scout.md"), "---\nenabled: true\nevery: 1d\nrepos: o/backend\n---\nscout\n")
+	write(t, filepath.Join(root, "agents", "fixer.md"), "---\nenabled: true\nuntil_done: true\nrepos: o/backend\n---\nfixer\n")
 	team := open(t, root)
 	dev, scout := team.Agent("dev"), team.Agent("scout")
 	ran := func(a *Agent, text string) {
@@ -2630,15 +2630,28 @@ func TestAnUntilDoneAgentWorksUntilNothingIsLeft(t *testing.T) {
 	if at, why := team.schedule(time.Now(), nil, nil).nextRun(dev); !at.IsZero() || why != "when there is new work" {
 		t.Fatalf("its next run is new work: %v %q", at, why)
 	}
-	ran(scout, "## Summary\nnothing new")
-	if state() != "waiting for new work" {
-		t.Fatalf("a teammate's shift that opened no issue brings it nothing: %q", state())
-	}
 	bashShift(t, root, "scout", "gh issue create --label rota --title Leak --body-file b.md", "https://github.com/o/backend/issues/3")
 	ran(scout, "## Summary\nfiled #3")
-	if state() != "ready" {
-		t.Fatalf("a teammate's shift that opened an issue wakes it: %q", state())
+	if state() != "waiting for new work" {
+		t.Fatalf("a teammate's shift brings it nothing by itself: %q", state())
 	}
+	// the issue on GitHub: one of its triggers wakes it, and its note says why; but not one that
+	// happened during its own shift, which may be that shift's doing
+	leak := RepoEvent{Kind: "issue-labeled", Repo: "o/backend", Number: 3, Title: "Leak", Label: "rota", At: team.Runs[len(team.Runs)-2].Time}
+	if _, err := team.onEvents([]RepoEvent{leak}, time.Now()); err != nil || state() != "waiting for new work" {
+		t.Fatalf("an event during its own shift starts none: %v %q", err, state())
+	}
+	leak.At = time.Now().Add(eventSlack + 5*time.Minute) // well after its last shift
+	if _, err := team.onEvents([]RepoEvent{leak, {Kind: "issue-labeled", Repo: "o/backend", Number: 4, Label: "docs", At: leak.At}, {Kind: "issue-labeled", Repo: "o/web", Number: 5, Label: "rota", At: leak.At}}, time.Now()); err != nil || state() != "ready" {
+		t.Fatalf("an event it starts on wakes it: %v %q", err, state())
+	}
+	if n := team.Notes("dev"); len(n) != 2 || n[1].From != "github" || n[1].About != "o/backend#3" || n[1].Text != "«Leak»: the issue got the label rota (issue-labeled:rota, one of your triggers)" {
+		t.Fatalf("each event reaches it as a note, and only those it starts on in its repositories: %+v", n)
+	}
+	if team.Asked()["fixer"] || len(team.Notes("fixer")) != 0 {
+		t.Fatal("an agent without the trigger hears nothing")
+	}
+	team.changeNotes("dev", func([]Note) []Note { return nil })
 	ran(dev, "## Summary\nnothing")
 	if state() != "waiting for new work" {
 		t.Fatalf("a final message without More waits: %q", state())
@@ -3014,7 +3027,7 @@ esac`)
 func TestAnAgentRunsAfterAnotherWithoutPingPong(t *testing.T) {
 	root := t.TempDir()
 	write(t, filepath.Join(root, "rota.conf"), "usage: off\nlisten: off\n")
-	write(t, filepath.Join(root, "agents", "developer.md"), "---\nenabled: true\nuntil_done: true\n---\ndev\n")
+	write(t, filepath.Join(root, "agents", "developer.md"), "---\nenabled: true\nuntil_done: true\non: note\n---\ndev\n")
 	write(t, filepath.Join(root, "agents", "triage.md"), "---\nenabled: true\nafter: developer\nevery: 1d\n---\ntriage\n")
 	write(t, filepath.Join(root, "agents", "scout.md"), "---\nenabled: true\nevery: 1d\nafter: scout, pair\n---\nscout\n")
 	write(t, filepath.Join(root, "agents", "pair.md"), "---\nenabled: true\nevery: 1d\nafter: scout\n---\npair\n")
@@ -3042,25 +3055,16 @@ func TestAnAgentRunsAfterAnotherWithoutPingPong(t *testing.T) {
 	if team.Asked()["developer"] {
 		t.Fatal("a note to everyone wakes no one")
 	}
-	write(t, filepath.Join(root, "agents", "fixer.md"), "---\nenabled: true\nuntil_done: true\n---\nfixer\n")
+	write(t, filepath.Join(root, "agents", "fixer.md"), "---\nenabled: true\nuntil_done: true\non: note\n---\nfixer\n")
 	team = open(t, root)
 	team.routeNotes("fixer", "@developer: over to you\n", time.Now())
 	if team.Asked()["developer"] {
-		t.Fatal("an until-done agent's note does not wake another: they would take turns forever")
-	}
-	ran("scout", "## Summary\nnothing new")
-	if team.Asked()["developer"] {
-		t.Fatal("a scheduled shift that opened no issue brings the developer nothing, and does not wake it")
-	}
-	bashShift(t, root, "scout", "gh issue view 70 -R o/backend", "View this issue on GitHub: https://github.com/o/backend/issues/70")
-	ran("scout", "## Summary\nlooked at #70")
-	if team.Asked()["developer"] {
-		t.Fatal("an issue's address is not an issue opened")
+		t.Fatal("the note of an agent that starts on notes does not wake another that does: they would take turns forever")
 	}
 	bashShift(t, root, "scout", "cd backend &&\n  gh issue create --label rota --title Leak --body-file b.md", "Creating issue in o/backend\n\nhttps://github.com/o/backend/issues/71")
 	ran("scout", "## Summary\nfiled #71")
-	if !team.Asked()["developer"] || team.Asked()["triage"] {
-		t.Fatalf("a scout's shift that opened an issue wakes the developer, not the triage: %v", team.Asked())
+	if team.Asked()["developer"] || team.Asked()["triage"] {
+		t.Fatalf("a scout's shift wakes neither by itself: the issue it opened does, on GitHub, as a trigger: %v", team.Asked())
 	}
 	if team.Asked()["scout"] || team.Asked()["pair"] {
 		t.Fatalf("an agent after itself, or two after each other, do not wake each other: %v", team.Asked())

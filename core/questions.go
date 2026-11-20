@@ -296,11 +296,11 @@ func (c *Config) WaitAnswer(id string, max time.Duration, end time.Time) (string
 	}
 }
 
-// wakeFor asks for an until-done agent's shift: something brought it work. Asked while its
-// shift runs, it runs once more after it. It is asked as a shift ends, and the organizer looks
-// then anyway.
+// wakeFor asks for the shift of an until-done agent, or of one that starts on notes: something
+// brought it work. Asked while its shift runs, it runs once more after it. It is asked as a shift
+// ends, and the organizer looks then anyway.
 func (t *Team) wakeFor(agent string) {
-	if a := t.Agent(agent); a != nil && a.UntilDone && a.Enabled {
+	if a := t.Agent(agent); a != nil && (a.UntilDone || a.On.has(noteTrigger)) && a.Enabled {
 		t.askFor(agent)
 	}
 }

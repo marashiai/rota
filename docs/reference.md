@@ -45,8 +45,21 @@ says so. An agent withdraws its own question that no longer needs an answer with
 its shift. Closed questions are kept in `questions/closed/`.
 
 An agent with `until_done: true` runs shift after shift while each ends with `More: yes`,
-then waits for new work: an issue a scheduled teammate's shift opened, a teammate's note to it, a note
-from you or your answer; `every` does not apply to it. After every shift the organizer checks that the
+then waits for one of its triggers, a note from you or your answer; `every` does not apply to it.
+
+Triggers (`on`) start an agent's shift on events, besides `every`: most on GitHub, in the repositories
+it works on, where the organizer looks every 2 minutes, one GraphQL query per repository through this
+machine's `gh`: `issue-opened`, `issue-labeled`, `issue-commented`, `pr-opened`, `pr-ready` (opened ready, or
+a draft made ready), `pr-labeled`, `pr-commented` (a comment or a review), `pr-approved` (on GitHub, or
+`rota:approved`), `pr-merged`, `pr-conflict`, `pr-checks-failed` and `base-moved` (the branch an open pull
+request merges into got new commits). A label after a colon narrows a labeled one, `*` matching any text:
+`issue-labeled:priority:*`. `note` is a teammate's note to it; two agents that both start on notes do not
+wake each other, or they would take turns forever. Each event reaches the agent as a note from github,
+under its issue or pull request, and asks for its shift as a request does: it skips `every`, and keeps to
+`hours`, `days` and the agent's share of the pool. An event that happens during the agent's own shift starts
+no other, since it may be that shift's own doing: it reaches the shift at its next step if it still runs, or
+waits for its next shift. The organizer keeps what it last saw in `.watch.json`; its first look at a
+repository only takes note of what is there. After every shift the organizer checks that the
 agent left each repository on its default branch with nothing uncommitted, and says so in the journal
 and the agent's inbox when it did not.
 
@@ -728,8 +741,8 @@ file in `.run-now/` that says `human`, kept until its shift starts. The organize
 after the running shift, with its interval, hours and retry wait skipped, and ahead of every agent
 waiting, even one a teammate asked for; the team pool still applies. Ask for several at once and all of
 them run, back to back, in the order you asked; nothing is dropped. If the pool is used up the agent waits
-for it and its state says so. When agents wake each other (an until-done agent with new work, a teammate
-in `after`), and when you answer an agent or leave it a note, the request is an empty file there: it skips
+for it and its state says so. When agents wake each other (a trigger, a teammate in `after`, an until-done
+agent with more to do), and when you answer an agent or leave it a note, the request is an empty file there: it skips
 the agent's interval, not its hours or a retry wait, and the agent waits its turn from when it was asked
 for. While the team is paused only the agents you ask for run. "Run next shift now" without an agent runs
 whoever is next.

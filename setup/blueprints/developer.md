@@ -12,6 +12,7 @@
 - `<<REPO_NOTES>>`: per repository, what a developer must know that the repository itself does not say: how to run it locally, which test suites exist and how long they take, which services (a database, Docker) it may start, and what it must never run. Delete the line if there is nothing to say.
 - **Off limits:** everything the person said the agents must never run goes in `disallowed_tools` too, such as `Bash(./deploy.sh *)` or `Bash(ssh *)`, not only in `<<REPO_NOTES>>`.
 - `until_done: true` runs it shift after shift while work remains. For a slower pace, delete it and set `every: 12h` instead.
+- `on: note, issue-labeled:rota, issue-labeled:priority:*` starts it when a teammate leaves it a note, an issue becomes a team issue (it gets the `rota` label, as scouts open them), or an issue's priority changes. Add `issue-opened` if the person opens issues without the `rota` label and wants each one picked up.
 
 When a teammate is not in the team, edit the role as follows, so it never waits for an agent that doesn't exist.
 
@@ -45,6 +46,7 @@ model: sonnet
 effort: high
 run_minutes: 60
 until_done: true
+on: note, issue-labeled:rota, issue-labeled:priority:*
 tools: Read,Grep,Glob,Edit,Write,WebFetch,Task,Bash(git *),Bash(gh *),<<BUILD_TEST_TOOLS>>,Bash(rota delete-branch *),Bash(rota ask *),Bash(rota reply *),Bash(rota wait *),Bash(rota withdraw *),Bash(gloss *)
 disallowed_tools: Bash(gh pr merge *),Bash(gh pr review --approve *),Bash(gh workflow run *),Bash(gh label *)
 ---

@@ -2,7 +2,6 @@ package core
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -396,8 +395,8 @@ func (t *Team) outcome(ctx, sctx context.Context, a *Agent, res Result, s *sched
 // with, during those it read while it ran.
 func (t *Team) record(ctx context.Context, a *Agent, r Run, res Result, text string, read, during []Note, vars map[string]string, ended time.Time, keep resumable) error {
 	briefed, missed, missedHuman := ids(read), false, false
-	for _, n := range t.Notes(a.Name) { // what came during the shift and did not reach it (what did has left)
-		if !briefed[n.ID] {
+	for _, n := range t.Notes(a.Name) { // what came during the shift and did not reach it (what did has left); an event on GitHub, which may be the shift's own doing, waits for the next
+		if !briefed[n.ID] && n.From != githubFrom {
 			missed, missedHuman = true, missedHuman || n.From == "human"
 		}
 	}
@@ -553,58 +552,6 @@ func (t *Team) wake(a *Agent, r Run, text string) {
 		}
 		return
 	}
-	if !t.openedIssue(a) {
-		return
-	}
-	for _, b := range t.Agents {
-		if b.UntilDone && b.Enabled && !slices.Contains(a.After, b.Name) {
-			t.askFor(b.Name)
-		}
-	}
-}
-
-// issueCreate and issueURL find an issue a shift opened: gh issue create, and the address it prints.
-var (
-	issueCreate = regexp.MustCompile(`\bgh\s+issue\s+create\b`)
-	issueURL    = regexp.MustCompile(`https://github\.com/[^/\s]+/[^/\s]+/issues/\d+`)
-)
-
-// openedIssue says whether the agent's latest shift opened an issue: in its transcript a Bash
-// command runs gh issue create, and its result is an issue's address.
-func (t *Team) openedIssue(a *Agent) bool {
-	for _, tr := range t.Transcripts(a.Name) {
-		if tr.Agent != a.Name { // the glob also matches a name that ends in this one
-			continue
-		}
-		b, _ := os.ReadFile(tr.Path)
-		creates := map[string]bool{} // the tool calls that ran it, by id
-		for _, line := range strings.Split(string(b), "\n") {
-			var e struct {
-				Message struct {
-					Content []struct {
-						Type, ID, Name string
-						Input          struct{ Command string }
-						ToolUseID      string          `json:"tool_use_id"`
-						Content        json.RawMessage // a tool result: a string, or parts
-						IsError        bool            `json:"is_error"`
-					}
-				}
-			}
-			if json.Unmarshal([]byte(line), &e) != nil {
-				continue
-			}
-			for _, c := range e.Message.Content {
-				switch {
-				case c.Type == "tool_use" && c.Name == "Bash" && issueCreate.MatchString(c.Input.Command):
-					creates[c.ID] = true
-				case c.Type == "tool_result" && creates[c.ToolUseID] && !c.IsError && issueURL.MatchString(resultText(c.Content)):
-					return true
-				}
-			}
-		}
-		return false
-	}
-	return false
 }
 
 // originRepo is the owner and name of the GitHub repository a checkout's origin points at, as

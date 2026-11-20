@@ -213,7 +213,7 @@ func (t *Team) routeNotes(from, text string, now time.Time) []string {
 				undelivered = append(undelivered, fmt.Sprintf("@%s: %v", a.Name, err))
 				continue
 			}
-			if s := t.Agent(from); to == a.Name && a.Name != from && a.UntilDone && a.Enabled && (s == nil || !s.UntilDone) { // two until-done agents would take turns forever
+			if s := t.Agent(from); to == a.Name && a.Name != from && a.On.has(noteTrigger) && a.Enabled && (s == nil || !s.On.has(noteTrigger)) { // two that start on notes would take turns forever
 				t.askFor(a.Name)
 			}
 		}
