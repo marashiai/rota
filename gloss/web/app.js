@@ -415,7 +415,7 @@
     for (const a of tree.querySelectorAll('a.f')) { const is = a.dataset.path === p; a.classList.toggle('on', is); if (is) on = a; }
     if (on && (!phone.matches || document.body.classList.contains('menu'))) {
       const r = on.getBoundingClientRect(), t = tree.getBoundingClientRect();
-      if (r.top < t.top || r.bottom > t.bottom) on.scrollIntoView({ block: 'nearest' });
+      if (r.top < t.top || r.bottom > t.bottom) reveal(on, tree);
     }
   }
 
@@ -454,7 +454,7 @@
     whereBtn.setAttribute('aria-expanded', open);
     document.body.classList.toggle('picking', open);
     scrim.hidden = !open && !document.body.classList.contains('menu');
-    if (!open) { main.focus(); return; }
+    if (!open) { main.focus({ preventScroll: true }); return; }
     renderPick();
     if (!phone.matches) { // under the button
       const r = whereBtn.getBoundingClientRect();
@@ -467,7 +467,7 @@
   function markPick() {
     for (const a of pick.querySelectorAll('.pk')) a.classList.toggle('hl', +a.dataset.view === S.pickCur);
     const c = $('.pk.hl', pick);
-    if (c) c.scrollIntoView({ block: 'nearest' });
+    if (c) reveal(c, pick);
   }
 
   const itemKey = el => el ? [el.dataset.kind, el.dataset.id, el.dataset.path, el.dataset.line, el.dataset.old, el.dataset.hunk].join('|') : '';
@@ -541,9 +541,24 @@
     S.cur = i;
     const el = S.items[i];
     el.classList.add('cur');
-    if (how !== 'none') el.scrollIntoView({ block: how });
+    if (how !== 'none') reveal(el, main, how);
     updateTools();
     markFile();
+  }
+  // reveal scrolls box (the diff, the files or the picker) so that el shows in it, as
+  // scrollIntoView({ block: how }) does, scroll-margin included, but only box: scrollIntoView moves
+  // every box around el, the page too, and an iPad then leaves the whole page out of sight
+  function reveal(el, box, how = 'nearest') {
+    const cs = getComputedStyle(el), b = box.getBoundingClientRect(), r = el.getBoundingClientRect(), view = box.clientHeight;
+    const top = r.top - (parseFloat(cs.scrollMarginTop) || 0) - b.top - box.clientTop;
+    const bottom = r.bottom + (parseFloat(cs.scrollMarginBottom) || 0) - b.top - box.clientTop, h = bottom - top;
+    let d = 0;
+    if (how === 'start') d = top;
+    else if (how === 'center') d = (top + bottom - view) / 2;
+    else if (top < 0 && bottom > view) d = 0; // nearest, and it fills the box already
+    else if ((top < 0 && h <= view) || (bottom > view && h > view)) d = top;
+    else if (top < 0 || bottom > view) d = bottom - view;
+    if (d) box.scrollTop = Math.round(box.scrollTop + d);
   }
   const cur = () => S.items[S.cur];
 
@@ -648,7 +663,7 @@
   }
 
   function openEditor(mode, o) {
-    if (S.editor) { S.editor.ta.focus(); return; }
+    if (S.editor) { S.editor.ta.focus(); reveal(S.editor.box, main); return; }
     const box = document.createElement('div');
     box.className = 'editor';
     box.innerHTML = '<textarea placeholder="Write a note. It is saved as a draft as you type; only you see it until you send."></textarea>' +
@@ -682,8 +697,8 @@
       e.stopPropagation();
       if (e.key === 'Escape' || (e.key === 'Enter' && (e.ctrlKey || e.metaKey))) { e.preventDefault(); closeEditor(); }
     });
-    ta.focus();
-    box.scrollIntoView({ block: 'nearest' });
+    ta.focus(); // as it is: a phone or tablet moves what it must so that the keyboard leaves it in view
+    reveal(box, main);
   }
 
   function save(ed) {
@@ -733,7 +748,7 @@
       const i = S.items.findIndex(el => el.dataset.id === ed.id);
       if (i >= 0) setCur(i);
     }
-    main.focus();
+    main.focus({ preventScroll: true });
     return true;
   }
 
@@ -916,8 +931,8 @@
       $('#no').textContent = no;
       $('#no').hidden = !no;
       $('#modal .hint').innerHTML = '<kbd>Enter</kbd> the green button · <kbd>Esc</kbd> ' + (no ? esc(no.toLowerCase()) : 'closes');
-      S.modal = ok => { $('#modal').hidden = true; S.modal = null; main.focus(); done(ok); };
-      $('#yes').focus();
+      S.modal = ok => { $('#modal').hidden = true; S.modal = null; main.focus({ preventScroll: true }); done(ok); };
+      $('#yes').focus({ preventScroll: true });
     });
   }
 
@@ -944,7 +959,7 @@
       if (e.key === 'Tab') { // Tab stays in the dialog
         e.preventDefault();
         const bs = [...document.querySelectorAll('#modal button')].filter(b => !b.hidden), i = bs.indexOf(document.activeElement);
-        bs[(i + (e.shiftKey ? -1 : 1) + bs.length) % bs.length].focus();
+        bs[(i + (e.shiftKey ? -1 : 1) + bs.length) % bs.length].focus({ preventScroll: true });
         return;
       }
       if (e.key === 'Enter' || e.key === 'y') S.modal('yes');
@@ -1045,12 +1060,12 @@
     e.preventDefault();
     if (phone.matches) menu(false);
     toFile(a.dataset.path);
-    main.focus();
+    main.focus({ preventScroll: true });
   });
   filter.addEventListener('input', renderSide);
   filter.addEventListener('keydown', e => {
-    if (e.key === 'Escape') { filter.value = ''; renderSide(); main.focus(); }
-    if (e.key === 'Enter') { const a = $('#tree a.f'); if (a) { if (phone.matches) menu(false); toFile(a.dataset.path); main.focus(); } }
+    if (e.key === 'Escape') { filter.value = ''; renderSide(); main.focus({ preventScroll: true }); }
+    if (e.key === 'Enter') { const a = $('#tree a.f'); if (a) { if (phone.matches) menu(false); toFile(a.dataset.path); main.focus({ preventScroll: true }); } }
   });
   // the files column's width, dragged at its edge, is remembered
   const sidew = store.get('sidew');
@@ -1118,7 +1133,7 @@
       document.body.classList.toggle('chatting', open);
       if (open) tellWhere();
       tell({ type: 'rota-chat-open', open });
-      if (open) chatFrame.focus(); else main.focus();
+      if (open) chatFrame.focus({ preventScroll: true }); else main.focus({ preventScroll: true });
     };
     chatBtn.addEventListener('click', () => showChat(chatBox.hidden));
     addEventListener('message', e => {
@@ -1130,6 +1145,21 @@
     });
     setInterval(tellWhere, 600); // the cursor moves by keys, taps, scrolls and the files: what is under it now
   }
+
+  // the page itself never scrolls (app.css): only the diff, the files and the picker do. Should the
+  // browser move it anyway, as an iPad does when the chat opens or its keyboard comes and goes, it
+  // goes back, since the reviewer cannot drag it back: sideways at once, up or down once nobody types
+  // (a keyboard that is up may need it moved); zoomed in, by a pinch or by the browser on a field, it
+  // is the reader's or the browser's to move
+  const typing = () => { const a = document.activeElement; return !!a && (a.matches('textarea, input') || a.tagName === 'IFRAME'); };
+  const home = () => {
+    if (window.visualViewport && visualViewport.scale > 1.01) return;
+    const y = typing() ? scrollY : 0;
+    if (scrollX || scrollY !== y) scrollTo(0, y);
+  };
+  addEventListener('scroll', home, { passive: true });
+  document.addEventListener('focusout', () => setTimeout(home, 250));
+  if (window.visualViewport) visualViewport.addEventListener('resize', () => setTimeout(home, 250));
 
   (async function init() {
     try {
@@ -1145,7 +1175,7 @@
     $('#title').textContent = S.rv.title;
     const v = parseInt(location.hash.slice(1), 10);
     await go(isNaN(v) ? 0 : v);
-    main.focus();
+    main.focus({ preventScroll: true });
     const n = newIn(threads());
     if (n) status(`${n} new note${n === 1 ? '' : 's'} · } goes to the next`);
   })();
