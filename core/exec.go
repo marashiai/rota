@@ -122,9 +122,10 @@ func execShift(ctx context.Context, c *Config, job Job, onLine func(string), not
 	if err != nil {
 		return failed(res, err)
 	}
-	in := &shiftInput{w: stdin}
-	go func() { // the prompt first, then the notes
-		in.send(job.Prompt)
+	// the prompt first, then the notes; what claude prints before it takes the prompt is not its end
+	in := &shiftInput{w: stdin, waiting: []string{job.Prompt}}
+	go func() {
+		in.write(job.Prompt)
 		for {
 			select {
 			case text := <-notes:
@@ -138,11 +139,21 @@ func execShift(ctx context.Context, c *Config, job Job, onLine func(string), not
 			}
 		}
 	}()
+	go func() { // a grace ends with no line
+		tick := time.NewTicker(settleEvery)
+		defer tick.Stop()
+		for !in.isClosed() {
+			select {
+			case now := <-tick.C:
+				in.settle(now)
+			case <-cctx.Done():
+				return
+			}
+		}
+	}()
 	var out bytes.Buffer
 	lw := newLineWriter(&out, func(line string) {
-		if isResult(line) && in.ends(line) { // claude has finished: with its input closed it exits
-			in.close()
-		}
+		in.see(line) // once claude has finished, its input closes, and it exits
 		if onLine != nil {
 			onLine(line)
 		}
@@ -200,12 +211,36 @@ func folderSize(ctx context.Context, c *Config, dir string) (int64, error) {
 
 // shiftInput is a running claude's input: one stream-json user message per line, from one
 // writer, until it is closed. Closing does not wait for a write: a blocked one fails.
+//
+// A shift's input closes once claude has finished: its turn has ended with the final message, the
+// one "For the human", and it has taken every message rota sent. A turn that ends otherwise is not
+// the end: claude goes on with a message it has not taken yet, waits for a task of its running in
+// the background, or begins a turn by itself when one has finished, as the turn that, first thing
+// in a resumed session, tells of the tasks the interrupted one left running. Its input closed, the
+// shift would hear nothing more: not the human, not a stop. With its input closed, claude stops
+// what it still runs in the background, and exits.
 type shiftInput struct {
-	mu     sync.Mutex
-	w      io.WriteCloser
-	closed bool
-	cut    int // turns cut off (interrupt) whose result has not come yet: it does not end the shift
+	mu      sync.Mutex
+	w       io.WriteCloser
+	closed  bool
+	cut     int       // turns cut off (interrupt) whose result has not come yet: it does not end the shift
+	waiting []string  // the messages sent that claude has not echoed: it has not taken them yet
+	idle    bool      // claude's last turn has ended, and no other has begun
+	since   time.Time // when it ended, or a message was sent since
+	final   bool      // it ended with the final message
+	tasks   int       // claude's tasks running in the background
 }
+
+// echoGrace is how long claude may take to echo a message once its turn has ended: it takes one
+// at once, so one it does not echo it took without, and it has finished.
+var echoGrace = time.Minute
+
+// turnGrace is how long claude may take to begin a turn by itself once one has ended without the
+// final message, and nothing runs in the background: a task that has just ended begins one.
+var turnGrace = 10 * time.Second
+
+// settleEvery is how often a shift looks whether a grace has ended.
+var settleEvery = time.Second
 
 // stopTurn, sent to a running shift among its notes, cuts its turn off at once, as the human's stop
 // in the team chat does (chatedit.go): what claude does stops, as with Esc, and the shift goes on
@@ -226,29 +261,112 @@ func (in *shiftInput) interrupt() {
 	in.w.Write(append(b, '\n'))
 }
 
-// ends says whether claude's result ends the shift: not the result of a turn it cut off.
-func (in *shiftInput) ends(line string) bool {
-	var r struct {
-		Subtype string `json:"subtype"`
+// see follows a line of claude's output, and closes its input once claude has finished.
+func (in *shiftInput) see(line string) {
+	var e struct {
+		Type    string            `json:"type"`
+		Subtype string            `json:"subtype"`
+		Result  string            `json:"result"`
+		IsError bool              `json:"is_error"`
+		Tasks   []json.RawMessage `json:"tasks"`
+		Parent  string            `json:"parent_tool_use_id"`
+		Message struct {
+			Content json.RawMessage `json:"content"`
+		} `json:"message"`
 	}
-	json.Unmarshal([]byte(line), &r)
+	if json.Unmarshal([]byte(line), &e) != nil || e.Parent != "" { // a subagent's, or a tool's progress: not claude's turn
+		return
+	}
+	in.mu.Lock()
+	switch {
+	case e.Type == "result" && in.cut > 0 && e.Subtype == "error_during_execution": // a turn cut off: what rota sends next follows
+		in.cut--
+	case e.Type == "result": // an error ends the shift, as the final message does
+		in.idle, in.since, in.final = true, time.Now(), e.IsError || forHumanHeading.MatchString(e.Result)
+	case e.Type == "system" && e.Subtype == "init": // a turn begins: a stop that came between turns cut none off
+		in.idle, in.cut = false, 0
+	case e.Type == "assistant":
+		in.idle = false
+	case e.Type == "user":
+		in.idle = false
+		for _, text := range userTexts(e.Message.Content) { // its echo: it has taken the message
+			if i := slices.IndexFunc(in.waiting, func(w string) bool { return strings.TrimSpace(w) == strings.TrimSpace(text) }); i >= 0 {
+				in.waiting = slices.Delete(in.waiting, i, i+1)
+			}
+		}
+	case e.Type == "system" && e.Subtype == "background_tasks_changed":
+		in.tasks = len(e.Tasks)
+		if in.idle && in.tasks == 0 {
+			in.since = time.Now() // the task's end may begin a turn
+		}
+	}
+	in.mu.Unlock()
+	in.settle(time.Now())
+}
+
+// settle closes the input if claude has finished, or as good as: a grace has ended. It is closed
+// at once, so a message sent meanwhile is not taken for one claude has.
+func (in *shiftInput) settle(now time.Time) {
+	in.mu.Lock()
+	idle := now.Sub(in.since)
+	var done bool
+	switch {
+	case in.closed || !in.idle:
+	case len(in.waiting) > 0: // claude takes it at once, unless it waits for its task
+		done = (in.final || in.tasks == 0) && idle >= echoGrace
+	case in.final: // what still runs in the background stops
+		done = true
+	case in.tasks == 0:
+		done = idle >= turnGrace
+	}
+	in.closed = in.closed || done
+	in.mu.Unlock()
+	if done {
+		in.w.Close()
+	}
+}
+
+func (in *shiftInput) isClosed() bool {
 	in.mu.Lock()
 	defer in.mu.Unlock()
-	if in.cut > 0 && r.Subtype == "error_during_execution" {
-		in.cut--
-		return false
+	return in.closed
+}
+
+// userTexts are the texts of a user message's content: a string, or parts.
+func userTexts(content json.RawMessage) []string {
+	var s string
+	if json.Unmarshal(content, &s) == nil {
+		return []string{s}
 	}
-	return true
+	var parts []struct{ Type, Text string }
+	json.Unmarshal(content, &parts)
+	var texts []string
+	for _, p := range parts {
+		if p.Type == "text" {
+			texts = append(texts, p.Text)
+		}
+	}
+	return texts
 }
 
 // send writes a message, unless the input is closed; a claude that has exited reads nothing.
 func (in *shiftInput) send(text string) {
 	in.mu.Lock()
 	closed := in.closed
-	in.mu.Unlock()
-	if closed {
-		return
+	if !closed {
+		in.waiting = append(in.waiting, text) // before it is written: claude may echo it at once
+		if in.idle {
+			in.since = time.Now()
+		}
 	}
+	in.mu.Unlock()
+	if !closed {
+		in.write(text)
+	}
+}
+
+// write writes a message.
+func (in *shiftInput) write(text string) {
 	b, _ := json.Marshal(map[string]any{"type": "user", "message": map[string]any{"role": "user",
 		"content": []map[string]string{{"type": "text", "text": text}}}})
 	in.w.Write(append(b, '\n'))

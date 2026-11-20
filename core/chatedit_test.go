@@ -210,11 +210,12 @@ func TestAStopCutsTheShiftsTurnOff(t *testing.T) {
 	claude := filepath.Join(root, "claude")
 	write(t, claude, `#!/bin/bash
 read -r prompt
+printf '%s\n' "$prompt"
 while read -r line; do
   printf '%s\n' "$line" >> `+got+`
   case "$line" in
   *control_request*interrupt*) echo '{"type":"result","subtype":"error_during_execution","is_error":true,"num_turns":1,"session_id":"s1","usage":{}}' ;;
-  *'"type":"user"'*) echo '{"type":"result","subtype":"success","is_error":false,"result":"Listening.","num_turns":1,"session_id":"s1","usage":{}}' ;;
+  *'"type":"user"'*) printf '%s\n' "$line"; echo '{"type":"result","subtype":"success","is_error":false,"result":"## For the human\nnone\n\nListening.","num_turns":1,"session_id":"s1","usage":{}}' ;;
   esac
 done
 `)
@@ -239,7 +240,7 @@ done
 	if len(lines) != 2 || !strings.Contains(lines[0], `"subtype":"interrupt"`) || !strings.Contains(lines[1], "The human stopped you") {
 		t.Fatalf("claude is asked to interrupt its turn, then told why: %q", lines)
 	}
-	if final, ok := finalResult(res.Output); res.Status != "done" || !ok || final.IsError || final.Result != "Listening." {
+	if final, ok := finalResult(res.Output); res.Status != "done" || !ok || final.IsError || !strings.HasSuffix(final.Result, "Listening.") {
 		t.Fatalf("the cut-off turn did not end the shift; its own end did: %+v %+v", res, final)
 	}
 }
