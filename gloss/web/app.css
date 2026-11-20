@@ -17,6 +17,11 @@
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; }
+/* the review page itself never moves up or down: only the diff, the files and the picker scroll. Otherwise a
+   drag the page gets (one that starts on the header or the toolbar, say) pulls the whole page down on an
+   iPhone or iPad, and in an app opened from the Home Screen it can stay there, half the screen down.
+   Sideways it stays as it was: a swipe back or forward still reaches the browser */
+html:has(body:not(.index)) { overflow-y: hidden; overscroll-behavior-y: none; }
 body { background: var(--bg); color: var(--fg); font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   height: 100dvh; display: grid; touch-action: manipulation; -webkit-text-size-adjust: 100%;
   grid-template: "head head" auto "side main" minmax(0, 1fr) "side tools" auto / min(var(--sidew), 60vw) minmax(0, 1fr); }
