@@ -1213,6 +1213,40 @@ func TestTheReportKeepsWhatWaitedAcrossDaysWithoutASummary(t *testing.T) {
 // A shift that stops because the organizer stops keeps its Claude session, and the agent's
 // next shift, asked for at once, resumes it: --resume, the notes that came since, what is
 // left of run_minutes, and the checkouts as they were (no sync).
+// An interrupted shift resumes at once, outside its hours, while it would still be running had
+// the organizer not stopped it: an update after its window must not cost it a day. Past that, or
+// in a window it owns, it waits for its hours.
+func TestAnInterruptedShiftResumesOutsideItsHours(t *testing.T) {
+	root := t.TempDir()
+	write(t, filepath.Join(root, "rota.conf"), "usage: off\nlisten: off\ncommit: false\nsync_repos: false\n")
+	away := (time.Now().Hour() + 6) % 24 // a window that is not now
+	hours := fmt.Sprintf("%02d:00-%02d:00", away, (away+1)%24)
+	agent := func(more string) {
+		write(t, filepath.Join(root, "agents", "qa.md"), "---\nenabled: true\nrun_minutes: 360\nhours: "+hours+"\n"+more+"---\nqa\n")
+	}
+	why := func(began time.Duration) string {
+		team := open(t, root)
+		if err := team.keepForResume("qa", resumable{Session: "s1", Began: time.Now().Add(-began), Minutes: 35}); err != nil {
+			t.Fatal(err)
+		}
+		team.askFor("qa")
+		team = open(t, root)
+		_, why := team.schedule(time.Now(), nil, nil).eligible(team.Agent("qa"))
+		return why
+	}
+	agent("")
+	if w := why(36 * time.Minute); w != "ready to resume its interrupted shift" {
+		t.Fatalf("a shift interrupted 36 minutes into its 6 hours should resume now: %q", w)
+	}
+	if w := why(7 * time.Hour); !strings.HasPrefix(w, "outside hours") {
+		t.Fatalf("a shift that would have ended by now should wait for its hours: %q", w)
+	}
+	agent("own_hours: true\n")
+	if w := why(36 * time.Minute); !strings.HasPrefix(w, "outside hours") {
+		t.Fatalf("a shift in a window it owns ends with the window: %q", w)
+	}
+}
+
 func TestAShiftTheOrganizerStopsResumesWhereItLeftOff(t *testing.T) {
 	root := t.TempDir()
 	claude := filepath.Join(root, "claude")

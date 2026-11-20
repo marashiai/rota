@@ -439,7 +439,7 @@ func (s *schedule) eligible(a *Agent) (bool, string) {
 	case st.Attempts == 0 && !st.Last.IsZero() && waits(due, asked):
 		return false, "due " + due.Local().Format("Mon 15:04")
 	}
-	if next := s.startIn(a, s.now); !s.inHours(a, s.now) && waits(next, byHand) {
+	if next := s.startIn(a, s.now); !s.inHours(a, s.now) && waits(next, byHand) && !s.resumesNow(a) {
 		return false, "outside hours, next " + next.Local().Format("Mon 15:04")
 	}
 	if poolWhy != "" {
@@ -456,6 +456,14 @@ func (s *schedule) eligible(a *Agent) (bool, string) {
 		return true, fmt.Sprintf("ready, retry %d/%d", st.Attempts+1, s.MaxAttempts) + free
 	}
 	return true, "ready" + free
+}
+
+// resumesNow says the agent's interrupted shift may resume now, outside its hours: it began in
+// them, and would still be running had the organizer not stopped it. A window the agent owns
+// ends its shift all the same.
+func (s *schedule) resumesNow(a *Agent) bool {
+	r, ok := s.toResume(a.Name)
+	return ok && s.asked[a.Name] && !a.OwnHours && s.now.Before(r.Began.Add(time.Duration(a.RunMinutes)*time.Minute))
 }
 
 // nextRun is the earliest moment the agent could start again, or a note when that is not
@@ -491,7 +499,7 @@ func (s *schedule) nextRun(a *Agent) (time.Time, string) {
 	case s.usage == nil && s.Usage != "off":
 		return time.Time{}, "when Claude usage data is back"
 	}
-	if !s.byHand[a.Name] {
+	if !s.byHand[a.Name] && !s.resumesNow(a) {
 		if at.IsZero() && !s.inHours(a, s.now) {
 			at = s.startIn(a, s.now)
 		} else {

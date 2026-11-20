@@ -716,7 +716,9 @@ from its first event until it ends; when the organizer's stop ends it, the agent
 (and again when the organizer starts), so that shift resumes the session where it stopped (`claude
 --resume`), on the same host, in the checkouts as they were (they are not synced), with the notes that
 came since and what is left of `run_minutes` across interruptions (at least 15, but never past the end of
-a window it owns). Status says `ready to
+a window it owns). It resumes even outside its `hours`, as long as the shift would still be running had
+the organizer not stopped it (its start plus `run_minutes`): an update after its window does not cost it a
+day. Status says `ready to
 resume its interrupted shift`. A shift the operator stops, or that runs out of time or pool, starts over
 as before.
 
