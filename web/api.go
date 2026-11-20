@@ -119,7 +119,8 @@ type apiTop struct {
 }
 
 type apiMail struct {
-	Lists   map[string]core.ListFilter `json:"lists"` // what narrows Reviews and Issues, kept until the human changes it
+	Lists   map[string]core.ListFilter `json:"lists"`   // what narrows Reviews and Issues, kept until the human changes it
+	Filters map[string]core.MailFilter `json:"filters"` // what narrows each folder of the mail, kept until the human changes it
 	Threads []apiThread                `json:"threads"`
 	Members []core.Member              `json:"members"`
 	Repos   []core.RepoLabel           `json:"repos"`
@@ -157,7 +158,7 @@ func (s *site) mail(w http.ResponseWriter, r *http.Request) {
 	now := time.Now()
 	m := t.Mail(now)
 	h := headerOf(t)
-	out := apiMail{Members: m.Members, Repos: m.Repos, Prefs: m.Prefs, Threads: []apiThread{},
+	out := apiMail{Members: m.Members, Repos: m.Repos, Prefs: m.Prefs, Threads: []apiThread{}, Filters: m.Filters,
 		Lists: map[string]core.ListFilter{"reviews": t.ListFilter(core.ReviewsTab), "issues": t.ListFilter(core.IssuesTab)},
 		Top:   apiTop{h.State, h.Dot, h.Title, h.Budget, h.Fill}}
 	for _, th := range m.Threads {
@@ -327,6 +328,13 @@ func (s *site) mailAct(t *core.Team, f map[string][]string) (string, error) {
 			return "", fmt.Errorf("prefs: %v", err)
 		}
 		return "saved", t.SetMailPrefs(p)
+	case "filters": // id: the folder; arg: only what changes, as JSON, so what another device chose
+		// meanwhile stays (core.ChangeMailFilter says what it may name)
+		var change map[string]any
+		if err := json.Unmarshal([]byte(arg), &change); err != nil {
+			return "", fmt.Errorf("filters: %v", err)
+		}
+		return "kept", t.ChangeMailFilter(id, change)
 	case "approve", "review-note": // as the human on GitHub, the way gloss does
 		repo, n, err := prOf(id)
 		if err != nil {

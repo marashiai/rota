@@ -129,7 +129,8 @@ function folder() {
 const KINDS = [['ask', 'Questions'], ['do', 'To-dos'], ['review', 'Pull requests'], ['msg', 'Your messages'], ['update', 'Updates'], ['digest', 'Reports']];
 const DATES = [['today', 'Today'], ['week', 'Past 7 days']];
 const filtering = () => Object.values(S.f).some(Boolean);
-const mailList = () => ['inbox', 'waiting', 'starred', 'snoozed', 'sent', 'all'].includes(S.view) || S.view.startsWith('repo:');
+const mailFolder = v => ['inbox', 'waiting', 'starred', 'snoozed', 'sent', 'all'].includes(v) || v.startsWith('repo:');
+const mailList = () => mailFolder(S.view);
 function passes(t) {
   const c = S.f;
   if (c.unread && !t.unread && !S.keepRead.has(t.id)) return false; // one read while it is listed stays until the filters change
@@ -141,8 +142,22 @@ function passes(t) {
   return true;
 }
 function setFilter(k, v) { // a selection the filters hid is no longer acted on; the keyboard is back at the Filter button
-  S.f[k] = v; S.keepRead.clear(); S.sel.clear(); render();
+  S.f[k] = v; S.keepRead.clear(); S.sel.clear(); keepFilters({[k]: k === 'unread' || k === 'star' ? !!v : v || ''}); render();
   const b = document.querySelector('[data-filters]'); if (b) b.focus({preventScroll: true});
+}
+
+// keptFilters is what narrows the folder v as the human left it there, kept on the server and so the
+// same on every device; a copy, as a search adds to it
+const keptFilters = v => (M && M.filters && mailFolder(v) ? {...(M.filters[v] || {})} : {});
+// keepFilters keeps a change to the filters of the folder shown, for each time the human comes back
+// to it: {k: v}, or {clear: true}. Only the change goes to the server, so what another device chose
+// for the folder meanwhile stays. A search's own filters end with the search.
+function keepFilters(change) {
+  if (searching() || !mailList() || !M) return;
+  const f = change.clear ? {} : {...((M.filters || {})[S.view] || {})};
+  for (const k in change) if (k !== 'clear') { if (change[k]) f[k] = change[k]; else delete f[k]; }
+  M.filters = {...(M.filters || {}), [S.view]: f};
+  post({action: 'filters', id: S.view, arg: JSON.stringify(change)});
 }
 
 // ---------- search: words, #numbers and operators; the filters' chips narrow it ----------
@@ -1155,7 +1170,7 @@ function openChat(prefill, w) {
   if (w) switchChat(w);
   if (prefill !== undefined) S.vals.chat = prefill;
   if (desk()) S.tc = {open: true, min: false}; else S.pchat = true; // over what is open: closed, it is still there
-  if (searching()) { S.q = null; S.f = {}; S.keepRead.clear(); } // as search's own X: its filters were the search's
+  if (searching()) { S.q = null; S.f = keptFilters(S.view); S.keepRead.clear(); } // as search's own X: its filters were the search's
   S.drawer = false; render(); chatToEnd();
   const el = document.getElementById('chatin');
   if (el && desk()) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
@@ -1261,7 +1276,7 @@ function filterSheet() {
     ['From', c.from ? filterWords.from(c.from).slice(5) : 'Anyone', () => chooseFilter('from')], ['Type', c.kind ? filterWords.kind(c.kind) : 'Any', () => chooseFilter('kind')]];
   if ((M.repos || []).length > 1) opts.push(['Repository', c.repo ? filterWords.repo(c.repo) : 'Any', () => chooseFilter('repo')]);
   opts.push(['Date', c.date ? filterWords.date(c.date) : 'Any time', () => chooseFilter('date')]);
-  if (filtering()) opts.push(['Clear filters', '', () => { S.f = {}; S.keepRead.clear(); S.sel.clear(); render(); }]);
+  if (filtering()) opts.push(['Clear filters', '', () => { S.f = {}; S.keepRead.clear(); S.sel.clear(); keepFilters({clear: true}); render(); }]);
   sheet('Filter', opts, filterAt(''));
 }
 function chooseFilter(k) {
@@ -1438,7 +1453,7 @@ function route() {
   }
   if (FOLDERS.includes(h)) { // a folder of the mail, from an old page's link
     if (!leaveOK()) { writeStep(false, placeNow(), shown); return; }
-    history.replaceState(null, '', location.pathname); S.view = h; S.open = null; S.pchat = false; S.q = null; S.f = {}; S.keepRead.clear(); S.sel.clear();
+    history.replaceState(null, '', location.pathname); S.view = h; S.open = null; S.pchat = false; S.q = null; S.f = keptFilters(h); S.keepRead.clear(); S.sel.clear();
     S.roleDraft = null; S.adv = null; S.edits = {}; S.weights = Object.create(null);
     if (h === 'issues') loadIssues();
     render(); return;
@@ -1449,6 +1464,7 @@ function route() {
   if (!leaveOK()) { writeStep(false, placeNow(), shown); return; }
   if (h.startsWith('agent:') && !S.view.startsWith('run:')) S.aTab = 'messages';
   S.view = h; S.open = null; S.q = null; S.roleDraft = null; S.adv = null; S.edits = {}; S.weights = Object.create(null); TEAM.error = '';
+  if (mailFolder(h)) { S.f = keptFilters(h); S.keepRead.clear(); } // back from a page to the mail: the folder as it was left
   loadPage(); render();
 }
 // ---------- the browser's history ----------
@@ -1628,6 +1644,7 @@ async function load() {
     lastTag = tag;
     const busy = typing();
     M = await r.json();
+    if (!S.loaded && S.q === null) S.f = keptFilters(S.view); // the folder the app opens on, as it was left
     if (S.ask) { // opened from a notification: the newest open question
       S.ask = false;
       const q = M.threads.filter(t => t.qid).sort((a, b) => b.at.localeCompare(a.at))[0];
@@ -1824,7 +1841,7 @@ document.addEventListener('click', e => {
   if (d.cedit) { chatEditStart(d.cedit); return; }
   if (d.ceditx !== undefined) { chatEditCancel(); return; }
   if (d.csay) { chatSend(d.csay); return; }
-  if (d.askteam !== undefined) { const q = S.q; S.q = null; S.f = {}; openChat('', 'team'); chatSend(q); return; }
+  if (d.askteam !== undefined) { const q = S.q; S.q = null; S.f = keptFilters(S.view); S.keepRead.clear(); openChat('', 'team'); chatSend(q); return; }
   if (d.cwith) { openChat(undefined, d.cwith); return; }
   if (d.mention) { S.vals.chat = (S.vals.chat || '').replace(/@[A-Za-z0-9_.-]*$/, '@' + d.mention + ' '); render(); const el = document.getElementById('chatin'); if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); } return; }
   if (d.capply) { applyCard(d.capply); return; }
@@ -1840,11 +1857,11 @@ document.addEventListener('click', e => {
     return;
   }
   if (d.fcheck) { const f = advField(d.fcheck); if (f && d.v === saved(f)) delete S.edits[d.fcheck]; else S.edits[d.fcheck] = d.v; render(); return; }
-  if (d.tab) { S.view = 'inbox'; S.tab = d.tab; S.open = null; S.autoOpen = true; render(); window.scrollTo(0, 0); return; }
+  if (d.tab) { if (S.view !== 'inbox') { S.f = keptFilters('inbox'); S.keepRead.clear(); } S.view = 'inbox'; S.tab = d.tab; S.open = null; S.autoOpen = true; render(); window.scrollTo(0, 0); return; }
   if (d.drawer !== undefined) { S.drawer = true; render(); return; }
   if (d.closedrawer !== undefined) { S.drawer = false; render(); return; }
   if (d.search !== undefined) { S.q = ''; S.f = {}; S.focusSearch = true; render(); return; }
-  if (d.endsearch !== undefined) { S.q = null; S.f = {}; render(); return; }
+  if (d.endsearch !== undefined) { S.q = null; S.f = keptFilters(S.view); S.keepRead.clear(); render(); return; }
   if (d.clearq !== undefined) { S.q = ''; S.focusSearch = true; render(); return; }
   if (d.from) { S.f.from = d.from; if (S.q === null) S.q = ''; render(); return; }
   if (d.filters !== undefined) { if (d.filters) sheet(d.filters === 'issues' ? 'Sort and filter' : 'Filter', listOpts(d.filters), b); else filterSheet(); return; }
@@ -1900,7 +1917,7 @@ document.addEventListener('click', e => {
     return;
   }
   if (d.clearsel !== undefined) { S.sel.clear(); render(); return; }
-  if (d.clearf !== undefined) { S.f = {}; S.keepRead.clear(); S.sel.clear(); render(); return; }
+  if (d.clearf !== undefined) { S.f = {}; S.keepRead.clear(); S.sel.clear(); keepFilters({clear: true}); render(); return; }
   if (d.allread !== undefined) { // what the list shows, which the mail read meanwhile may not be
     const ts = [...document.querySelectorAll('.row.unread[data-open]')].map(r => find(r.dataset.open)).filter(t => t && t.unread);
     ts.forEach(t => { t.unread = false; post({action: 'read', id: t.id}); });
@@ -1968,7 +1985,7 @@ document.addEventListener('keydown', e => {
     if (document.getElementById('sheet').classList.contains('open')) { document.getElementById('sscrim').click(); return; }
     if (S.cedit) { chatEditCancel(); return; } // the words edited stay as they were
     if (S.pchat && !desk()) { S.pchat = false; render(); return; } // the phone's chat, over the screen
-    if (S.compose) S.compose = null; else if (searching()) { S.q = null; S.f = {}; document.activeElement.blur(); } else if (S.reply) S.reply = false; else if (S.open && !desk()) S.open = null; else if (S.view === 'keys' || S.view === 'settings' && !unsaved()) { if (backTo('inbox')) return; S.view = 'inbox'; }
+    if (S.compose) S.compose = null; else if (searching()) { S.q = null; S.f = keptFilters(S.view); S.keepRead.clear(); document.activeElement.blur(); } else if (S.reply) S.reply = false; else if (S.open && !desk()) S.open = null; else if (S.view === 'keys' || S.view === 'settings' && !unsaved()) { if (backTo('inbox')) return; S.view = 'inbox'; S.f = keptFilters('inbox'); S.keepRead.clear(); }
     else if (S.view.startsWith('run:')) { S.view = 'agent:' + S.view.slice(20); loadPage(); }
     render(); return;
   }
@@ -2021,7 +2038,7 @@ function bindSwipe() {
 // setView opens a folder or a page, to be drawn; what was unsaved, the human chose to leave
 function setView(v) {
   if (v.startsWith('agent:') && !S.view.startsWith('run:') && S.view !== v) S.aTab = 'messages'; // back from a run: its tab stays
-  S.view = v; S.drawer = false; S.q = null; S.f = {}; S.keepRead.clear(); S.open = null; S.sel.clear(); S.autoOpen = true; S.roleDraft = null; S.adv = null; S.edits = {}; S.weights = Object.create(null); TEAM.error = '';
+  S.view = v; S.drawer = false; S.q = null; S.f = keptFilters(v); S.keepRead.clear(); S.open = null; S.sel.clear(); S.autoOpen = true; S.roleDraft = null; S.adv = null; S.edits = {}; S.weights = Object.create(null); TEAM.error = '';
   S.pchat = false; // on the phone, a page opens with the chat closed
   if (v === 'issues') loadIssues();
   if (pageView()) loadPage();

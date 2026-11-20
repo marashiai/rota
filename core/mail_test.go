@@ -254,6 +254,54 @@ func TestMailPrefs(t *testing.T) {
 	}
 }
 
+func TestEachFolderKeepsItsFilters(t *testing.T) {
+	_, team := mailTeam(t)
+	for _, step := range []struct {
+		folder string
+		change map[string]any
+	}{
+		{"inbox", map[string]any{"unread": true, "kind": " review ", "date": "week"}},
+		{"repo:o/app", map[string]any{"star": true}},
+		{"inbox", map[string]any{"from": "alpha"}}, // another device's change: the rest stays
+		{"inbox", map[string]any{"date": ""}},
+	} {
+		if err := team.ChangeMailFilter(step.folder, step.change); err != nil {
+			t.Fatalf("%s %v: %v", step.folder, step.change, err)
+		}
+	}
+	got := team.Mail(time.Now()).Filters
+	if want := (MailFilter{Unread: true, Kind: "review", From: "alpha"}); got["inbox"] != want || got["repo:o/app"] != (MailFilter{Star: true}) || len(got) != 2 {
+		t.Fatalf("filters %+v", got)
+	}
+	if err := team.ChangeMailFilter("inbox", map[string]any{"clear": true, "star": true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := team.ChangeMailFilter("repo:o/app", map[string]any{"star": false}); err != nil { // none left: the folder has none
+		t.Fatal(err)
+	}
+	if got := team.Mail(time.Now()).Filters; len(got) != 1 || got["inbox"] != (MailFilter{Star: true}) {
+		t.Fatalf("after clearing: %+v", got)
+	}
+	for _, bad := range []struct {
+		folder string
+		change map[string]any
+	}{
+		{"issues", map[string]any{"star": true}}, {"repo:o", map[string]any{"star": true}}, {"repo: /x", map[string]any{"star": true}},
+		{"all", map[string]any{"date": "year"}}, {"all", map[string]any{"unread": "yes"}}, {"all", map[string]any{"from": 3.0}},
+		{"all", map[string]any{"loud": true}}, {"all", nil},
+	} {
+		if team.ChangeMailFilter(bad.folder, bad.change) == nil {
+			t.Errorf("%s %v is kept", bad.folder, bad.change)
+		}
+	}
+	if got := team.Mail(time.Now()).Filters; len(got) != 1 || got["inbox"] != (MailFilter{Star: true}) {
+		t.Fatalf("a refused change changed them: %+v", got)
+	}
+	if p := team.Mail(time.Now()).Prefs; p != defaultMailPrefs { // the prefs beside them are untouched
+		t.Errorf("prefs %+v", p)
+	}
+}
+
 func TestSubjects(t *testing.T) {
 	for in, want := range map[string]string{
 		"Drop the share code? I recommend dropping it.":                 "Drop the share code?",

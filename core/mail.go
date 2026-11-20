@@ -2,6 +2,7 @@ package core
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"hash/fnv"
 	"os"
@@ -140,10 +141,104 @@ var defaultMailPrefs = MailPrefs{Split: true, Focus: 5, After: "next", Notify: "
 
 // Mail is the human's mail now.
 type Mail struct {
-	Threads []Thread    `json:"threads"`
-	Members []Member    `json:"members"`
-	Repos   []RepoLabel `json:"repos"`
-	Prefs   MailPrefs   `json:"prefs"`
+	Threads []Thread              `json:"threads"`
+	Members []Member              `json:"members"`
+	Repos   []RepoLabel           `json:"repos"`
+	Prefs   MailPrefs             `json:"prefs"`
+	Filters map[string]MailFilter `json:"filters"` // by folder, as MailFilter says
+}
+
+// MailFilter is what narrows one folder of the mail (inbox, waiting, starred, snoozed, sent, all, or
+// repo:<owner/name>) as the human left it: only unread or starred threads, from one member or the
+// team, of one kind, of one repository, of today or the past week. The folder shows it again each
+// time the human comes back to it, on every device, until they change it; a search has filters of
+// its own, which end with it.
+type MailFilter struct {
+	Unread bool   `json:"unread,omitempty"`
+	Star   bool   `json:"star,omitempty"`
+	From   string `json:"from,omitempty"`
+	Kind   string `json:"kind,omitempty"`
+	Repo   string `json:"repo,omitempty"`
+	Date   string `json:"date,omitempty"` // today or week
+}
+
+// mailFolders are the folders a MailFilter narrows, besides one repository's (repo:<owner/name>).
+var mailFolders = []string{"inbox", "waiting", "starred", "snoozed", "sent", "all"}
+
+func isMailFolder(folder string) bool {
+	if slices.Contains(mailFolders, folder) {
+		return true
+	}
+	rest := strings.TrimPrefix(folder, "repo:")
+	owner, name, ok := strings.Cut(rest, "/")
+	return strings.HasPrefix(folder, "repo:") && ok && owner != "" && name != "" && !strings.ContainsAny(rest, " \t\n") && !strings.Contains(name, "/")
+}
+
+// ChangeMailFilter changes what narrows the folder by what change names, under the mail's lock, so
+// that what another device chose for it meanwhile stays: unread and star (true or false); from,
+// kind, repo and date ("" for any; a date is today or week); clear (true) takes every one off first.
+func (c *Config) ChangeMailFilter(folder string, change map[string]any) error {
+	if !isMailFolder(folder) {
+		return fmt.Errorf("no folder %q to filter", folder)
+	}
+	if len(change) == 0 {
+		return fmt.Errorf("which filter?")
+	}
+	var failed error
+	err := c.changeMail(time.Now(), func(s *mailState) {
+		f := s.Filters[folder]
+		if clear, _ := change["clear"].(bool); clear {
+			f = MailFilter{}
+		}
+		for k, v := range change {
+			switch k {
+			case "clear":
+			case "unread", "star":
+				b, ok := v.(bool)
+				if !ok {
+					failed = fmt.Errorf("%s is true or false", k)
+					return
+				}
+				if k == "unread" {
+					f.Unread = b
+				} else {
+					f.Star = b
+				}
+			case "from", "kind", "repo", "date":
+				str, ok := v.(string)
+				if !ok {
+					failed = fmt.Errorf("%s is a word, or none for any", k)
+					return
+				}
+				switch str = strings.TrimSpace(str); k {
+				case "from":
+					f.From = str
+				case "kind":
+					f.Kind = str
+				case "repo":
+					f.Repo = str
+				default:
+					f.Date = str
+				}
+			default:
+				failed = fmt.Errorf("no filter %q", k)
+				return
+			}
+		}
+		if f.Date != "" && f.Date != "today" && f.Date != "week" {
+			failed = fmt.Errorf("a date filter is today or week")
+			return
+		}
+		if f == (MailFilter{}) {
+			delete(s.Filters, folder)
+			return
+		}
+		if s.Filters == nil {
+			s.Filters = map[string]MailFilter{}
+		}
+		s.Filters[folder] = f
+	})
+	return errors.Join(failed, err)
 }
 
 // mailMark is what the human did to one thread.
@@ -161,9 +256,10 @@ type mailMark struct {
 
 // mailState is .mail.json.
 type mailState struct {
-	Since time.Time           `json:"since"` // the mail began then: what came before counts as read
-	Prefs *MailPrefs          `json:"prefs,omitempty"`
-	Marks map[string]mailMark `json:"marks,omitempty"`
+	Since   time.Time             `json:"since"` // the mail began then: what came before counts as read
+	Prefs   *MailPrefs            `json:"prefs,omitempty"`
+	Marks   map[string]mailMark   `json:"marks,omitempty"`
+	Filters map[string]MailFilter `json:"filters,omitempty"` // what narrows each folder, as the human left it
 }
 
 // readMail reads .mail.json: ok is false when it does not exist yet, and err says why one that
@@ -223,7 +319,10 @@ func (t *Team) Mail(now time.Time) Mail {
 	threads = append(threads, t.messageThreads(labels, now)...)
 	t.markThreads(threads, now)
 	slices.SortStableFunc(threads, func(a, b Thread) int { return b.At.Compare(a.At) })
-	m := Mail{Threads: threads, Members: t.Members(now), Repos: []RepoLabel{}, Prefs: t.mailPrefs()}
+	m := Mail{Threads: threads, Members: t.Members(now), Repos: []RepoLabel{}, Prefs: t.mailPrefs(), Filters: map[string]MailFilter{}}
+	if s, _, _ := t.readMail(); s.Filters != nil {
+		m.Filters = s.Filters
+	}
 	if m.Members == nil {
 		m.Members = []Member{}
 	}

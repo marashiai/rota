@@ -608,6 +608,22 @@ func TestTheAppReadsAndActsOnTheMail(t *testing.T) {
 	if code, _ := act(url.Values{"token": {token}, "action": {"prefs"}, "arg": {`{"split":false,"focus":3,"after":"list","notify":"all","chat":"loud"}`}}); code != 400 {
 		t.Fatal("the chat's notifications are all or off")
 	}
+	for _, change := range []string{`{"unread":true,"from":"beta"}`, `{"from":"alpha"}`} { // only what changes: unread stays
+		if code, out := act(url.Values{"token": {token}, "action": {"filters"}, "id": {"starred"}, "arg": {change}}); code != 200 {
+			t.Fatalf("what narrows Starred: %d %v", code, out)
+		}
+	}
+	for _, bad := range [][2]string{{"reviews", `{"unread":true}`}, {"starred", `null`}, {"starred", `{"unread":"yes"}`}} {
+		if code, _ := act(url.Values{"token": {token}, "action": {"filters"}, "id": {bad[0]}, "arg": {bad[1]}}); code != 400 {
+			t.Fatalf("%s %s is kept", bad[0], bad[1])
+		}
+	}
+	var mf struct {
+		Filters map[string]core.MailFilter `json:"filters"`
+	}
+	if err := json.Unmarshal([]byte(get(t, srv, "/api/mail")), &mf); err != nil || mf.Filters["starred"] != (core.MailFilter{Unread: true, From: "alpha"}) {
+		t.Fatalf("the mail does not bring Starred's filters back: %v %+v", err, mf.Filters)
+	}
 	if code, out := act(url.Values{"token": {token}, "action": {"list"}, "id": {"issues"}, "repo": {"o/app"}, "order": {"oldest"}}); code != 200 {
 		t.Fatalf("what narrows Issues: %d %v", code, out)
 	}
