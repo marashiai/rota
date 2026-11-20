@@ -625,7 +625,9 @@
   }
   const isHunk = el => el.dataset.kind === 'hunk';
   const isFile = el => el.dataset.kind === 'file';
-  const isNote = el => el.dataset.kind === 'note';
+  // a note, also a folded one: a thread on one line, or the line of the read ones. The keys and the
+  // buttons stop on it as it is; the reviewer opens it (z) or goes on
+  const isNote = el => ['note', 'fold', 'folds'].includes(el.dataset.kind);
   function halfPage(dir) {
     if (!cur()) return;
     const target = cur().getBoundingClientRect().top + dir * main.clientHeight / 2;
