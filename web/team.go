@@ -507,6 +507,9 @@ func (s *site) teamAct(t *core.Team, action, arg, text, about string) (said stri
 	case "chat-edit": // arg: the human's words in the chat they edit; text: their new words
 		root, conf := s.root, s.conf
 		_, err = t.ChatEdit(arg, text, func() { core.WakeTeam(root, conf) })
+	case "chat-delete": // arg: the human's words in the chat they take back
+		root, conf := s.root, s.conf
+		err = t.ChatDelete(arg, func() { core.WakeTeam(root, conf) })
 	case "chat-apply": // arg: the change's id
 		said, err = t.ChatApply(arg)
 	case "chat-cancel":

@@ -23,6 +23,11 @@ import (
 // never had those; where it has them, as words that replace them, after it stops when it answers
 // them now. The Team answers the new words; a turn on the old ones stops. Words that were answered
 // are not edited: the talk went on from them.
+//
+// Deleted, the human's words leave the chat as well, with nothing in their place, on the same terms:
+// until they are answered. The Team never reads them; a turn on them stops, and the Team answers what
+// else waits on it. An agent never gets them where they have not reached its shift; where they have,
+// it is told they are taken back, and its shift here stops when it answers them now.
 
 // teamStopFile says when the human last stopped the Team: a turn that began before then stops.
 const teamStopFile = ".chat-stop"
@@ -119,6 +124,94 @@ func (t *Team) ChatEdit(id, text string, wakeTeam func()) (ChatMsg, error) {
 		t.wakeForHuman(a.Name)
 	}
 	return m, nil
+}
+
+// ChatDelete takes back the human's words id, which whoever they wrote has not answered: they leave
+// the chat, and the Team or the agent does not answer them.
+func (t *Team) ChatDelete(id string, wakeTeam func()) error {
+	msgs := t.Chat(400)
+	i := slices.IndexFunc(msgs, func(m ChatMsg) bool { return m.ID == id && m.From == "you" })
+	if i < 0 {
+		return fmt.Errorf("that message is no longer in the chat")
+	}
+	old, who := msgs[i], msgs[i].With()
+	if slices.ContainsFunc(msgs[i+1:], func(m ChatMsg) bool { return m.From == who && m.Re == "" }) {
+		return fmt.Errorf("%s answered it already", whoText(who))
+	}
+	var a *Agent
+	if who != "team" {
+		if a = t.Agent(old.To); a == nil {
+			return fmt.Errorf("no agent is called %s", old.To)
+		}
+	}
+	answering := slices.ContainsFunc(chatPending(msgs, who), func(m ChatMsg) bool { return m.ID == old.ID })             // it may answer it now
+	had := !slices.ContainsFunc(msgs, func(m ChatMsg) bool { return m.From == "" && slices.Contains(m.Unread, old.ID) }) // a stop took it back before it reached the agent
+	if a != nil {                                                                                                        // first: should this fail, the words are in the chat still, to delete again
+		if err := t.takeBackNote(a, old, answering, had); err != nil {
+			return err
+		}
+	}
+	if _, err := t.chatAppend(ChatMsg{Deletes: old.ID}); err != nil {
+		return err
+	}
+	if answering && a == nil {
+		t.stopTeam()
+		if len(t.teamPending()) > 0 && wakeTeam != nil { // what else the human asked it, which it answers now
+			wakeTeam()
+		}
+	}
+	return nil
+}
+
+// takeBackNote takes the human's words old back from the agent, under its inbox's lock: where they
+// have not reached its shift, they leave its inbox, so that it never has them; where they have, a
+// note says they are taken back, which rota listen brings in a talk, once its shift here stops on
+// them if it answers them now.
+func (t *Team) takeBackNote(a *Agent, old ChatMsg, answering, had bool) error {
+	unlock, err := t.lockInbox(a.Name)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	notes, err := t.readNotes(a.Name)
+	if err != nil {
+		return err
+	}
+	tk, began := t.loadTalk(a.Name), t.shiftBegan(a.Name)
+	was := chatNoteID(old.ID)
+	if i := slices.IndexFunc(notes, func(x Note) bool { return x.ID == was }); i >= 0 && unread(a, notes[i], tk, began) {
+		if err := t.writeNotes(a.Name, slices.Delete(notes, i, i+1)); err != nil {
+			return err
+		}
+		if n := len(tk.For); n > 0 {
+			if tk.For = slices.DeleteFunc(tk.For, func(x Note) bool { return x.ID == was }); len(tk.For) != n {
+				return t.saveTalk(a.Name, tk)
+			}
+		}
+		return nil
+	}
+	if !had { // a stop took them back before they reached it
+		return nil
+	}
+	at := time.Now()
+	n := Note{ID: at.Format("20060102-150405") + "-" + randHex(3), At: at, From: "human", // a note, not words to answer in the chat
+		Text: "(taken back: they deleted their words «" + FirstLine(strings.Join(strings.Fields(chatWords(old.Text, a.Name)), " "), 200) + "» from the team chat; do not answer them or act on them)"}
+	if err := t.writeNotes(a.Name, append(notes, n)); err != nil {
+		return err
+	}
+	if began.IsZero() {
+		return nil
+	}
+	if answering && a.Host == "" {
+		tk.Stop = stopOn(tk, a.Name, []ChatMsg{old})
+	}
+	if tk.Open { // rota listen brings it, as the human's next words in the talk
+		tk.For, tk.Last = append(tk.For, n), n.At
+	}
+	if tk.Stop == nil && !tk.Open {
+		return nil
+	}
+	return t.saveTalk(a.Name, tk)
 }
 
 // whoText is the Team or an agent, as a sentence names them.

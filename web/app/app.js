@@ -979,7 +979,7 @@ function chatBody() {
       if (m.about && m.about !== about) h += `<div class="cabout">${I.eye}<span>${esc(m.about)}</span></div>`;
       const ed = S.cedit && S.cedit.id === m.id, can = mine.has(m.id) && !ed;
       about = m.about || ''; prev = 'you'; h += `<div class="bub me${ed ? ' ced' : ''}">${m.html}</div>`;
-      if (m.edited || can || ed) h += `<div class="mfoot">${ed ? 'Editing…' : m.edited ? 'Edited' : ''}${can ? `<button class="link" data-cedit="${esc(m.id)}">Edit</button>` : ''}</div>`;
+      if (m.edited || can || ed) h += `<div class="mfoot">${ed ? 'Editing…' : m.edited ? 'Edited' : ''}${can ? `<button class="link" data-cedit="${esc(m.id)}">Edit</button><button class="link" data-cdel="${esc(m.id)}">Delete</button>` : ''}</div>`;
       continue;
     }
     const first = prev !== m.from; prev = m.from;
@@ -1073,6 +1073,17 @@ function chatEditCancel() {
   S.vals.chat = S.cedit.draft; S.cedit = null;
   render(); fitChatIn();
   const el = document.getElementById('chatin'); if (el) el.focus();
+}
+// chatDelete takes back the human's words that whoever they wrote has not answered, once the human
+// says so: they leave the chat at once, and the Team or the agent does not answer them. Refused, as
+// when an answer came meanwhile, the chat read again brings them back.
+async function chatDelete(id) {
+  const m = CHAT.msgs.find(x => x.id === id);
+  if (!m || !confirm('Delete your message? It will not be answered.')) return;
+  CHAT.msgs = CHAT.msgs.filter(x => x !== m);
+  render();
+  await post({action: 'chat-delete', arg: id});
+  CHAT.tag = null; await loadChat(); render();
 }
 // chatSaveEdit puts the human's new words in place of the ones they edit: at the chat's end, as what
 // they wrote now, which whoever they wrote answers. Refused, they are in the box to edit still.
@@ -1839,6 +1850,7 @@ document.addEventListener('click', e => {
   if (d.csend !== undefined) { chatSend((document.getElementById('chatin') || {}).value); return; }
   if (d.cstop !== undefined) { chatStop(CHAT.with); return; }
   if (d.cedit) { chatEditStart(d.cedit); return; }
+  if (d.cdel) { chatDelete(d.cdel); return; }
   if (d.ceditx !== undefined) { chatEditCancel(); return; }
   if (d.csay) { chatSend(d.csay); return; }
   if (d.askteam !== undefined) { const q = S.q; S.q = null; S.f = keptFilters(S.view); S.keepRead.clear(); openChat('', 'team'); chatSend(q); return; }

@@ -243,3 +243,109 @@ done
 		t.Fatalf("the cut-off turn did not end the shift; its own end did: %+v %+v", res, final)
 	}
 }
+
+// The human deletes their words to an agent until it answers them, as they edit them. Words that have
+// not reached its shift leave the chat and its inbox, and it never has them. Words it has and answers
+// now in a talk stop its turn, as a stop does, and rota listen brings a note that they are taken
+// back. Words it answered stay.
+func TestTheHumanDeletesWhatTheyWroteAnAgent(t *testing.T) {
+	team, s, sent := talkTeam(t)
+	send := func(text string) bool { *sent = append(*sent, text); return true }
+
+	asked, err := team.ChatSend("@qa why 3 retries?", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := team.ChatDelete(asked.ID, nil); err != nil {
+		t.Fatal(err)
+	}
+	if msgs := chatWith(team, "qa"); slices.ContainsFunc(msgs, func(m ChatMsg) bool { return m.ID == asked.ID || m.Deletes != "" }) {
+		t.Fatalf("the words leave the chat, and nothing shows in their place: %+v", msgs)
+	}
+	if in := inboxText(team, "qa"); in != "" || len(team.ChatBusy()) != 0 {
+		t.Fatalf("words that did not reach its shift leave its inbox: %q %v", in, team.ChatBusy())
+	}
+	if s.look(send); len(*sent) != 0 {
+		t.Fatalf("nothing reaches the shift: %q", *sent)
+	}
+	if err := team.ChatDelete(asked.ID, nil); err == nil {
+		t.Fatal("words deleted already are deleted again")
+	}
+
+	stack, _ := team.ChatSend("@qa is the stack up?", nil)
+	s.look(send)
+	s.taken(echo((*sent)[0])) // it has them, and answers them now in a talk
+	if err := team.ChatDelete(stack.ID, nil); err != nil {
+		t.Fatal(err)
+	}
+	if slices.ContainsFunc(chatWith(team, "qa"), func(m ChatMsg) bool { return m.ID == stack.ID }) || len(team.ChatBusy()) != 0 {
+		t.Fatalf("they leave the chat, which no longer shows it answering: %v", team.ChatBusy())
+	}
+	s.look(send)
+	if len(*sent) != 3 || (*sent)[1] != stopTurn || !strings.Contains((*sent)[2], "do not answer what they wrote you last, «is the stack up?»") {
+		t.Fatalf("its turn is cut off, and it is told not to answer them: %q", *sent)
+	}
+	h, err := team.Listen("qa", time.Second, time.Time{})
+	if err != nil || len(h.Notes) != 1 || !strings.Contains(h.Notes[0].Text, "(taken back: they deleted their words «is the stack up?»") {
+		t.Fatalf("rota listen brings the note that they are taken back: %+v %v", h, err)
+	}
+
+	answered, _ := team.ChatSend("@qa and the runner?", nil)
+	if err := team.ChatSay("qa", "Twenty seconds.", false); err != nil {
+		t.Fatal(err)
+	}
+	if err := team.ChatDelete(answered.ID, nil); err == nil || !strings.Contains(err.Error(), "answered it already") {
+		t.Fatalf("words it answered are deleted: %v", err)
+	}
+	if err := team.ChatDelete("c20991231-000000-abc", nil); err == nil {
+		t.Fatal("words that are not in the chat are deleted")
+	}
+}
+
+// Words to the Team deleted as it answers them stop its turn, and nothing is said in their place;
+// deleted while other words wait on it, it answers those, and never reads the deleted ones.
+func TestTheHumanDeletesWhatTheyAskedTheTeam(t *testing.T) {
+	root, _ := chatTeam(t)
+	prev := teamStopLook
+	t.Cleanup(func() { teamStopLook = prev })
+	teamStopLook = 20 * time.Millisecond
+	claude, prompts := filepath.Join(root, "claude"), filepath.Join(root, "prompts")
+	write(t, claude, "#!/bin/bash\nread -r prompt\nprintf '%s\\n' \"$prompt\" >> "+prompts+"\nsleep \"${ROTA_TEST_SLEEP:-0}\"\n"+
+		`echo '{"type":"system","subtype":"init","session_id":"team-1"}'`+"\n"+
+		`echo '{"type":"result","subtype":"success","is_error":false,"result":"All idle.","num_turns":1,"session_id":"team-1","usage":{}}'`+"\n")
+	os.Chmod(claude, 0o755)
+	write(t, filepath.Join(root, "rota.conf"), "usage: off\nlisten: off\nchat_model: haiku\nclaude_bin: "+claude+"\n")
+	team := open(t, root)
+	t.Setenv("ROTA_TEST_SLEEP", "5")
+	asked, _ := team.ChatSend("What is everyone doing?", nil)
+	done := make(chan struct{})
+	go func() { team.teamTurn(); close(done) }()
+	waitFor(t, "the Team to answer", func() bool { return slices.Equal(team.ChatBusy(), []string{"team"}) })
+	woken := 0
+	if err := team.ChatDelete(asked.ID, func() { woken++ }); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("its turn goes on")
+	}
+	if msgs := chatWith(team, "team"); len(msgs) != 0 || len(team.ChatBusy()) != 0 || team.TeamWaits() || woken != 0 {
+		t.Fatalf("nothing is said, nothing waits, nothing wakes it: %+v %v %d", msgs, team.ChatBusy(), woken)
+	}
+
+	t.Setenv("ROTA_TEST_SLEEP", "0")
+	gone, _ := team.ChatSend("What is qa doing?", nil)
+	team.ChatSend("And the developer?", nil)
+	if err := team.ChatDelete(gone.ID, func() { woken++ }); err != nil || woken != 1 {
+		t.Fatalf("deleted: %v, woken %d", err, woken)
+	}
+	team.teamTurn()
+	if m := lastChat(t, team); m.From != "team" || m.Text != "All idle." {
+		t.Fatalf("it answers what else waits: %+v", m)
+	}
+	b, _ := os.ReadFile(prompts)
+	if p := strings.Split(strings.TrimSpace(string(b)), "\n"); !strings.Contains(p[len(p)-1], "And the developer?") || strings.Contains(p[len(p)-1], "qa doing") {
+		t.Fatalf("it reads what waits, and never the deleted words: %q", p[len(p)-1])
+	}
+}

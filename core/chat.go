@@ -34,22 +34,23 @@ import (
 
 // ChatMsg is one message of the chat, or, with Re, a line saying a change's new state.
 type ChatMsg struct {
-	ID     string            `json:"id,omitempty"`
-	At     time.Time         `json:"at"`
-	From   string            `json:"from,omitempty"` // you, team or an agent; "" for what rota itself says
-	To     string            `json:"to,omitempty"`   // the agent the human wrote to; on rota's line, the agent it says something of
-	Text   string            `json:"text,omitempty"`
-	About  string            `json:"about,omitempty"`  // the human's: what they had on their screen as they wrote it, as the app said it
-	Edits  string            `json:"edits,omitempty"`  // the human's: their words this replaces, which they edited (chatedit.go)
-	Unread []string          `json:"unread,omitempty"` // rota's line that the human stopped an agent: their words, by id, that never reached it
-	Change *ChatChange       `json:"change,omitempty"`
-	Re     string            `json:"re,omitempty"`     // the change this line is about
-	Answer string            `json:"answer,omitempty"` // the Team's or an agent's, or rota's line for one: the human's last message it answers
-	State  string            `json:"state,omitempty"`  // its new state: applied, cancelled or undone; working, then applied, partly or failed (chatWork)
-	Lines  []string          `json:"lines,omitempty"`  // what the work did so far, a line each (chatWork)
-	Said   string            `json:"said,omitempty"`   // what rota answered when it applied the change, or undid it
-	Undo   map[string]string `json:"undo,omitempty"`   // applied: what it replaced, as written, which undo writes back
-	Absent []string          `json:"absent,omitempty"` // applied: settings the file did not have, which undo removes
+	ID      string            `json:"id,omitempty"`
+	At      time.Time         `json:"at"`
+	From    string            `json:"from,omitempty"` // you, team or an agent; "" for what rota itself says
+	To      string            `json:"to,omitempty"`   // the agent the human wrote to; on rota's line, the agent it says something of
+	Text    string            `json:"text,omitempty"`
+	About   string            `json:"about,omitempty"`   // the human's: what they had on their screen as they wrote it, as the app said it
+	Edits   string            `json:"edits,omitempty"`   // the human's: their words this replaces, which they edited (chatedit.go)
+	Deletes string            `json:"deletes,omitempty"` // rota's, never shown: the human's words they took back (chatedit.go)
+	Unread  []string          `json:"unread,omitempty"`  // rota's line that the human stopped an agent: their words, by id, that never reached it
+	Change  *ChatChange       `json:"change,omitempty"`
+	Re      string            `json:"re,omitempty"`     // the change this line is about
+	Answer  string            `json:"answer,omitempty"` // the Team's or an agent's, or rota's line for one: the human's last message it answers
+	State   string            `json:"state,omitempty"`  // its new state: applied, cancelled or undone; working, then applied, partly or failed (chatWork)
+	Lines   []string          `json:"lines,omitempty"`  // what the work did so far, a line each (chatWork)
+	Said    string            `json:"said,omitempty"`   // what rota answered when it applied the change, or undid it
+	Undo    map[string]string `json:"undo,omitempty"`   // applied: what it replaced, as written, which undo writes back
+	Absent  []string          `json:"absent,omitempty"` // applied: settings the file did not have, which undo removes
 }
 
 // ChatChange is what the Team proposes, for the human to apply: anything they can do in the app.
@@ -159,6 +160,10 @@ func (c *Config) chatRead(tail int64, n int) ([]ChatMsg, map[string]ChatMsg) {
 			if m.State == "applied" {
 				applied[m.Re] = m
 			}
+			continue
+		}
+		if m.Deletes != "" { // the human took those words back: they leave the chat, as words edited do
+			edited[m.Deletes] = true
 			continue
 		}
 		if m.Edits != "" {

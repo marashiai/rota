@@ -1512,8 +1512,26 @@ func TestTheTeamChatInTheApp(t *testing.T) {
 	if code, said := act(url.Values{"token": {token}, "action": {"chat-stop"}, "arg": {"alpha"}}); code != 400 || !strings.Contains(said, "not answering you") {
 		t.Fatalf("an agent that answers nothing is stopped: %d %s", code, said)
 	}
-	if js := get(t, srv, "/app.js"); !strings.Contains(js, "action: 'chat-stop'") || !strings.Contains(js, "action: 'chat-edit'") || !strings.Contains(js, "data-cstop") || !strings.Contains(js, "data-cedit") {
-		t.Fatal("the chat has Stop while an answer comes, and Edit on the human's words not yet answered")
+	// the human deletes their words alpha has not answered: they leave the chat and alpha's inbox
+	if code, _ := act(url.Values{"token": {token}, "action": {"chat"}, "arg": {"alpha"}, "text": {"Never mind the rebase."}}); code != 200 {
+		t.Fatalf("chat: %d", code)
+	}
+	c = read()
+	gone := c.Msgs[slices.IndexFunc(c.Msgs, func(m apiChatMsg) bool { return m.From == "you" && m.Text == "Never mind the rebase." })] // rota says after it that alpha is not at work
+	if code, said := act(url.Values{"token": {token}, "action": {"chat-delete"}, "arg": {gone.ID}}); code != 200 {
+		t.Fatalf("delete: %d %s", code, said)
+	}
+	if c = read(); slices.ContainsFunc(c.Msgs, func(m apiChatMsg) bool { return m.ID == gone.ID || strings.Contains(m.Text, "Never mind") }) {
+		t.Fatalf("the deleted words leave the chat: %+v", c.Msgs)
+	}
+	if in := tm.NotesText(tm.Notes("alpha")); strings.Contains(in, "Never mind") {
+		t.Fatalf("alpha, not at work, never gets them: %s", in)
+	}
+	if code, _ := act(url.Values{"token": {token}, "action": {"chat-delete"}, "arg": {gone.ID}}); code != 400 {
+		t.Fatal("words deleted already are deleted again")
+	}
+	if js := get(t, srv, "/app.js"); !strings.Contains(js, "action: 'chat-stop'") || !strings.Contains(js, "action: 'chat-edit'") || !strings.Contains(js, "data-cstop") || !strings.Contains(js, "data-cedit") || !strings.Contains(js, "action: 'chat-delete'") || !strings.Contains(js, "data-cdel") {
+		t.Fatal("the chat has Stop while an answer comes, and Edit and Delete on the human's words not yet answered")
 	}
 	for path, want := range map[string][2]string{"/": {"frame-ancestors 'none'", "DENY"}, "/?embed=chat": {"frame-ancestors 'self'", "SAMEORIGIN"}} { // only the chat alone, for a review page of these pages
 		resp, err := http.Get(srv.URL + path)
