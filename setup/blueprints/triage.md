@@ -9,9 +9,9 @@
 
 - Needs these settings in `rota.conf`: the team labels below, `hold_label: rota:needs-rollout` and `review_label: rota:needs-review` (see SETUP.md).
 - What counts as auto-merge is a policy. Show the person the "auto-merge" line of step 4 and change it to what they accept, for example taking out "permissions and IAM" or "deploy scripts".
-- **No maintainer:** change `after: developer, maintainer` to `after: developer`. In steps 5, 6 and 7, change every "@maintainer" to "@developer", and in step 5 change "the maintainer gives it what is missing, or hands it to the developer when the implementation must change" to "the developer gives it what is missing". In step 1, delete from "Skip it too when your verdict was needs-review" up to "write nothing on it."
+- **No maintainer:** in steps 5, 6 and 7, change every "@maintainer" to "@developer", and in step 5 change "the maintainer gives it what is missing, or hands it to the developer when the implementation must change" to "the developer gives it what is missing". In step 1, delete from "Skip it too when your verdict was needs-review" up to "write nothing on it."
 - **No rollout agent:** keep the `rota:needs-rollout` rules; the human removes the label once they have done the steps.
-- `on: pr-ready, pr-approved, pr-unlabeled:rota:needs-rollout` starts it as soon as a pull request is ready for review, the human approves one, or its rollout is done and the label comes off, so an approved pull request is merged within minutes; `every: 1d` is the fallback.
+- `on: pr-ready, pr-approved, pr-unlabeled:rota:needs-rollout` starts it as soon as a pull request is ready for review, the human approves one, or its rollout is done and the label comes off, so an approved pull request is merged within minutes; `every: 1d` is the fallback. `after: developer` looks again after each developer shift, because the developer answers a send-back by pushing and commenting, which starts nothing. The maintainer's shifts need no `after`: it makes a ready pull request a draft before it merges the base in and marks it ready again after, which is `pr-ready`.
 
 ## Agent file
 
@@ -23,7 +23,7 @@ weight: 10
 model: sonnet
 effort: high
 run_minutes: 30
-after: developer, maintainer
+after: developer
 every: 1d
 on: pr-ready, pr-approved, pr-unlabeled:rota:needs-rollout
 hours: any
