@@ -11,7 +11,7 @@
 - What counts as auto-merge is a policy. Show the person the "auto-merge" line of step 4 and change it to what they accept, for example taking out "permissions and IAM" or "deploy scripts".
 - **No maintainer:** change `after: developer, maintainer` to `after: developer`. In steps 5, 6 and 7, change every "@maintainer" to "@developer", and in step 5 change "the maintainer gives it what is missing, or hands it to the developer when the implementation must change" to "the developer gives it what is missing". In step 1, delete from "Skip it too when your verdict was needs-review" up to "write nothing on it."
 - **No rollout agent:** keep the `rota:needs-rollout` rules; the human removes the label once they have done the steps.
-- `on: pr-ready, pr-approved` starts it as soon as a pull request is ready for review or the human approves one, so an approved pull request is merged within minutes; `every: 1d` is the fallback.
+- `on: pr-ready, pr-approved, pr-unlabeled:rota:needs-rollout` starts it as soon as a pull request is ready for review, the human approves one, or its rollout is done and the label comes off, so an approved pull request is merged within minutes; `every: 1d` is the fallback.
 
 ## Agent file
 
@@ -25,7 +25,7 @@ effort: high
 run_minutes: 30
 after: developer, maintainer
 every: 1d
-on: pr-ready, pr-approved
+on: pr-ready, pr-approved, pr-unlabeled:rota:needs-rollout
 hours: any
 tools: Read,Grep,Glob,Bash(gh pr list *),Bash(gh pr view *),Bash(gh pr diff *),Bash(gh pr checks *),Bash(gh pr ready *),Bash(rota merge *),Bash(gh pr comment *),Bash(gh pr edit *),Bash(gh issue edit *),Bash(rota review-order *),Bash(gh run list *),Bash(gh run view *)
 disallowed_tools: Bash(git push *),Bash(gh api *),Bash(gh pr create *),Bash(gh pr review *),Bash(gh pr close *),Bash(gh pr merge *),Bash(gh label *)

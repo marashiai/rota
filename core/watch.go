@@ -14,9 +14,11 @@ import (
 
 // The organizer watches the repositories the agents' triggers name (triggers.go). Every few
 // minutes it asks GitHub, in one query per repository through gh, for its open issues and pull
-// requests, the pull requests merged lately and its latest tags, and tells what happened since it
-// last looked by what changed: a new issue or pull request, a label, a comment or a review, a draft
-// made ready, an approval, a merge, a conflict, failing checks, a base branch that moved, a new tag.
+// requests, those merged or closed lately, the issues closed lately and its latest tags, and tells
+// what happened since it last looked by what changed: a new issue or pull request, a label put on or
+// taken off, a comment or a review, a draft made ready, an approval, a merge, an issue or pull
+// request closed, an issue opened again, a conflict, failing checks, a base branch that moved, a
+// new tag.
 // It keeps what it saw in watchFile. Its first look at a repository, or at its tags, only takes
 // note of it: what was there before is nothing new.
 
@@ -54,12 +56,14 @@ type watchRepo struct {
 	Since  time.Time         `json:"since"` // the latest time GitHub gave, of anything it listed
 	Items  map[int]watchItem `json:"items"`
 	Merged []int             `json:"merged,omitempty"` // the pull requests whose merge it told
+	Closed []int             `json:"closed,omitempty"` // the issues and pull requests closed, unmerged, that it saw closed
 	Tags   []string          `json:"tags"`             // the tags it saw; nil until it first looked at them
 }
 
 // watchQuery asks GitHub for what the triggers look at in one repository: its open issues that
 // changed since the last look (all of them, up to 100, at the first), its open pull requests and the
-// pull requests merged lately, and the tags on the latest commits. It costs a few points of
+// pull requests merged or closed lately, the issues closed lately, and the tags on the latest
+// commits. It costs a few points of
 // GitHub's hourly 5000, which the agents' gh shares.
 const watchQuery = `query($owner: String!, $name: String!, $since: DateTime) {
   repository(owner: $owner, name: $name) {
@@ -74,6 +78,12 @@ const watchQuery = `query($owner: String!, $name: String!, $since: DateTime) {
     merged: pullRequests(states: MERGED, first: 30, orderBy: {field: UPDATED_AT, direction: DESC}) {
       nodes { number title mergedAt }
     }
+    closedPRs: pullRequests(states: CLOSED, first: 30, orderBy: {field: UPDATED_AT, direction: DESC}) {
+      nodes { number title closedAt }
+    }
+    closedIssues: issues(states: CLOSED, first: 30, orderBy: {field: UPDATED_AT, direction: DESC}) {
+      nodes { number title closedAt }
+    }
     tags: refs(refPrefix: "refs/tags/", first: 20, orderBy: {field: TAG_COMMIT_DATE, direction: DESC}) {
       nodes { name }
     }
@@ -85,6 +95,7 @@ type watchedItem struct {
 	Number                         int
 	Title                          string
 	CreatedAt, UpdatedAt, MergedAt time.Time
+	ClosedAt                       time.Time
 	IsDraft                        bool
 	Mergeable, ReviewDecision      string
 	Labels                         struct{ Nodes []struct{ Name string } }
@@ -100,6 +111,7 @@ type watchedItem struct {
 // watchedRepo is one repository as watchQuery gets it.
 type watchedRepo struct {
 	Issues, PullRequests, Merged struct{ Nodes []watchedItem }
+	ClosedPRs, ClosedIssues      struct{ Nodes []watchedItem }
 	Tags                         struct{ Nodes []struct{ Name string } }
 }
 
@@ -195,7 +207,7 @@ func (t *Team) watchOnce(ctx context.Context, now time.Time) (said []string, err
 func watchDiff(repo string, old *watchRepo, cur watchedRepo, now time.Time) ([]RepoEvent, watchRepo) {
 	next := watchRepo{Items: map[int]watchItem{}}
 	if old != nil {
-		next.Since, next.Merged, next.Tags = old.Since, old.Merged, slices.Clone(old.Tags)
+		next.Since, next.Merged, next.Closed, next.Tags = old.Since, old.Merged, slices.Clone(old.Closed), slices.Clone(old.Tags)
 		for n, it := range old.Items {
 			if now.Sub(it.Seen) < watchForget {
 				next.Items[n] = it
@@ -245,8 +257,14 @@ func watchDiff(repo string, old *watchRepo, cur watchedRepo, now time.Time) ([]R
 			}
 			return "issue-" + k
 		}
+		reopened := false
+		if k := slices.Index(next.Closed, n.Number); k >= 0 { // open again
+			next.Closed, reopened = slices.Delete(next.Closed, k, k+1), true
+		}
 		switch {
 		case old == nil:
+		case reopened && !pr:
+			add("issue-reopened", n, "", n.UpdatedAt)
 		case !had: // new, unless it is an old one the organizer had not seen yet
 			if old.Since.IsZero() || n.CreatedAt.After(old.Since.Add(-watchNew)) {
 				add(kind("opened"), n, "", n.CreatedAt)
@@ -261,6 +279,11 @@ func watchDiff(repo string, old *watchRepo, cur watchedRepo, now time.Time) ([]R
 			for _, l := range it.Labels {
 				if !slices.ContainsFunc(prev.Labels, func(p string) bool { return strings.EqualFold(p, l) }) {
 					add(kind("labeled"), n, l, n.UpdatedAt)
+				}
+			}
+			for _, l := range prev.Labels {
+				if !slices.ContainsFunc(it.Labels, func(p string) bool { return strings.EqualFold(p, l) }) {
+					add(kind("unlabeled"), n, l, n.UpdatedAt)
 				}
 			}
 			if it.Comments > prev.Comments {
@@ -305,6 +328,35 @@ func watchDiff(repo string, old *watchRepo, cur watchedRepo, now time.Time) ([]R
 	}
 	if len(next.Merged) > 100 { // GitHub lists the last 30: the rest are long told
 		next.Merged = next.Merged[len(next.Merged)-100:]
+	}
+	isOpen := map[int]bool{} // as GitHub lists it now: open, whatever an older close says
+	for _, ns := range [][]watchedItem{cur.Issues.Nodes, cur.PullRequests.Nodes} {
+		for _, n := range ns {
+			isOpen[n.Number] = true
+		}
+	}
+	closed := func(n watchedItem, kind string) {
+		if isOpen[n.Number] {
+			return
+		}
+		later(n.ClosedAt)
+		delete(next.Items, n.Number)
+		if slices.Contains(next.Closed, n.Number) {
+			return
+		}
+		next.Closed = append(next.Closed, n.Number)
+		if old != nil && (old.Since.IsZero() || n.ClosedAt.After(old.Since.Add(-watchNew))) {
+			add(kind, n, "", n.ClosedAt)
+		}
+	}
+	for _, n := range cur.ClosedIssues.Nodes {
+		closed(n, "issue-closed")
+	}
+	for _, n := range cur.ClosedPRs.Nodes {
+		closed(n, "pr-closed")
+	}
+	if len(next.Closed) > 200 { // GitHub lists the last 30 of each: the rest are long told
+		next.Closed = next.Closed[len(next.Closed)-200:]
 	}
 	tell := next.Tags != nil // the first look at its tags only takes note of them
 	if !tell {

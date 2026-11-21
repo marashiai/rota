@@ -20,18 +20,23 @@ import (
 // It reaches that shift at its next step, if the shift still runs, or else waits for its next shift.
 type Triggers []string
 
-// triggerKinds are the triggers there are, and what each means. The two labeled ones take a label
-// after a colon, * matching any text, as issue-labeled:priority:*; without one, any label.
+// triggerKinds are the triggers there are, and what each means. The labeled and unlabeled ones take
+// a label after a colon, * matching any text, as issue-labeled:priority:*; without one, any label.
 var triggerKinds = []struct{ Name, What string }{
 	{"issue-opened", "an issue is opened"},
 	{"issue-labeled", "an issue gets a label"},
+	{"issue-unlabeled", "an issue loses a label"},
 	{"issue-commented", "an issue gets a comment"},
+	{"issue-closed", "an issue is closed, as done or not planned"},
+	{"issue-reopened", "a closed issue is opened again"},
 	{"pr-opened", "a pull request is opened"},
 	{"pr-ready", "a pull request is ready for review: opened as one, or no longer a draft"},
 	{"pr-labeled", "a pull request gets a label"},
+	{"pr-unlabeled", "a pull request loses a label"},
 	{"pr-commented", "a pull request gets a comment or a review"},
 	{"pr-approved", "a pull request is approved, on GitHub or by the human in rota"},
 	{"pr-merged", "a pull request is merged"},
+	{"pr-closed", "a pull request is closed without being merged"},
 	{"pr-conflict", "a pull request no longer merges cleanly into its base"},
 	{"pr-checks-failed", "a pull request's checks fail"},
 	{"base-moved", "the branch an open pull request merges into gets new commits"},
@@ -59,9 +64,9 @@ func (ts *Triggers) UnmarshalText(b []byte) error {
 			return fmt.Errorf("no trigger %q: use %s", p, triggerNames())
 		}
 		if labeled {
-			if kind != "issue-labeled" && kind != "pr-labeled" {
+			if !takesLabel(kind) {
 				*ts = nil
-				return fmt.Errorf("%s takes no label: only issue-labeled and pr-labeled do", kind)
+				return fmt.Errorf("%s takes no label: only issue-labeled, issue-unlabeled, pr-labeled and pr-unlabeled do", kind)
 			}
 			if strings.TrimSpace(label) == "" {
 				*ts = nil
@@ -76,6 +81,11 @@ func (ts *Triggers) UnmarshalText(b []byte) error {
 		}
 	}
 	return nil
+}
+
+// takesLabel says whether a trigger of kind narrows by a label: those that tell a label's coming or going.
+func takesLabel(kind string) bool {
+	return strings.HasSuffix(kind, "-labeled") || strings.HasSuffix(kind, "-unlabeled")
 }
 
 func (ts Triggers) MarshalText() ([]byte, error) { return []byte(strings.Join(ts, ", ")), nil }
@@ -126,7 +136,7 @@ type RepoEvent struct {
 	Repo   string    `json:"repo"`             // owner/name
 	Number int       `json:"number,omitempty"` // of the issue or pull request; 0 for a tag
 	Title  string    `json:"title,omitempty"`
-	Label  string    `json:"label,omitempty"` // issue-labeled, pr-labeled: the label it got
+	Label  string    `json:"label,omitempty"` // the labeled and unlabeled ones: the label it got or lost
 	Tag    string    `json:"tag,omitempty"`   // tag-created: the tag
 	At     time.Time `json:"at"`              // when it happened, as GitHub says; else when the organizer saw it
 }
@@ -154,20 +164,30 @@ func (e RepoEvent) what() string {
 		return "the issue was opened"
 	case "issue-labeled":
 		return "the issue got the label " + e.Label
+	case "issue-unlabeled":
+		return "the issue lost the label " + e.Label
 	case "issue-commented":
 		return "the issue got a comment"
+	case "issue-closed":
+		return "the issue was closed"
+	case "issue-reopened":
+		return "the issue was opened again"
 	case "pr-opened":
 		return "the pull request was opened"
 	case "pr-ready":
 		return "the pull request is ready for review"
 	case "pr-labeled":
 		return "the pull request got the label " + e.Label
+	case "pr-unlabeled":
+		return "the pull request lost the label " + e.Label
 	case "pr-commented":
 		return "the pull request got a comment or a review"
 	case "pr-approved":
 		return "the pull request was approved"
 	case "pr-merged":
 		return "the pull request was merged"
+	case "pr-closed":
+		return "the pull request was closed without being merged"
 	case "pr-conflict":
 		return "the pull request no longer merges cleanly into its base"
 	case "pr-checks-failed":

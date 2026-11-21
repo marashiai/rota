@@ -15,20 +15,21 @@ import (
 // the colon of a labeled one, * matching any text. Anything else is refused, saying what there is.
 func TestTriggersAreWhatTheSettingNames(t *testing.T) {
 	var ts Triggers
-	if err := ts.UnmarshalText([]byte(" Note, issue-labeled:priority:*, PR-merged,note, pr-labeled: rota:approved ")); err != nil {
+	if err := ts.UnmarshalText([]byte(" Note, issue-labeled:priority:*, PR-merged,note, pr-labeled: rota:approved, pr-unlabeled:rota:needs-rollout ")); err != nil {
 		t.Fatal(err)
 	}
-	if want := (Triggers{"note", "issue-labeled:priority:*", "pr-merged", "pr-labeled:rota:approved"}); !slices.Equal(ts, want) {
+	if want := (Triggers{"note", "issue-labeled:priority:*", "pr-merged", "pr-labeled:rota:approved", "pr-unlabeled:rota:needs-rollout"}); !slices.Equal(ts, want) {
 		t.Fatalf("%q", ts)
 	}
-	if b, _ := ts.MarshalText(); string(b) != "note, issue-labeled:priority:*, pr-merged, pr-labeled:rota:approved" {
+	if b, _ := ts.MarshalText(); string(b) != "note, issue-labeled:priority:*, pr-merged, pr-labeled:rota:approved, pr-unlabeled:rota:needs-rollout" {
 		t.Fatalf("%s", b)
 	}
 	if !ts.has("note") || !ts.onGitHub() || (Triggers{"note"}).onGitHub() {
 		t.Fatal("note is a teammate's; the rest are on GitHub")
 	}
 	for in, want := range map[string]string{
-		"pr-closed":       `no trigger "pr-closed": use issue-opened, issue-labeled`,
+		"pr-locked":       `no trigger "pr-locked": use issue-opened, issue-labeled, issue-unlabeled`,
+		"issue-closed:x":  "issue-closed takes no label",
 		"pr-merged:main":  "pr-merged takes no label",
 		"issue-labeled:":  "name a label after the colon",
 		"issue-labeled: ": "name a label after the colon",
@@ -46,6 +47,8 @@ func TestTriggersAreWhatTheSettingNames(t *testing.T) {
 		{ev("issue-labeled", "Priority:High"), "issue-labeled:priority:*"},
 		{ev("issue-labeled", "docs"), ""},
 		{ev("pr-labeled", "rota:approved"), "pr-labeled:rota:approved"},
+		{ev("pr-unlabeled", "rota:needs-rollout"), "pr-unlabeled:rota:needs-rollout"},
+		{ev("pr-unlabeled", "rota:approved"), ""},
 		{ev("pr-merged", ""), "pr-merged"},
 		{ev("issue-opened", ""), ""},
 	} {
@@ -143,6 +146,52 @@ func TestTheOrganizerTellsWhatHappenedOnGitHub(t *testing.T) {
 }
 
 func itoa(n int) string { b, _ := json.Marshal(n); return string(b) }
+
+// A label taken off, an issue or a pull request closed without a merge, and an issue opened again
+// are told too, each once; what was closed before the organizer first looked is nothing new.
+func TestTheOrganizerTellsWhatClosesOrLosesALabel(t *testing.T) {
+	t0 := time.Date(2026, 11, 21, 10, 0, 0, 0, time.UTC)
+	item := func(n int, created, updated, closed time.Time, labels ...string) watchedItem {
+		var it watchedItem
+		it.Number, it.Title, it.CreatedAt, it.UpdatedAt, it.ClosedAt = n, "#"+itoa(n), created, updated, closed
+		for _, l := range labels {
+			it.Labels.Nodes = append(it.Labels.Nodes, struct{ Name string }{l})
+		}
+		return it
+	}
+	old := t0.Add(-48 * time.Hour)
+	first := watchedRepo{}
+	first.Issues.Nodes = []watchedItem{item(1, old, old, time.Time{}, "rota", "rota:leave-alone"), item(2, old, old, time.Time{}, "rota")}
+	first.PullRequests.Nodes = []watchedItem{item(10, old, old, time.Time{}, "rota:needs-rollout")}
+	first.ClosedIssues.Nodes = []watchedItem{item(5, old, old, old)}
+	first.ClosedPRs.Nodes = []watchedItem{item(9, old, old, old)}
+	evs, seen := watchDiff("o/app", nil, first, t0)
+	if len(evs) != 0 || !slices.Equal(seen.Closed, []int{5, 9}) {
+		t.Fatalf("the first look tells nothing, and takes note of what is closed: %+v %v", evs, seen.Closed)
+	}
+
+	t1 := t0.Add(2 * time.Minute)
+	next := watchedRepo{}
+	next.Issues.Nodes = []watchedItem{item(1, old, t1, time.Time{}, "rota"), item(5, old, t1, time.Time{}, "rota")}
+	next.PullRequests.Nodes = []watchedItem{item(10, old, t1, time.Time{})}
+	next.ClosedIssues.Nodes = []watchedItem{item(2, old, t1, t1.Add(-time.Minute)), item(5, old, old, old)}
+	next.ClosedPRs.Nodes = []watchedItem{item(11, old, t1, t1.Add(-30*time.Second)), item(9, old, old, old)}
+	evs, seen = watchDiff("o/app", &seen, next, t1)
+	var got []string
+	for _, e := range evs {
+		got = append(got, e.Kind+labelPart(e)+" #"+itoa(e.Number))
+	}
+	want := []string{"issue-unlabeled:rota:leave-alone #1", "issue-reopened #5", "pr-unlabeled:rota:needs-rollout #10", "issue-closed #2", "pr-closed #11"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("what happened:\n got %q\nwant %q", got, want)
+	}
+	if _, ok := seen.Items[2]; ok || !slices.Contains(seen.Closed, 2) || slices.Contains(seen.Closed, 5) {
+		t.Fatalf("a closed issue is no longer watched as open, and one opened again is: %v %v", seen.Items, seen.Closed)
+	}
+	if evs, _ := watchDiff("o/app", &seen, next, t1.Add(2*time.Minute)); len(evs) != 0 {
+		t.Fatalf("each is told once: %+v", evs)
+	}
+}
 
 // The organizer asks GitHub through gh, one query per repository its agents' triggers watch, and
 // brings what happened to the agents it concerns: a note each, and a request for the shift. What

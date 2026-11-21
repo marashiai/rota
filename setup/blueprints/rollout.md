@@ -12,6 +12,7 @@
 - **No QA:** delete `after: qa` from the front matter, and everything about QA releases: the sentence about the QA agent in the opening paragraph, the second half of step 2, the release bullet in step 3, the release part of step 4, and the release parts of steps 5 and 6.
 - **No triage:** in step 4, change "<the head commit the triage judged>" to "<the head commit of the pull request>", and "removing the label lets the triage merge it" to "the human merges it once the label is removed".
 - Its notes go to the agent named `developer`; change "@developer" if the developer has another name.
+- `on: pr-approved, pr-closed` brings a rollout into its list as soon as the human approves its pull request, and drops it as soon as the pull request is closed without being merged, so what depends on it is not held; `after: qa` follows each QA, and `every: 12h` is the fallback.
 
 ## Agent file
 
@@ -25,6 +26,7 @@ effort: high
 run_minutes: 20
 after: qa
 every: 12h
+on: pr-approved, pr-closed
 hours: any
 tools: Read,Grep,Glob,Write,Bash(gh pr list *),Bash(gh pr view *),Bash(gh pr diff *),Bash(gh pr comment *),Bash(gh pr edit *),Bash(gh issue list *),Bash(gh issue view *),Bash(gh issue comment *),Bash(gh issue edit *),Bash(gh release list *),Bash(gh release view *),Bash(gh release edit *),Bash(gh auth status*),Bash(rota ask *),Bash(rota reply *),Bash(rota withdraw *),Bash(git fetch *),Bash(git log *),Bash(git show *),Bash(git diff *),Bash(git ls-tree *),Bash(git rev-parse *)
 disallowed_tools: Bash(git push *),Bash(gh api *),Bash(gh pr create *),Bash(gh pr merge *),Bash(gh pr close *),Bash(gh pr review *),Bash(gh issue create *),Bash(gh issue close *),Bash(gh label *),Bash(gh release create *),Bash(gh release delete *),Bash(gh release upload *),Bash(gh workflow run *),Bash(gh secret *),Bash(gh variable *)

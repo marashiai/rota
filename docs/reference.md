@@ -49,12 +49,14 @@ then waits for one of its triggers, a note from you or your answer; `every` does
 
 Triggers (`on`) start an agent's shift on events, besides `every`: most on GitHub, in the repositories
 it works on, where the organizer looks every 2 minutes, one GraphQL query per repository through this
-machine's `gh`: `issue-opened`, `issue-labeled`, `issue-commented`, `pr-opened`, `pr-ready` (opened ready, or
-a draft made ready), `pr-labeled`, `pr-commented` (a comment or a review), `pr-approved` (on GitHub, or
-`rota:approved`), `pr-merged`, `pr-conflict`, `pr-checks-failed`, `base-moved` (the branch an open pull
-request merges into got new commits) and `tag-created` (a tag is pushed, such as the one a QA or a
-release marks a commit with; among the 20 on the latest commits). A label after a colon narrows a labeled one, `*` matching any text:
-`issue-labeled:priority:*`. `note` is a teammate's note to it; two agents that both start on notes do not
+machine's `gh`: `issue-opened`, `issue-labeled`, `issue-unlabeled` (a label taken off), `issue-commented`,
+`issue-closed` (as done or not planned), `issue-reopened`, `pr-opened`, `pr-ready` (opened ready, or a
+draft made ready), `pr-labeled`, `pr-unlabeled`, `pr-commented` (a comment or a review), `pr-approved` (on
+GitHub, or `rota:approved`), `pr-merged`, `pr-closed` (closed without a merge), `pr-conflict`,
+`pr-checks-failed`, `base-moved` (the branch an open pull request merges into got new commits) and
+`tag-created` (a tag is pushed, such as the one a QA or a release marks a commit with; among the 20 on the
+latest commits). A label after a colon narrows a labeled or unlabeled one, `*` matching any text:
+`issue-labeled:priority:*`, `pr-unlabeled:rota:needs-rollout`. `note` is a teammate's note to it; two agents that both start on notes do not
 wake each other, or they would take turns forever. Each event reaches the agent as a note from github,
 under its issue or pull request (a tag's in general), and asks for its shift as a request does: it skips `every`, and keeps to
 `hours`, `days` and the agent's share of the pool. An event that happens during the agent's own shift starts
