@@ -535,10 +535,17 @@ var moreLine = regexp.MustCompile(`(?mi)^\W*more:\W*(yes|no)\b`)
 // scheduled teammate's shift that opened an issue, which may be work for them, but not after
 // the shift of one that runs after them, nor of another until-done agent: they could take turns
 // forever. A teammate's note to one wakes it when it is delivered (routeNotes); any other shift
-// brings them nothing. A shift that did not finish is retried by the schedule instead.
+// brings them nothing. A shift that did not finish is retried by the schedule instead. It goes by
+// the team's settings as they are when the shift ends: one changed while it ran counts.
 func (t *Team) wake(a *Agent, r Run, text string) {
 	if !r.IsRun() {
 		return
+	}
+	if now, err := Open(t.Root, t.File); err == nil {
+		t = now
+		if b := t.Agent(a.Name); b != nil {
+			a = b
+		}
 	}
 	for _, b := range t.Agents {
 		if b.Enabled && b.Name != a.Name && slices.Contains(b.After, a.Name) && !slices.Contains(a.After, b.Name) { // two that follow each other would take turns forever

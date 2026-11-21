@@ -3076,6 +3076,14 @@ func TestAnAgentRunsAfterAnotherWithoutPingPong(t *testing.T) {
 	if !team.Asked()["triage"] || team.Asked()["developer"] {
 		t.Fatalf("the developer's shift asks for the triage, and not for itself: %v", team.Asked())
 	}
+	team.answered("triage")
+	write(t, filepath.Join(root, "agents", "reviewer.md"), "---\nenabled: true\nafter: developer\nevery: 1d\n---\nreviewer\n")
+	ran("developer", "More: no") // the team as it was when the shift began knew no reviewer
+	if !team.Asked()["reviewer"] {
+		t.Fatalf("an agent set to run after the developer while its shift ran is asked for at its end: %v", team.Asked())
+	}
+	os.Remove(filepath.Join(root, "agents", "reviewer.md"))
+	team.answered("reviewer")
 	ran("triage", "merged #70")
 	if team.Asked()["developer"] {
 		t.Fatal("the triage does not wake the developer it runs after")
