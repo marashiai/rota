@@ -178,6 +178,7 @@ include it, what to fill in, and how to adjust it when another role is left out.
 | `qa` | scout | Tests what was merged, end to end, on a non-production environment; tags releases |
 | `developer` | builder | Turns issues into draft pull requests with tests, evidence and review notes |
 | `maintainer` | builder | Keeps every open pull request mergeable: merges the base in, resolves conflicts |
+| `planner` | coordinator | Ranks the open issues, most important first, each with why; the developer works from the top |
 | `triage` | gatekeeper | Judges each pull request; merges low-risk ones itself, holds the rest for the person |
 | `rollout` | coordinator | Lists the manual steps of changes and releases, and follows them up with the person |
 | `reflection` | coordinator | Weekly: looks back at what each agent delivered for its budget, and proposes how to divide it |
@@ -190,6 +191,8 @@ requests, and the person reviews and merges everything. Then add:
 - `errors` when an app's errors are collected somewhere Claude Code can read;
 - `seo` when a repository serves public pages found through search;
 - `qa` when there is a non-production environment it can run or reach;
+- `planner` with the developer once the scouts have opened more issues than it fixes in a day, so it
+  takes the most important first and the person sees why;
 - `maintainer` when pull requests stay open long enough to fall behind;
 - `triage` only when they want low-risk merges done without them;
 - `rollout` when getting a change live takes steps by hand (setting a secret, running a migration,

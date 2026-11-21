@@ -412,11 +412,13 @@ func (s *site) issuesJSON(w http.ResponseWriter, r *http.Request) {
 		Created time.Time   `json:"created,omitzero"`
 		Marks   []core.Mark `json:"marks,omitempty"`
 		Labels  []string    `json:"labels,omitempty"`
-		PRs     []string    `json:"prs,omitempty"` // the threads of the pull requests open for it
+		PRs     []string    `json:"prs,omitempty"`  // the threads of the pull requests open for it
+		Rank    int         `json:"rank,omitempty"` // its place in the plan, from 1
+		Why     string      `json:"why,omitempty"`  // why the plan puts it there
 	}
 	out := []issue{}
 	for _, i := range t.Issues(t.ListFilter(core.IssuesTab).Order) {
-		x := issue{Repo: i.Repo, Number: i.Number, Title: i.Title, URL: i.URL(), Created: i.Created, Marks: i.Marks, Labels: i.Labels}
+		x := issue{Repo: i.Repo, Number: i.Number, Title: i.Title, URL: i.URL(), Created: i.Created, Marks: i.Marks, Labels: i.Labels, Rank: i.Rank, Why: i.Why}
 		for _, ref := range i.PRs {
 			x.PRs = append(x.PRs, "pr:"+ref)
 		}

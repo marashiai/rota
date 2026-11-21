@@ -225,6 +225,9 @@ func (t *Team) WhyWaits(st Status) map[string]string {
 			default:
 				why = "Starting now."
 			}
+		case strings.HasPrefix(s, "waits for "):
+			b, _, _ := strings.Cut(strings.TrimPrefix(s, "waits for "), ":")
+			why = "It waits for " + b + "'s shift, which goes first, so it starts from what " + b + " leaves."
 		case strings.HasPrefix(s, "outside hours"):
 			why = "Outside its hours."
 			if h := t.hoursOf(a.Name); h != "" {

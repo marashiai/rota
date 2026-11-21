@@ -147,7 +147,7 @@ func (t *Team) brief(a *Agent, s *schedule) (Job, map[string]string, []Note, err
 		"{journal}": journalForPrompt(t.Config, s.now, remote), "{inbox}": orNone(inbox),
 		"{agents}": orNone(strings.Join(others, ", ")), "{weekly}": s.shareText(a),
 		"{model}": orNone(a.Model), "{run_minutes}": strconv.Itoa(minutes), "{questions}": t.questionsFor(a.Name),
-		"{pages}": t.PagesURL(""), "{labels}": t.labelsText(), "{disk}": t.diskText(a),
+		"{pages}": t.PagesURL(""), "{labels}": t.labelsText(), "{disk}": t.diskText(a), "{plan}": t.planText(),
 	}
 	role := *a // the role links to the pages with {pages}
 	role.Role = expand(a.Role, vars)

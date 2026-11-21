@@ -20,7 +20,8 @@ var templates embed.FS
 // {journal} {inbox} {agents} {weekly} (the agent's fair share of the team pool) {model}
 // {run_minutes} {questions} (its questions to the human that are still open) {pages} (the
 // pages' address) {labels} (the team's own labels, from the labels setting) {disk} (what its
-// work folder held after its last shift, and its disk cap).
+// work folder held after its last shift, and its disk cap) {plan} (the open issues in the order
+// an agent gave last with rota work-order, each with why). A role takes them too.
 var DefaultBrief = func() string { b, _ := templates.ReadFile("templates/brief.md"); return string(b) }()
 
 // Init creates the team folder from the starter files. Existing files are never overwritten.

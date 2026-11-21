@@ -182,6 +182,40 @@ func TestSetupWritesThisBuildsGuideAndSaysWhere(t *testing.T) {
 	}
 }
 
+// Every blueprint's agent file loads as it is, placeholders and all: its settings are ones rota
+// has, and each agent it waits for or runs after is a blueprint too.
+func TestEveryBlueprintsAgentFileLoads(t *testing.T) {
+	root := t.TempDir()
+	write(t, filepath.Join(root, "rota.conf"), "usage: off\nlisten: off\n")
+	files, _ := filepath.Glob("setup/blueprints/*.md")
+	block := regexp.MustCompile("(?s)````markdown\n(.*?)\n````")
+	for _, f := range files {
+		b, _ := os.ReadFile(f)
+		m := block.FindSubmatch(b)
+		if m == nil {
+			t.Fatalf("%s has no agent file", f)
+		}
+		write(t, filepath.Join(root, "agents", filepath.Base(f)), string(m[1]))
+	}
+	team, err := core.Open(root, "rota.conf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, a := range team.Agents {
+		if len(a.Warnings) > 0 {
+			t.Errorf("%s: %v", a.Name, a.Warnings)
+		}
+		for _, other := range append(append([]string{}, a.After...), a.WaitFor...) {
+			if team.Agent(other) == nil {
+				t.Errorf("%s waits for or runs after %q, which no blueprint is", a.Name, other)
+			}
+		}
+	}
+	if len(team.Agents) != len(files) {
+		t.Fatalf("%d agents from %d blueprints", len(team.Agents), len(files))
+	}
+}
+
 func TestHelpListsTheCommands(t *testing.T) {
 	cmd := exec.Command("go", "run", ".", "help")
 	if b, err := cmd.Output(); err != nil || !strings.Contains(string(b), "commands:") || !strings.Contains(string(b), "-root") {

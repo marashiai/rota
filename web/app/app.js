@@ -273,7 +273,7 @@ function listBody() {
 // repository, labels (it keeps what carries every one; a pull request carries those of the open
 // issues it is for too) and a mark, which only the console chooses. One button opens them, as in
 // the mail; each that is on is a pill whose × takes it off.
-const ORDERS = [['', 'Newest first'], ['oldest', 'Oldest first'], ['priority', 'By priority']];
+const ORDERS = [['', 'As planned'], ['newest', 'Newest first'], ['oldest', 'Oldest first'], ['priority', 'By priority']];
 const same = (a, b) => (a || '').toLowerCase() === (b || '').toLowerCase(); // GitHub's names ignore case
 const kept = list => M.lists[list] || {};
 const listed = list => list === 'reviews' ? M.threads.filter(t => t.pr) : issues || [];
@@ -325,8 +325,8 @@ function issuesList() {
   const rows = shownIssues(), h = listHead('issues', 'Issues', rows.length);
   if (!rows.length) return h + listEmpty('issues', 'No open issues');
   return h + rows.map(i => { const id = issueId(i);
-    return `<div class="prow${S.open === id ? ' cur' : ''}" data-open="${esc(id)}"><div class="rtxt"><div class="t1">${(i.marks || []).map(m => `<span title="${esc(m.Text)}">${esc(m.Emoji)}</span> `).join('')}${esc(i.title)}</div>
-      <div class="t2"><span class="ref">${esc(repoName(i.repo) + '#' + i.number)}</span>${i.created ? `<span>opened ${when(i.created)}</span>` : ''}${(i.labels || []).slice(0, 3).map(l => `<span>${esc(l)}</span>`).join('')}</div></div>
+    return `<div class="prow${S.open === id ? ' cur' : ''}" data-open="${esc(id)}"><div class="rtxt"><div class="t1">${i.rank ? `<span class="rank" title="Its place in the plan">${i.rank}</span>` : ''}${(i.marks || []).map(m => `<span title="${esc(m.Text)}">${esc(m.Emoji)}</span> `).join('')}${esc(i.title)}</div>
+      <div class="t2"><span class="ref">${esc(repoName(i.repo) + '#' + i.number)}</span>${i.created ? `<span>opened ${when(i.created)}</span>` : ''}${(i.labels || []).slice(0, 3).map(l => `<span>${esc(l)}</span>`).join('')}</div>${i.why ? `<div class="t3">${esc(i.why)}</div>` : ''}</div>
       ${(i.prs || []).filter(find).map(p => `<button class="sopt" data-open="${esc(p)}" title="${esc(find(p).subject)}">${I.pr}${esc(p.startsWith(`pr:${i.repo}#`) ? p.slice(p.indexOf('#')) : find(p).label)}</button>`).join('')}</div>`; }).join('');
 } // a pull request of the issue's own repository is its number: the line keeps room for the title
 // ---------- an issue, read in the reading pane ----------
@@ -368,6 +368,7 @@ function issuePane(id) {
   if (!i) return `<div class="empty"><b>No issue selected</b></div>`;
   const r = repoOf(i.repo), labels = g ? g.labels || [] : i.labels || [];
   let h = `<div class="th"><h1>${esc((g && g.title) || i.title || repoName(i.repo) + '#' + i.number)}</h1><div class="chips">${g && g.state !== 'OPEN' ? `<span class="chip rs-merged">${esc(REASON[g.reason] || 'Closed')}</span>` : ''}${r ? `<span class="chip"><i style="--c:${r.color}"></i>${esc(r.name)}</span>` : ''}<span class="chip ref">${esc(repoName(i.repo) + '#' + i.number)}</span>${labels.map(l => `<span class="chip">${esc(l)}</span>`).join('')}</div>`;
+  if (i.rank) h += `<p class="plan"><b>No. ${i.rank} in the plan:</b> ${esc(i.why)}</p>`;
   if (g) {
     h += issueMsg(g.author, g.created, g.html, 'opened it');
     const n = g.comments.length;

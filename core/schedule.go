@@ -445,6 +445,9 @@ func (s *schedule) eligible(a *Agent) (bool, string) {
 	if poolWhy != "" {
 		return false, poolWhy
 	}
+	if b := s.waitsFor(a); b != "" {
+		return false, "waits for " + b + ": its shift goes first"
+	}
 	free := ""
 	if q := s.quota[a.Name]; s.usage != nil && q > 0 && s.usedBy[a.Name] >= q {
 		free = fmt.Sprintf(", on the free part: its fair share is used, and the others cannot use %.1f%% of the pool before %s", s.OfPool(s.free), s.periodEnd().Local().Format("Mon 15:04"))
@@ -466,6 +469,39 @@ func (s *schedule) resumesNow(a *Agent) bool {
 	return ok && s.asked[a.Name] && !a.OwnHours && s.now.Before(r.Began.Add(time.Duration(a.RunMinutes)*time.Minute))
 }
 
+// waitsFor is the first of the agents a waits for (wait_for) that would start a shift now, as pick
+// picks, so a holds back until it has had it; "" when none would. One that waits for a, itself or
+// through others, is not waited for: the two would hold each other back forever.
+func (s *schedule) waitsFor(a *Agent) string {
+	for _, name := range a.WaitFor {
+		b := s.Agent(name)
+		if b == nil || b.Name == a.Name || s.waitsOn(b, a.Name, map[string]bool{}) {
+			continue
+		}
+		if ok, _ := s.eligible(b); ok && (!s.only || s.byHand[b.Name]) {
+			return b.Name
+		}
+	}
+	return ""
+}
+
+// waitsOn says whether b waits for the named agent, itself or through those it waits for.
+func (s *schedule) waitsOn(b *Agent, name string, seen map[string]bool) bool {
+	if seen[b.Name] {
+		return false
+	}
+	seen[b.Name] = true
+	for _, n := range b.WaitFor {
+		if n == name {
+			return true
+		}
+		if c := s.Agent(n); c != nil && s.waitsOn(c, name, seen) {
+			return true
+		}
+	}
+	return false
+}
+
 // nextRun is the earliest moment the agent could start again, or a note when that is not
 // a time: "next tick", "disabled", "when host linux1 joins".
 func (s *schedule) nextRun(a *Agent) (time.Time, string) {
@@ -482,6 +518,9 @@ func (s *schedule) nextRun(a *Agent) (time.Time, string) {
 	}
 	if s.idle(a) {
 		return time.Time{}, "when there is new work"
+	}
+	if b := s.waitsFor(a); b != "" {
+		return time.Time{}, "after " + b + "'s shift"
 	}
 	var at time.Time
 	if !s.byHand[a.Name] && (!s.asked[a.Name] || s.stat(a).Attempts > 0) { // as eligible skips them

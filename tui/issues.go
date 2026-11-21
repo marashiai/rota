@@ -12,13 +12,13 @@ import (
 	"rota/core"
 )
 
-// issuesPage lists the team's open issues, newest first unless o chose another order, each with
-// where it stands; ⏎ or v opens one on GitHub. r and m narrow the list to a repository and to a
+// issuesPage lists the team's open issues, as planned unless o chose another order, each with
+// where it stands and its place in the plan; ⏎ or v opens one on GitHub. r and m narrow the list to a repository and to a
 // mark, in turn, and L to the issues that carry every label ticked. What narrows and orders it is
 // kept until the human changes it, and the pages share it.
 func issuesPage() *browser {
 	const name, empty = "Issues", "No open issues, as GitHub last listed them."
-	var repo, mark, order core.Filter // what narrows and orders the list; Value "" for all, and newest first
+	var repo, mark, order core.Filter // what narrows and orders the list; Value "" for all, and as planned
 	var labels []string
 	var kept core.ListFilter // as last read or chosen
 	var b *browser
@@ -30,7 +30,7 @@ func issuesPage() *browser {
 				by = append(by, s)
 			}
 		}
-		if order.Value != core.OrderNewest {
+		if order.Value != core.OrderPlan {
 			b.name += " · " + strings.ToLower(order.Label)
 		}
 		if len(by) > 0 {
@@ -82,6 +82,9 @@ func issuesPage() *browser {
 				for j := len(i.Marks) - 1; j >= 0; j-- {
 					label = i.Marks[j].Emoji + " " + label
 				}
+				if i.Rank > 0 {
+					label = sty(c.pal.Muted(), strconv.Itoa(i.Rank)+".") + " " + label
+				}
 				out = append(out, item{i.Ref(), label})
 			}
 			return out
@@ -92,6 +95,9 @@ func issuesPage() *browser {
 			text := "# " + i.Title + "\n\n"
 			for _, m := range i.Marks {
 				text += m.Emoji + " " + m.Text + "\n\n"
+			}
+			if i.Rank > 0 {
+				text += "**No. " + strconv.Itoa(i.Rank) + " in the plan:** " + i.Why + "\n\n"
 			}
 			if !i.Created.IsZero() {
 				text += "**Opened:** " + i.Created.Local().Format("Mon 2 Jan 2006, 15:04") + "\n\n"

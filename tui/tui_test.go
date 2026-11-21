@@ -800,19 +800,26 @@ func TestTheConsoleRebalancesTheShares(t *testing.T) {
 	}
 }
 
-// The Issues tab lists the open issues newest first; o changes the order, r, m and L narrow it,
-// what is chosen is kept for the pages, and ⏎ opens the issue on GitHub.
+// The Issues tab lists the open issues as planned, those the plan leaves out newest first after
+// them; o changes the order, r, m and L narrow it, what is chosen is kept for the pages, and ⏎
+// opens the issue on GitHub.
 func TestTheConsoleListsTheIssues(t *testing.T) {
 	c, root := newTestConsole(t)
 	write(t, filepath.Join(root, ".open.json"), `{"time":"`+time.Now().Format(time.RFC3339)+`","repos":{`+
 		`"o/app":{"1":{"title":"the oldest","labels":["P1"],"created":"2026-11-01T09:00:00Z"},"2":{"title":"the newest","created":"2026-11-05T09:00:00Z"},`+
 		`"3":{"title":"a fix","pr":true,"issues":["o/app#1"]}}}}`)
+	write(t, filepath.Join(root, ".plan.json"), `{"by":"planner","time":"`+time.Now().Format(time.RFC3339)+`","issues":[{"ref":"o/app#1","why":"users lose their work"}]}`)
 	var opened []string
 	startBrowser = func(url string) error { opened = append(opened, url); return nil }
 	c.handle(key{r: '4'})
 	got := screen(c)
-	if !strings.Contains(got, "Issues  2") || strings.Contains(got, "a fix") || strings.Index(got, "the newest") > strings.Index(got, "the oldest") || !strings.Contains(got, "🔧") {
-		t.Fatalf("the open issues, newest first:\n%s", got)
+	if !strings.Contains(got, "Issues  2") || strings.Contains(got, "a fix") || strings.Index(got, "the oldest") > strings.Index(got, "the newest") || !strings.Contains(got, "1. 🔧") ||
+		!strings.Contains(got, "No. 1 in the plan: users lose their work") {
+		t.Fatalf("the open issues as planned, with its place and why, then the rest:\n%s", got)
+	}
+	typeText(c, "o")
+	if got = screen(c); !strings.Contains(got, "Issues · newest first") || strings.Index(got, "the newest") > strings.Index(got, "the oldest") {
+		t.Fatalf("o: newest first:\n%s", got)
 	}
 	typeText(c, "o")
 	got = screen(c)

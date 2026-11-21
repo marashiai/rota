@@ -318,30 +318,11 @@ type reviewEntry struct {
 // agent's: each entry is "<repository>#<n> <why>", most worth reviewing first. It returns those
 // GitHub did not last list as open pull requests, which the queue leaves out.
 func (t *Team) SetReviewOrder(agent string, entries []string) ([]string, error) {
-	o := reviewOrder{By: agent, Time: time.Now()}
-	open := t.openWork()
-	var unknown []string
-	seen := map[string]bool{}
-	for _, e := range entries {
-		ref, why, _ := strings.Cut(strings.TrimSpace(e), " ")
-		repo, n, err := t.parseRef(ref, "")
-		if err != nil {
-			return nil, fmt.Errorf("%w: give each pull request as \"<repository>#<number> <why>\"", err)
-		}
-		if why = strings.TrimSpace(why); why == "" {
-			return nil, fmt.Errorf("%s: say why it comes there, after its number", ref)
-		}
-		full := repo + "#" + strconv.Itoa(n)
-		if seen[full] {
-			return nil, fmt.Errorf("%s is in the order twice", ref)
-		}
-		seen[full] = true
-		if items, listed := open.Repos[repo]; listed && !items[n].PR {
-			unknown = append(unknown, ref)
-		}
-		o.PRs = append(o.PRs, reviewEntry{full, why})
+	prs, unknown, err := t.orderEntries(entries, "pull request", func(it openItem) bool { return it.PR })
+	if err != nil {
+		return nil, err
 	}
-	b, _ := json.MarshalIndent(o, "", "  ")
+	b, _ := json.MarshalIndent(reviewOrder{By: agent, Time: time.Now(), PRs: prs}, "", "  ")
 	tmp := t.Path("." + queueFile + ".tmp")
 	if err := os.WriteFile(tmp, append(b, '\n'), 0o644); err != nil {
 		return nil, err

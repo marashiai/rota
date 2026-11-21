@@ -78,6 +78,10 @@ in an agent's shift:
                     first, each with why it comes there; it replaces the last one, and none
                     clears it. The Reviews tab lists each after the open pull requests it waits
                     for, whatever the order says
+  work-order "<repo>#<n> <why>"...
+                    the order in which the team works on the open issues, most important
+                    first, each with why it comes there; it replaces the last one, and none
+                    clears it. Roles read it as {plan}; the Issues tab lists the issues in it
   ask <question> [--subject "<a few words>"] [--option "<answer>"]... [--recommend "<answer>"]
         [--step "<step>"]... [--importance high|low] [--about <repo>#<n>]
                     ask the human in their mail, which they read when they choose (what needs
@@ -372,6 +376,24 @@ func command(ctx context.Context, args []string, root, conf string, now time.Tim
 		fmt.Printf("the Reviews tab lists %d pull requests in this order, each after the open ones it waits for.\n", len(args)-1-len(unknown))
 		if len(unknown) > 0 {
 			fmt.Printf("GitHub did not list these as open pull requests when rota last asked, a few minutes ago at most; they are not shown: %s\n", strings.Join(unknown, ", "))
+		}
+		return nil
+	case "work-order":
+		agent := os.Getenv("ROTA_AGENT")
+		if agent == "" {
+			return fmt.Errorf("rota work-order is for an agent's shift on the organizer's machine")
+		}
+		unknown, err := t.SetWorkOrder(agent, args[1:])
+		if err != nil {
+			return err
+		}
+		if len(args) < 2 {
+			fmt.Println("no order: the team has no plan, and the Issues tab lists the open issues newest first.")
+			return nil
+		}
+		fmt.Printf("the plan holds %d issues in this order; roles read it as {plan}, and the Issues tab lists them first.\n", len(args)-1-len(unknown))
+		if len(unknown) > 0 {
+			fmt.Printf("GitHub did not list these as open issues when rota last asked, a few minutes ago at most; the plan leaves them out: %s\n", strings.Join(unknown, ", "))
 		}
 		return nil
 	case "ask":

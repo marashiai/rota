@@ -31,6 +31,7 @@ const (
 	diskDir      = ".disk"          // .disk/<agent>.json: the size of its work folder, as measured after its last shift
 	openFile     = ".open.json"     // the team's open pull requests and issues, as GitHub last listed them
 	queueFile    = ".queue.json"    // the order in which the human reviews the open pull requests, as an agent gave it last
+	planFile     = ".plan.json"     // the order in which the team works on the open issues, as an agent gave it last
 	seenFile     = ".seen.json"     // when the human last opened each pull request's review, by owner/name#n
 	spendFile    = "spend.csv"
 	lockFile     = ".rota.lock"  // one shift at a time

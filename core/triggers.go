@@ -11,13 +11,13 @@ import (
 )
 
 // Triggers are what an agent starts a shift on besides its interval: on in its file. Most happen
-// on GitHub, in the repositories the agent works on, where the organizer looks every few minutes
-// (watch.go); note is a teammate's note to it. Each event that matches reaches the agent as a note
-// from github, which its brief lists under the pull request or issue, and asks for its shift as a
-// request does: it skips the interval, and keeps to the agent's hours, its days and its share of
-// the pool. An event that happens while the agent's own shift runs starts no shift of it: it may
-// be that shift's own doing. It reaches that shift at its next step, if the shift still runs, or
-// else waits for its next shift.
+// on GitHub, to an issue or a pull request, or a tag, in the repositories the agent works on, where
+// the organizer looks every few minutes (watch.go); note is a teammate's note to it. Each event
+// that matches reaches the agent as a note from github, which its brief lists under the pull
+// request or issue (a tag's in general), and asks for its shift as a request does: it skips the
+// interval, and keeps to the agent's hours, its days and its share of the pool. An event that
+// happens while the agent's own shift runs starts no shift of it: it may be that shift's own doing.
+// It reaches that shift at its next step, if the shift still runs, or else waits for its next shift.
 type Triggers []string
 
 // triggerKinds are the triggers there are, and what each means. The two labeled ones take a label
@@ -35,6 +35,7 @@ var triggerKinds = []struct{ Name, What string }{
 	{"pr-conflict", "a pull request no longer merges cleanly into its base"},
 	{"pr-checks-failed", "a pull request's checks fail"},
 	{"base-moved", "the branch an open pull request merges into gets new commits"},
+	{"tag-created", "a tag is pushed, such as the one a QA or a release marks a commit with"},
 	{"note", "a teammate leaves it a note (not one that reacts to notes itself: the two would take turns forever)"},
 }
 
@@ -118,19 +119,33 @@ func labelGlob(label string) *regexp.Regexp {
 	return regexp.MustCompile("(?i)^" + strings.ReplaceAll(regexp.QuoteMeta(label), `\*`, ".*") + "$")
 }
 
-// RepoEvent is one thing that happened on GitHub to an issue or a pull request, as a trigger
-// names it.
+// RepoEvent is one thing that happened on GitHub to an issue, a pull request or a tag, as a
+// trigger names it.
 type RepoEvent struct {
 	Kind   string    `json:"kind"`
-	Repo   string    `json:"repo"` // owner/name
-	Number int       `json:"number"`
+	Repo   string    `json:"repo"`             // owner/name
+	Number int       `json:"number,omitempty"` // of the issue or pull request; 0 for a tag
 	Title  string    `json:"title,omitempty"`
 	Label  string    `json:"label,omitempty"` // issue-labeled, pr-labeled: the label it got
+	Tag    string    `json:"tag,omitempty"`   // tag-created: the tag
 	At     time.Time `json:"at"`              // when it happened, as GitHub says; else when the organizer saw it
 }
 
-// Ref is the issue or pull request, as owner/name#n.
-func (e RepoEvent) Ref() string { return e.Repo + "#" + strconv.Itoa(e.Number) }
+// Ref is the issue or pull request, as owner/name#n; "" for what happened to none, a tag.
+func (e RepoEvent) Ref() string {
+	if e.Number == 0 {
+		return ""
+	}
+	return e.Repo + "#" + strconv.Itoa(e.Number)
+}
+
+// where is what it happened to: the issue or pull request, or the repository and its tag.
+func (e RepoEvent) where() string {
+	if e.Number == 0 {
+		return e.Repo + " " + e.Tag
+	}
+	return e.Ref()
+}
 
 // what says what happened, as the agent's note says it.
 func (e RepoEvent) what() string {
@@ -159,6 +174,8 @@ func (e RepoEvent) what() string {
 		return "the pull request's checks failed"
 	case "base-moved":
 		return "the branch the pull request merges into got new commits"
+	case "tag-created":
+		return e.Repo + " got the tag " + e.Tag
 	}
 	return e.Kind
 }
@@ -228,7 +245,7 @@ func (t *Team) onEvents(events []RepoEvent, now time.Time) (said []string, err e
 			case own:
 				how = "during its own shift: no new shift"
 			}
-			said = append(said, fmt.Sprintf("%s %s → %s (%s)", e.Kind+labelPart(e), e.Ref(), a.Name, how))
+			said = append(said, fmt.Sprintf("%s %s → %s (%s)", e.Kind+labelPart(e), e.where(), a.Name, how))
 		}
 		if ask {
 			if aerr := t.askFor(a.Name); aerr != nil {

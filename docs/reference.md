@@ -51,15 +51,16 @@ Triggers (`on`) start an agent's shift on events, besides `every`: most on GitHu
 it works on, where the organizer looks every 2 minutes, one GraphQL query per repository through this
 machine's `gh`: `issue-opened`, `issue-labeled`, `issue-commented`, `pr-opened`, `pr-ready` (opened ready, or
 a draft made ready), `pr-labeled`, `pr-commented` (a comment or a review), `pr-approved` (on GitHub, or
-`rota:approved`), `pr-merged`, `pr-conflict`, `pr-checks-failed` and `base-moved` (the branch an open pull
-request merges into got new commits). A label after a colon narrows a labeled one, `*` matching any text:
+`rota:approved`), `pr-merged`, `pr-conflict`, `pr-checks-failed`, `base-moved` (the branch an open pull
+request merges into got new commits) and `tag-created` (a tag is pushed, such as the one a QA or a
+release marks a commit with; among the 20 on the latest commits). A label after a colon narrows a labeled one, `*` matching any text:
 `issue-labeled:priority:*`. `note` is a teammate's note to it; two agents that both start on notes do not
 wake each other, or they would take turns forever. Each event reaches the agent as a note from github,
-under its issue or pull request, and asks for its shift as a request does: it skips `every`, and keeps to
+under its issue or pull request (a tag's in general), and asks for its shift as a request does: it skips `every`, and keeps to
 `hours`, `days` and the agent's share of the pool. An event that happens during the agent's own shift starts
 no other, since it may be that shift's own doing: it reaches the shift at its next step if it still runs, or
 waits for its next shift. The organizer keeps what it last saw in `.watch.json`; its first look at a
-repository only takes note of what is there. After every shift the organizer checks that the
+repository, or at its tags, only takes note of what is there. After every shift the organizer checks that the
 agent left each repository on its default branch with nothing uncommitted, and says so in the journal
 and the agent's inbox when it did not.
 
@@ -130,7 +131,11 @@ tells it how the team works: the journal, notes to teammates, questions to you, 
 cleaning up after itself. `rota config` lists every agent setting with its default and what it does.
 
 An agent's `after` lists teammates whose shifts ask for it: it waits its turn from the end of each, and
-its shifts do not ask for them back. Evidence of a pull request's verification (screenshots, saved output,
+its shifts do not ask for them back. Its `wait_for` lists teammates it holds back for: while one of them
+would start a shift now (due, or asked for, by a trigger or by you), that one goes first, so this agent's
+shift starts from what theirs leaves, as a developer that works from the planner's order waits for the
+planner after a new issue or tag. Your Run now waits too. One that cannot start then (off, paused, outside
+its hours, its share of the pool used) holds nothing back, nor one that waits for this agent in turn. Evidence of a pull request's verification (screenshots, saved output,
 independent reviews) is kept in `evidence/<repository>/<branch>/` and shown in the pages at `/evidence/`. An
 agent writes a report for you that does not fit its journal entry, or that it keeps up to date for you,
 in `reports/<agent>/`, as the brief tells every agent: its page in the agents
@@ -162,6 +167,13 @@ made with `clone_cmd`), each commit made again with its author, date and message
 if the branch has not moved since. One whose commits conflict with the merge, or whose own merge commits
 hold a change a rebase would drop, is left as it is, and the merge's message says so: the base must then be
 merged into it. Whether the merged branch is deleted is the repository's own setting.
+
+`rota work-order "<repo>#<n> <why>"...` gives the order in which the team works on the open issues, most
+important first, each with why it comes there; it replaces the last order, and with no argument it clears
+it. A role reads it as `{plan}`: the issues GitHub still lists as open, in that order, each with its title
+and why. The Issues tab lists them as planned unless you choose another order: the plan's first, each
+with its place and why, then those it leaves out, newest first. The planner blueprint keeps this order,
+and the developer's works from it.
 
 `rota review-order "<repo>#<n> <why>"...` gives the order in which you review the open pull requests,
 most worth it first, each with one sentence on why it comes there; it replaces the last order, and
@@ -301,8 +313,8 @@ in the terminal, with or without the organizer running, with these pages:
 3. **Reviews**: the team's open pull requests in the order to review them, each under what it waits
    for (see `rota review-order`); Enter or `v` reviews one in gloss, the whole change and commit by commit (see
    "Reviewing pull requests"), and `q` there comes back.
-4. **Issues**: the open issues of the team's repositories, newest first; `o` orders them oldest first,
-   then by priority, and `r`, `m` and `L` narrow them as on Reviews, kept for the pages too. Enter or
+4. **Issues**: the open issues of the team's repositories, as planned (see `rota work-order`), each in
+   the plan with its place, and its why when it is open; `o` orders them newest first, oldest first, then by priority, and `r`, `m` and `L` narrow them as on Reviews, kept for the pages too. Enter or
    `v` opens one on GitHub.
 5. **Journal**: by day, rendered; `[` and `]` jump between shifts, `/` finds.
 6. **Transcripts**: every shift with its outcome and turns; a running one follows its end (`f`), `x` shows
@@ -392,7 +404,8 @@ alike. It is where you use rota:
   star, snooze, archive or move a thread, by a swipe on a phone or a key on a computer (`?` lists them).
 - **Folders**: Reviews (every open pull request, in the order to review it, each under what it waits
   for), Waiting (what an agent is on for you), Starred, Snoozed, Sent, All messages, Issues (the open
-  issues, newest first, oldest first or by priority; one opens in the reading pane as GitHub has it,
+  issues, as planned, each in the plan with its place and why, or newest first, oldest first or by
+  priority; one opens in the reading pane as GitHub has it,
   with its comments, the pull requests open for it and Open on GitHub) and, under Repositories, each
   repository's mail. Search finds messages, agents and `#numbers`. On a computer, the dividers between
   the folders, the list and the reading pane drag (or move with the arrow keys; a double click puts one

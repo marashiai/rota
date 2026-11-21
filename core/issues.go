@@ -11,8 +11,9 @@ import (
 )
 
 // The Issues tab lists the team's open issues, as GitHub last listed them, each with where it
-// stands: a pull request open for it, and the labels it carries that have an emoji. Which agent
-// takes which issue is its role's business: the tab names none.
+// stands: a pull request open for it, and the labels it carries that have an emoji, and, for one in
+// the plan (plan.go), its place there and why. Which agent takes which issue is its role's
+// business: the tab names none.
 
 // OpenIssue is an open issue of the team's repositories, as the Issues tab lists it.
 type OpenIssue struct {
@@ -24,6 +25,8 @@ type OpenIssue struct {
 	Marks   []Mark    // a pull request open for it, then its labels that have an emoji
 	Labels  []string
 	PRs     []string // the open pull requests for it, by Ref (owner/name#n)
+	Rank    int      // its place in the plan, from 1; 0 when the plan leaves it out
+	Why     string   // why the plan puts it there
 }
 
 func (i OpenIssue) listed() (string, string, []Mark, []string) {
@@ -38,16 +41,18 @@ func (i OpenIssue) URL() string {
 	return "https://github.com/" + i.Repo + "/issues/" + strconv.Itoa(i.Number)
 }
 
-// The orders the Issues tab lists them in: newest first unless the human chose another.
-// IssueOrders reads them for a select; priority goes by the first of the labels setting's labels
-// an issue carries (its order), newest first among those alike.
+// The orders the Issues tab lists them in: as planned unless the human chose another, which is
+// newest first while there is no plan. IssueOrders reads them for a select; as planned goes by the
+// plan, then newest first; priority goes by the first of the labels setting's labels an issue
+// carries (its order), newest first among those alike.
 const (
-	OrderNewest   = ""
+	OrderPlan     = ""
+	OrderNewest   = "newest"
 	OrderOldest   = "oldest"
 	OrderPriority = "priority"
 )
 
-var IssueOrders = []Filter{{OrderNewest, "Newest first", 0}, {OrderOldest, "Oldest first", 0}, {OrderPriority, "By priority", 0}}
+var IssueOrders = []Filter{{OrderPlan, "As planned", 0}, {OrderNewest, "Newest first", 0}, {OrderOldest, "Oldest first", 0}, {OrderPriority, "By priority", 0}}
 
 // prMark marks an issue a pull request is open for.
 var prMark = Mark{"🔧", "pull request", "a pull request is open for it"}
@@ -55,6 +60,11 @@ var prMark = Mark{"🔧", "pull request", "a pull request is open for it"}
 // Issues are the team's open issues, as GitHub last listed them, in order (one of IssueOrders).
 func (t *Team) Issues(order string) []OpenIssue {
 	repos, labels, open := t.teamRepos(), t.Labels(), t.openWork()
+	planned := map[string]PlannedIssue{}
+	rank := map[string]int{}
+	for k, p := range t.Plan().Issues {
+		planned[p.Ref()], rank[p.Ref()] = p, k+1
+	}
 	prs := map[string][]string{} // by issue
 	for repo, items := range open.Repos {
 		for n, it := range items {
@@ -73,6 +83,7 @@ func (t *Team) Issues(order string) []OpenIssue {
 			}
 			i := OpenIssue{Repo: repo, Number: n, Title: it.Title, Name: shortRef(repos, repo) + "#" + strconv.Itoa(n),
 				Created: it.Created, Labels: it.Labels, PRs: prs[repo+"#"+strconv.Itoa(n)]}
+			i.Rank, i.Why = rank[i.Ref()], planned[i.Ref()].Why
 			slices.SortFunc(i.PRs, compareRefs)
 			if len(i.PRs) > 0 {
 				i.Marks = append(i.Marks, prMark)
@@ -85,7 +96,7 @@ func (t *Team) Issues(order string) []OpenIssue {
 			out = append(out, i)
 		}
 	}
-	rank := func(i OpenIssue) int { // the first of the labels setting's it carries
+	byLabel := func(i OpenIssue) int { // the first of the labels setting's it carries
 		for r, l := range t.Config.Labels {
 			if hasLabel(i.Labels, l.Name) {
 				return r
@@ -96,12 +107,20 @@ func (t *Team) Issues(order string) []OpenIssue {
 	newest := func(a, b OpenIssue) int {
 		return cmp.Or(b.Created.Compare(a.Created), cmp.Compare(a.Repo, b.Repo), cmp.Compare(b.Number, a.Number))
 	}
+	inPlan := func(i OpenIssue) int { // its place in the plan; those it leaves out after them all
+		if i.Rank == 0 {
+			return len(rank) + 1
+		}
+		return i.Rank
+	}
 	slices.SortFunc(out, func(a, b OpenIssue) int {
 		switch order {
+		case OrderPlan:
+			return cmp.Or(cmp.Compare(inPlan(a), inPlan(b)), newest(a, b))
 		case OrderOldest:
 			return newest(b, a)
 		case OrderPriority:
-			return cmp.Or(cmp.Compare(rank(a), rank(b)), newest(a, b))
+			return cmp.Or(cmp.Compare(byLabel(a), byLabel(b)), newest(a, b))
 		}
 		return newest(a, b)
 	})

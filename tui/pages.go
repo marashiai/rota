@@ -738,7 +738,7 @@ func (p palette) state(s string) string {
 		return sty(p.Muted(), "○ "+s)
 	case strings.HasPrefix(s, "failed"):
 		return sty(p.Bad(), "✗ "+s)
-	case strings.HasPrefix(s, "due"), strings.HasPrefix(s, "outside hours"):
+	case strings.HasPrefix(s, "due"), strings.HasPrefix(s, "outside hours"), strings.HasPrefix(s, "waits for "):
 		return sty(p.Muted(), "◷ ") + s
 	}
 	return sty(p.Warn(), "▲ "+s)

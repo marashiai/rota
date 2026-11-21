@@ -14,11 +14,11 @@ import (
 
 // The organizer watches the repositories the agents' triggers name (triggers.go). Every few
 // minutes it asks GitHub, in one query per repository through gh, for its open issues and pull
-// requests and the pull requests merged lately, and tells what happened since it last looked by
-// what changed: a new issue or pull request, a label, a comment or a review, a draft made ready,
-// an approval, a merge, a conflict, failing checks, a base branch that moved. It keeps what it saw
-// in watchFile. Its first look at a repository only takes note of it: what was there before is
-// nothing new.
+// requests, the pull requests merged lately and its latest tags, and tells what happened since it
+// last looked by what changed: a new issue or pull request, a label, a comment or a review, a draft
+// made ready, an approval, a merge, a conflict, failing checks, a base branch that moved, a new tag.
+// It keeps what it saw in watchFile. Its first look at a repository, or at its tags, only takes
+// note of it: what was there before is nothing new.
 
 // watchEvery is how often the organizer looks.
 var watchEvery = 2 * time.Minute
@@ -54,12 +54,13 @@ type watchRepo struct {
 	Since  time.Time         `json:"since"` // the latest time GitHub gave, of anything it listed
 	Items  map[int]watchItem `json:"items"`
 	Merged []int             `json:"merged,omitempty"` // the pull requests whose merge it told
+	Tags   []string          `json:"tags"`             // the tags it saw; nil until it first looked at them
 }
 
 // watchQuery asks GitHub for what the triggers look at in one repository: its open issues that
 // changed since the last look (all of them, up to 100, at the first), its open pull requests and the
-// pull requests merged lately. It costs a few points of GitHub's hourly 5000, which the agents' gh
-// shares.
+// pull requests merged lately, and the tags on the latest commits. It costs a few points of
+// GitHub's hourly 5000, which the agents' gh shares.
 const watchQuery = `query($owner: String!, $name: String!, $since: DateTime) {
   repository(owner: $owner, name: $name) {
     issues(states: OPEN, first: 100, filterBy: {since: $since}, orderBy: {field: UPDATED_AT, direction: DESC}) {
@@ -72,6 +73,9 @@ const watchQuery = `query($owner: String!, $name: String!, $since: DateTime) {
     }
     merged: pullRequests(states: MERGED, first: 30, orderBy: {field: UPDATED_AT, direction: DESC}) {
       nodes { number title mergedAt }
+    }
+    tags: refs(refPrefix: "refs/tags/", first: 20, orderBy: {field: TAG_COMMIT_DATE, direction: DESC}) {
+      nodes { name }
     }
   }
 }`
@@ -96,6 +100,7 @@ type watchedItem struct {
 // watchedRepo is one repository as watchQuery gets it.
 type watchedRepo struct {
 	Issues, PullRequests, Merged struct{ Nodes []watchedItem }
+	Tags                         struct{ Nodes []struct{ Name string } }
 }
 
 // watchedRepos are the repositories of the enabled agents with a trigger on GitHub.
@@ -190,7 +195,7 @@ func (t *Team) watchOnce(ctx context.Context, now time.Time) (said []string, err
 func watchDiff(repo string, old *watchRepo, cur watchedRepo, now time.Time) ([]RepoEvent, watchRepo) {
 	next := watchRepo{Items: map[int]watchItem{}}
 	if old != nil {
-		next.Since, next.Merged = old.Since, old.Merged
+		next.Since, next.Merged, next.Tags = old.Since, old.Merged, slices.Clone(old.Tags)
 		for n, it := range old.Items {
 			if now.Sub(it.Seen) < watchForget {
 				next.Items[n] = it
@@ -300,6 +305,23 @@ func watchDiff(repo string, old *watchRepo, cur watchedRepo, now time.Time) ([]R
 	}
 	if len(next.Merged) > 100 { // GitHub lists the last 30: the rest are long told
 		next.Merged = next.Merged[len(next.Merged)-100:]
+	}
+	tell := next.Tags != nil // the first look at its tags only takes note of them
+	if !tell {
+		next.Tags = []string{}
+	}
+	for i := len(cur.Tags.Nodes) - 1; i >= 0; i-- { // oldest first
+		tag := cur.Tags.Nodes[i].Name
+		if slices.Contains(next.Tags, tag) {
+			continue
+		}
+		next.Tags = append(next.Tags, tag)
+		if tell {
+			events = append(events, RepoEvent{Kind: "tag-created", Repo: repo, Tag: tag, At: now})
+		}
+	}
+	if len(next.Tags) > 100 { // GitHub lists the latest 20: the rest are long told
+		next.Tags = next.Tags[len(next.Tags)-100:]
 	}
 	if next.Since.IsZero() {
 		next.Since = now
