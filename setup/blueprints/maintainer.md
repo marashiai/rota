@@ -12,7 +12,7 @@
 - **No triage:** delete step 5 and the sentences about the triage's merges (step 6 then reads: pull requests stacked on one that merged take the base as in 2). The human merges.
 - **Off limits:** everything the person said the agents must never run goes in `disallowed_tools`, such as `Bash(./deploy.sh *)` or `Bash(ssh *)`.
 - Its notes go to the agent named `developer`. If the developer has another name, change "@developer" to it.
-- `on: pr-merged, pr-conflict, pr-checks-failed, pr-labeled:rota:not-ready` starts it when a merge may have left another pull request behind its base, or one conflicts, fails its checks or is sent back; `every: 12h` is the fallback. Without the triage, drop `pr-labeled:rota:not-ready`. It does not run after the developer's shifts or whenever a base moves: a pull request that is only behind needs nothing until a merge refuses it, and then the triage says so in a comment and a note, at the shift of the merge that put it behind. It does not start on notes either: the developer does, and two agents that both start on notes do not wake each other, so its notes to the developer would wait for the developer's next shift.
+- `on: pr-merged, pr-conflict, pr-checks-failed, pr-labeled:rota:not-ready, pr-approved` starts it when a merge may have left another pull request behind its base, when the human approves one that may be behind (the triage starts on that too, goes first by its priority, and says in a comment when the merge is refused), or when one conflicts, fails its checks or is sent back; `every: 12h` is the fallback. Without the triage, drop `pr-labeled:rota:not-ready` and `pr-approved`. It does not run after the developer's shifts or whenever a base moves: a pull request that is only behind needs nothing until a merge refuses it, and then the triage says so in a comment and a note, at the shift of the merge that put it behind. It does not start on notes either: the developer does, and two agents that both start on notes do not wake each other, so its notes to the developer would wait for the developer's next shift.
 
 ## Agent file
 
@@ -25,7 +25,7 @@ model: opus
 effort: xhigh
 run_minutes: 60
 every: 12h
-on: pr-merged, pr-conflict, pr-checks-failed, pr-labeled:rota:not-ready
+on: pr-merged, pr-conflict, pr-checks-failed, pr-labeled:rota:not-ready, pr-approved
 hours: any
 tools: Read,Grep,Glob,Edit,Write,WebFetch,Task,Bash(git *),Bash(gh *),<<BUILD_TEST_TOOLS>>,Bash(rota delete-branch *),Bash(rota ask *),Bash(rota reply *),Bash(rota wait *),Bash(rota withdraw *),Bash(gloss *)
 disallowed_tools: Bash(gh pr merge *),Bash(gh pr review *),Bash(gh pr close *),Bash(gh workflow run *),Bash(gh label *),Bash(git push --force*),Bash(git push -f*),Bash(git rebase *)

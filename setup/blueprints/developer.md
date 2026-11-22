@@ -12,7 +12,7 @@
 - `<<REPO_NOTES>>`: per repository, what a developer must know that the repository itself does not say: how to run it locally, which test suites exist and how long they take, which services (a database, Docker) it may start, and what it must never run. Delete the line if there is nothing to say.
 - **Off limits:** everything the person said the agents must never run goes in `disallowed_tools` too, such as `Bash(./deploy.sh *)` or `Bash(ssh *)`, not only in `<<REPO_NOTES>>`.
 - `until_done: true` runs it shift after shift while work remains. For a slower pace, delete it and set `every: 12h` instead.
-- `on: note, issue-closed, issue-labeled:rota:leave-alone, pr-labeled:rota:leave-alone` starts it when a teammate leaves it a note, and tells its running shift at once when an issue is closed or the human says to leave one alone, so it stops work nobody wants; `after: planner` when the planner has ordered the issues again, after a new issue, a priority change or a tag; and `wait_for: planner, maintainer` holds it back while the planner or the maintainer would start a shift: so it always takes the most important work from a fresh order, and the maintainer, who brings each approved pull request up to date before the triage can merge it, never waits behind a developer shift.
+- `on: note, issue-closed, issue-labeled:rota:leave-alone, pr-labeled:rota:leave-alone` starts it when a teammate leaves it a note, and tells its running shift at once when an issue is closed or the human says to leave one alone, so it stops work nobody wants; `after: planner` when the planner has ordered the issues again, after a new issue, a priority change or a tag; and `wait_for: planner, maintainer, triage` holds it back while the planner, the maintainer or the triage would start a shift: so it always takes the most important work from a fresh order, and approved pull requests, which the maintainer brings up to date and the triage merges one at a time, never wait behind a developer shift.
 
 When a teammate is not in the team, edit the role as follows, so it never waits for an agent that doesn't exist.
 
@@ -28,7 +28,7 @@ with
 
 and in the sentence before it, change "the notes the maintainer or the triage left you" to "the notes the triage left you".
 
-**No triage.** The human reviews and merges every pull request.
+**No triage.** The human reviews and merges every pull request. Take `triage` out of `wait_for` (delete that line once it names no one).
 - In step 1, replace "Then the notes the maintainer or the triage left you about one of your pull requests (your inbox, under its heading): each asks for a different implementation; change it in new commits on its branch, push, and comment on the pull request what you changed, so the triage looks again." with "Then the notes the maintainer left you about one of your pull requests (your inbox, under its heading): each asks for a different implementation; change it in new commits on its branch, push, and comment on the pull request what you changed." Without a maintainer either, delete that sentence.
 - In step 1, if the maintainer is in the team, change "reruns the checks and answers the triage's send-backs; you do not" to "and reruns the checks; you do not". If it isn't, use the "No maintainer" text without its last sentence.
 - In step 4, change "The pull request reports the review and the commit it reviewed, since the triage merges nothing without one." to "The pull request reports the review and the commit it reviewed."
@@ -50,7 +50,7 @@ run_minutes: 60
 until_done: true
 on: note, issue-closed, issue-labeled:rota:leave-alone, pr-labeled:rota:leave-alone
 after: planner
-wait_for: planner, maintainer
+wait_for: planner, maintainer, triage
 tools: Read,Grep,Glob,Edit,Write,WebFetch,Task,Bash(git *),Bash(gh *),<<BUILD_TEST_TOOLS>>,Bash(rota delete-branch *),Bash(rota ask *),Bash(rota reply *),Bash(rota wait *),Bash(rota withdraw *),Bash(gloss *)
 disallowed_tools: Bash(gh pr merge *),Bash(gh pr review --approve *),Bash(gh workflow run *),Bash(gh label *)
 ---
