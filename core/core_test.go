@@ -255,10 +255,6 @@ def show(name):
         sys.stderr.write("no pull requests found\n"); sys.exit(1)
     print(open(p).read())
 if a[:2] in (["pr", "view"], ["issue", "view"]): show(f"{a[0]}-{repo}-{a[2]}.json")
-elif a[0] == "api":
-    _, owner, name, _, spec = a[1].split("/", 4)
-    p = os.path.join(d, "compare-" + name + "-" + spec.split("...")[1] + ".json")
-    print(open(p).read() if os.path.exists(p) else '{"behind_by":0}')
 elif a[:2] == ["pr", "list"]:
     k = "head" if "--head" in a else "base"
     v = a[a.index("--" + k) + 1].replace("/", "_")
@@ -292,14 +288,6 @@ PY`)
 	if _, err := merge("fff9999"); err == nil || !strings.Contains(err.Error(), "not the commit you checked") {
 		t.Fatalf("a commit pushed since it was checked is not merged: %v", err)
 	}
-	set("compare-shop-backend-abc1234def.json", `{"behind_by":3,"ahead_by":2}`)
-	if _, err := merge("abc1234"); err == nil || !strings.Contains(err.Error(), "#74 is 3 commits behind acc, so it was not checked with what acc has now: merge acc into it") {
-		t.Fatalf("one behind its base waits until the base is merged in: %v", err)
-	}
-	if b, _ := os.ReadFile(filepath.Join(gh, "log")); !strings.Contains(string(b), "api repos/acme/shop-backend/compare/acc...abc1234def") {
-		t.Fatalf("its base was not compared with the head it merges:\n%s", b)
-	}
-	set("compare-shop-backend-abc1234def.json", `{"behind_by":0,"ahead_by":2}`)
 	if b, _ := os.ReadFile(filepath.Join(gh, "log")); strings.Contains(string(b), "pr merge") || strings.Contains(string(b), "pr edit") {
 		t.Fatalf("nothing was changed while it waited:\n%s", b)
 	}

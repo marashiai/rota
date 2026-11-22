@@ -160,8 +160,8 @@ and the brief lists the team's labels as `{labels}`. `rota merge <repo>#<n> <hea
 squash-merge for an agent whose role merges: it refuses at any other head commit, while the pull request
 carries the `hold_label`, while a pull request or issue the
 description says it `Depends on` is not merged or closed or carries that label, while it is stacked
-on another open pull request, and while it is behind its base, so it was not checked with what the base
-has now: the base must then be merged in and checked again. Before
+on another open pull request. One behind its base merges too, and is checked with the base after the
+merge, unless the repository requires up-to-date pull requests in GitHub. Before
 merging one that others are stacked on, it points them at its base, so GitHub does not close them.
 After the merge it rebases them onto it, and those stacked on them in turn, so each lists only its own
 commits and changes, not the squashed ones below it: in rota's own clone (`.repos/` in the team folder,

@@ -177,7 +177,7 @@ include it, what to fill in, and how to adjust it when another role is left out.
 | `seo` | scout | Audits public pages for search and speed; opens issues |
 | `qa` | scout | Tests what was merged, end to end, on a non-production environment; tags releases |
 | `developer` | builder | Turns issues into draft pull requests with tests, evidence and review notes |
-| `maintainer` | builder | Keeps every open pull request mergeable: merges the base in, resolves conflicts |
+| `maintainer` | builder | Tests what merges, holding further merges while a branch fails; resolves pull requests' conflicts |
 | `planner` | coordinator | Ranks the open issues, most important first, each with why; the developer works from the top |
 | `triage` | gatekeeper | Judges each pull request; merges low-risk ones itself, holds the rest for the person |
 | `rollout` | coordinator | Lists the manual steps of changes and releases, and follows them up with the person |
@@ -193,7 +193,7 @@ requests, and the person reviews and merges everything. Then add:
 - `qa` when there is a non-production environment it can run or reach;
 - `planner` with the developer once the scouts have opened more issues than it fixes in a day, so it
   takes the most important first and the person sees why;
-- `maintainer` when pull requests stay open long enough to fall behind;
+- `maintainer` with the triage, to test what it merges, or when pull requests stay open long enough to conflict;
 - `triage` only when they want low-risk merges done without them;
 - `rollout` when getting a change live takes steps by hand (setting a secret, running a migration,
   changing a cloud setting), with or without the triage;
@@ -253,16 +253,16 @@ by uncommenting or editing those lines, not by adding duplicates.
 - The team's labels. Every team needs the three priority labels: the scouts put one on each issue.
   Add `rota:needs-rollout` and the `hold_label` line when the team has a developer (it marks changes
   that need a step by hand), and the triage's three labels and the `review_label` line when it has the
-  triage. With all of them:
+  triage, and `rota:main-broken` when it has the maintainer. With all of them:
 
 ```
-labels: priority:high B60205 Fix first; priority:medium FBCA04 Fix after the high-priority ones; priority:low C2E0C6 Fix when nothing more important is left; rota:auto-merge 0E8A16 🤖 Ready, and needs no review: the triage merges it; rota:needs-review 1D76DB 👀 Ready: waits for the human's review; rota:not-ready D93F0B 🔙 Sent back to its author: the triage's comment says what is missing; rota:needs-rollout F9D0C4 🚀 Needs a step by the human: it and what depends on it wait until the label is removed
+labels: priority:high B60205 Fix first; priority:medium FBCA04 Fix after the high-priority ones; priority:low C2E0C6 Fix when nothing more important is left; rota:auto-merge 0E8A16 🤖 Ready, and needs no review: the triage merges it; rota:needs-review 1D76DB 👀 Ready: waits for the human's review; rota:not-ready D93F0B 🔙 Sent back to its author: the triage's comment says what is missing; rota:needs-rollout F9D0C4 🚀 Needs a step by the human: it and what depends on it wait until the label is removed; rota:main-broken B60205 Its branch fails its tests since a merge: the triage merges nothing more into it but the fix, until the maintainer removes this label
 hold_label: rota:needs-rollout
 review_label: rota:needs-review
 ```
 
   Leave out what the team doesn't need: without the triage, drop `rota:auto-merge`, `rota:needs-review`
-  and `rota:not-ready` and the `review_label` line; without a developer, also `rota:needs-rollout` and
+  and `rota:not-ready` and the `review_label` line; without the maintainer, `rota:main-broken`; without a developer, also `rota:needs-rollout` and
   the `hold_label` line. A `hold_label` must be one of the labels, or `rota status` warns. Nobody
   creates these labels by hand: rota creates them in every repository (step 6).
   https://github.com/marashiai/rota/blob/main/docs/github.md says what each label means, if the person

@@ -67,7 +67,7 @@ in an agent's shift:
   merge <repo>#<n> <head commit>
                     squash-merge a pull request at the commit checked, unless it carries the
                     hold_label, once what it depends on is merged or closed without that label,
-                    and it is neither stacked on another nor behind its base; then rebase those
+                    and it is not stacked on another; then rebase those
                     stacked on it onto the merge, so each lists only its own commits
   delete-branch <repo> <branch>
                     delete your own remote branch (<agent>/<topic>) once every pull request

@@ -107,7 +107,6 @@ d = "`+gh+`"
 a = sys.argv[1:]
 open(d + "/log", "a").write(" ".join(a) + "\n")
 if a[:2] == ["pr", "view"]: print(open(f"{d}/pr-{a[2]}.json").read())
-elif a[0] == "api": print('{"behind_by":0}')
 elif a[:2] == ["pr", "list"]:
     k = "head" if "--head" in a else "base"
     p = os.path.join(d, f"{k}-{a[a.index('--' + k) + 1]}.json")

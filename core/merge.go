@@ -3,7 +3,6 @@ package core
 import (
 	"context"
 	"fmt"
-	"net/url"
 	"regexp"
 	"slices"
 	"strconv"
@@ -16,8 +15,9 @@ import (
 // reading of notes. It merges a pull request only when it does not carry the team's
 // hold_label itself, when each pull request or issue its description says it "Depends on" is
 // merged or closed and does not carry that label either, when it is not stacked on another
-// open pull request's branch, and when it is not behind its base. Before it merges one that others are stacked on, it points those
-// at its base, so GitHub does not close them when its branch goes; after, it rebases them onto the
+// open pull request's branch. One behind its base merges too: it is checked with the base after the
+// merge, as a repository that must have its pull requests up to date says in GitHub, whose refusal
+// stops the merge. Before it merges one that others are stacked on, it points those at its base, so GitHub does not close them when its branch goes; after, it rebases them onto the
 // merge (restack), so each lists only its own commits. Whether the merged branch is deleted is
 // the repository's setting.
 
@@ -174,23 +174,6 @@ func (t *Team) merge(ctx context.Context, repo string, n int, head string, human
 		}
 		if len(waits) > 0 {
 			return mergeOutcome{}, fmt.Errorf("%s waits for: %s", name, strings.Join(waits, "; "))
-		}
-		// One behind its base was not checked with what the base has now: its base is merged into it
-		// only when it conflicts, or when this refuses, so it is checked once more before it merges.
-		var cmp struct {
-			BehindBy int `json:"behind_by"`
-		}
-		base := strings.ReplaceAll(url.PathEscape(pr.BaseRefName), "%2F", "/")
-		if err := t.gh(ctx, &cmp, "api", "repos/"+repo+"/compare/"+base+"..."+pr.HeadRefOid); err != nil {
-			return mergeOutcome{}, err
-		}
-		if cmp.BehindBy > 0 {
-			s := "s"
-			if cmp.BehindBy == 1 {
-				s = ""
-			}
-			return mergeOutcome{}, fmt.Errorf("%s is %d commit%s behind %s, so it was not checked with what %s has now: merge %s into it and check it again, then it can merge",
-				name, cmp.BehindBy, s, pr.BaseRefName, pr.BaseRefName, pr.BaseRefName)
 		}
 	} else if pr.IsDraft {
 		if err := t.gh(ctx, nil, "pr", "ready", strconv.Itoa(n), "-R", repo); err != nil {

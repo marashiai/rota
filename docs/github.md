@@ -99,12 +99,15 @@ when:
 - it does not carry the `hold_label` or `rota:leave-alone`;
 - every pull request or issue its description says it "Depends on" is merged or closed, and does not
   carry the `hold_label` either;
-- it is not stacked on another open pull request's branch, and not behind its base.
+- it is not stacked on another open pull request's branch.
+
+One behind its base merges too: the maintainer tests the base after each merge, and the triage merges
+nothing more in a repository while an issue labelled `rota:main-broken` is open there, except its fix.
 
 Before it merges one that others are stacked on, it points those at its base, so GitHub does not close
 them; after, it rebases them onto the merge. Whether the merged branch is deleted is the repository's
-setting. GitHub's own rules still apply: a protected branch or a failing check stops the merge, and the
-triage then holds the pull request as not ready.
+setting. GitHub's own rules still apply: a protected branch, a failing check, a conflict, or a branch that
+must be up to date stops the merge, and the triage says why on the pull request.
 
 The triage merges only what it labels `rota:auto-merge`, and what you approved. Without a triage agent
 the team merges nothing: every pull request waits for you.
