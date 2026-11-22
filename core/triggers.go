@@ -216,13 +216,38 @@ func (e RepoEvent) noteText(trigger string) string {
 const eventSlack = 5 * time.Minute
 
 // during says whether at falls in one of the agent's shifts: the one running now, or one in its
-// record.
+// record. The eventSlack around a shift stops at a teammate's shift: what happens once a teammate
+// is at work is the teammate's doing, such as the triage merging a pull request a minute after
+// the maintainer's shift ended, and it must reach the agent.
 func (t *Team) during(a *Agent, at time.Time, live *Status) bool {
-	if live != nil && live.Running != nil && live.Running.Agent == a.Name && !at.Before(live.Running.Since.Add(-eventSlack)) {
-		return true
+	type shift struct {
+		agent    string
+		from, to time.Time // to is zero while it runs
+	}
+	var shifts []shift
+	if live != nil && live.Running != nil {
+		shifts = append(shifts, shift{live.Running.Agent, live.Running.Since, time.Time{}})
 	}
 	for _, r := range t.Runs {
-		if r.Agent == a.Name && !at.Before(r.Time.Add(-eventSlack)) && !at.After(r.Time.Add(time.Duration(r.Seconds)*time.Second+eventSlack)) {
+		shifts = append(shifts, shift{r.Agent, r.Time, r.Time.Add(time.Duration(r.Seconds) * time.Second)})
+	}
+	teammate := func(lo, hi time.Time) bool { // a teammate's shift was on between lo and hi
+		return slices.ContainsFunc(shifts, func(s shift) bool {
+			return s.agent != a.Name && s.from.Before(hi) && (s.to.IsZero() || s.to.After(lo))
+		})
+	}
+	for _, s := range shifts {
+		switch {
+		case s.agent != a.Name || at.Before(s.from.Add(-eventSlack)) || !s.to.IsZero() && at.After(s.to.Add(eventSlack)):
+		case at.Before(s.from):
+			if !teammate(at, s.from) {
+				return true
+			}
+		case !s.to.IsZero() && at.After(s.to):
+			if !teammate(s.to, at) {
+				return true
+			}
+		default:
 			return true
 		}
 	}

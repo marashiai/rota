@@ -2710,6 +2710,42 @@ func TestAnUntilDoneAgentWorksUntilNothingIsLeft(t *testing.T) {
 	}
 }
 
+// The minutes around a shift count as its own only until a teammate's shift: the triage merging
+// a pull request right after the maintainer's shift wakes the maintainer.
+func TestATeammatesShiftEndsTheSlackAroundAShift(t *testing.T) {
+	root := t.TempDir()
+	write(t, filepath.Join(root, "rota.conf"), "usage: off\nlisten: off\n")
+	write(t, filepath.Join(root, "agents", "maintainer.md"), "---\nenabled: true\nrepos: o/backend\non: pr-merged\n---\nm\n")
+	write(t, filepath.Join(root, "agents", "triage.md"), "---\nenabled: true\nrepos: o/backend\n---\nt\n")
+	team := open(t, root)
+	m := team.Agent("maintainer")
+	end := time.Now().Add(-30 * time.Minute)
+	team.Runs = []Run{{Time: end.Add(-20 * time.Minute), Agent: "maintainer", Seconds: 20 * 60, Status: "ok"}}
+	merged := end.Add(2 * time.Minute)
+	triage := &Status{Running: &Running{Agent: "triage", Since: end.Add(time.Minute)}}
+	switch {
+	case !team.during(m, merged, nil):
+		t.Fatal("with no shift since, an event just after its shift is its own")
+	case !team.during(m, end.Add(-time.Minute), triage):
+		t.Fatal("one in its shift is its own, whoever is at work now")
+	case team.during(m, merged, triage):
+		t.Fatal("once the triage is at work, the merge is the triage's")
+	}
+	team.Runs = append(team.Runs, Run{Time: end.Add(time.Minute), Agent: "triage", Seconds: 3 * 60, Status: "ok"})
+	if team.during(m, merged, nil) {
+		t.Fatal("the triage's recorded shift is between them too")
+	}
+	next := end.Add(6 * time.Minute) // the maintainer's next shift, just after the triage's
+	team.Runs = append(team.Runs, Run{Time: next, Agent: "maintainer", Seconds: 60, Status: "ok"})
+	if team.during(m, end.Add(3*time.Minute), nil) || !team.during(m, end.Add(5*time.Minute), nil) {
+		t.Fatal("the slack before a shift stops at the teammate's shift before it")
+	}
+	team.Runs = team.Runs[:2]
+	if _, err := team.onEvents([]RepoEvent{{Kind: "pr-merged", Repo: "o/backend", Number: 7, At: merged}}, time.Now()); err != nil || !team.Asked()["maintainer"] {
+		t.Fatalf("the triage's merge right after the maintainer's shift wakes it: %v %v", err, team.Asked())
+	}
+}
+
 // The human may dismiss a question unanswered: the agent's inbox says so, a waiting shift hears
 // it, and nothing wakes the agent. An agent withdraws only its own questions, during its shift
 // or with a line in its final message, by the ids its brief lists.
