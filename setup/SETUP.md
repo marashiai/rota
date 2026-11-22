@@ -256,7 +256,7 @@ by uncommenting or editing those lines, not by adding duplicates.
   triage, and `rota:main-broken` when it has the maintainer. With all of them:
 
 ```
-labels: priority:high B60205 Fix first; priority:medium FBCA04 Fix after the high-priority ones; priority:low C2E0C6 Fix when nothing more important is left; rota:auto-merge 0E8A16 🤖 Ready, and needs no review: the triage merges it; rota:needs-review 1D76DB 👀 Ready: waits for the human's review; rota:not-ready D93F0B 🔙 Sent back to its author: the triage's comment says what is missing; rota:needs-rollout F9D0C4 🚀 Needs a step by the human: it and what depends on it wait until the label is removed; rota:main-broken B60205 Its branch fails its tests since a merge: the triage merges nothing more into it but the fix, until the maintainer removes this label
+labels: priority:high B60205 Fix first; priority:medium FBCA04 Fix after the high-priority ones; priority:low C2E0C6 Fix when nothing more important is left; rota:auto-merge 0E8A16 🤖 Ready, and needs no review: the triage merges it; rota:needs-review 1D76DB 👀 Ready: waits for the human's review; rota:not-ready D93F0B 🔙 Sent back to its author: the triage's comment says what is missing; rota:needs-rollout F9D0C4 🚀 Needs a step by the human: it and what depends on it wait until the label is removed; rota:main-broken B60205 Its branch fails its tests since a merge: the triage merges only the fix until this label goes
 hold_label: rota:needs-rollout
 review_label: rota:needs-review
 ```
