@@ -401,10 +401,15 @@ func (t *Team) openWork() openList {
 		json.Unmarshal(b, &l)
 	}
 	if l.due() && len(t.teamRepos()) > 0 {
-		go t.refreshOpen()
+		refreshing.Add(1)
+		go func() { defer refreshing.Done(); t.refreshOpen() }()
 	}
 	return l
 }
+
+// refreshing counts the refreshes under way in the background, which a test waits for before its
+// team folder is removed: one that writes in it then fails the removal.
+var refreshing sync.WaitGroup
 
 // refreshOpen asks GitHub for the open pull requests and issues of every team repository, one
 // process at a time; a repository GitHub does not answer for keeps its last list, if any.

@@ -43,6 +43,7 @@ func Organize(ctx context.Context, root, conf string) error {
 	var self *selfWatch
 	if exe, err := os.Executable(); err == nil {
 		self = watchSelf(exe)
+		self.stamp = t.Config.settingsStamp
 	}
 	o.self = self
 	go o.watch(ctx)

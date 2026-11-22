@@ -177,6 +177,11 @@ func execShift(ctx context.Context, c *Config, job Job, onLine func(string), not
 			res.Output = fmt.Sprintf("claude exited: %v", runErr)
 		}
 	}
+	if res.Started {
+		if ended := endLeftBehind(work, start); len(ended) > 0 {
+			logf("%s's shift left running, now ended: %s", job.Agent, strings.Join(ended, "; "))
+		}
+	}
 	if res.Started && ctx.Err() == nil { // a shift being stopped does not wait for the measurement
 		if n, err := folderSize(ctx, c, work); err != nil {
 			fmt.Fprintf(os.Stderr, "warn: %s's work folder could not be measured: %v\n", job.Agent, err)

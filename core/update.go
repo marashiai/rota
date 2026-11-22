@@ -1,10 +1,14 @@
 package core
 
 import (
+	"bytes"
 	"context"
+	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -26,6 +30,27 @@ var restart = func(exe string) error { return restartWith(exe, os.Environ()) }
 
 // restartWith is restart with env as the new one's environment.
 var restartWith = func(exe string, env []string) error { return syscall.Exec(exe, os.Args, env) }
+
+// opens says whether the rota at exe opens the team folder and its config as they are now, as
+// rota config does, before it takes this process's place: one that refuses them stops as it
+// starts, and the team with it, with no organizer left to say why. That is a setting this one
+// takes and the new one does not, or a file edited by hand since this one last read it.
+var opens = func(ctx context.Context, exe string, c *Config) error {
+	ctx, cancel := context.WithTimeout(ctx, probeTimeout)
+	defer cancel()
+	var stderr bytes.Buffer
+	cmd := exec.CommandContext(ctx, exe, "-root", c.Root, "-config", c.File, "config")
+	cmd.Stdout, cmd.Stderr = io.Discard, &stderr
+	cmd.WaitDelay = time.Second // what it started and left holding its output does not hold the organizer
+	if err := cmd.Run(); err != nil {
+		lines := strings.Split(strings.TrimSpace(stderr.String()), "\n")
+		if why := strings.TrimPrefix(lines[len(lines)-1], "rota: "); why != "" {
+			return errors.New(why)
+		}
+		return err
+	}
+	return nil
+}
 
 type fileSig struct {
 	size int64
@@ -54,6 +79,8 @@ type selfWatch struct {
 	seenAt   time.Time
 	failed   fileSig // one that would not start, at failedAt: tried again after selfRetry
 	failedAt time.Time
+	refused  string        // failed refused the team as stamp said it was: tried again once that changes
+	stamp    func() string // the team's settings as they are now, as settingsStamp; nil for the menu bar
 }
 
 // watchSelf watches exe; missing (an install under way as the organizer started), whatever is
@@ -63,7 +90,7 @@ func watchSelf(exe string) *selfWatch {
 		exe = real
 	}
 	sig, _ := sigOf(exe)
-	return &selfWatch{exe: exe, started: sig}
+	return &selfWatch{exe: exe, started: sig, stamp: func() string { return "" }}
 }
 
 // check says whether another rota is installed (pending), and whether it has stayed as it is
@@ -76,7 +103,7 @@ func (w *selfWatch) check(now time.Time) (pending, ready bool) {
 	defer w.mu.Unlock()
 	sig, ok := sigOf(w.exe)
 	switch {
-	case ok && (sig == w.started || sig == w.failed && now.Sub(w.failedAt) < selfRetry):
+	case ok && (sig == w.started || sig == w.failed && (now.Sub(w.failedAt) < selfRetry || w.refused != "" && w.refused == w.stamp())):
 		w.seen = fileSig{}
 		return false, false
 	case !ok || sig != w.seen: // being copied in, or just copied
@@ -88,7 +115,8 @@ func (w *selfWatch) check(now time.Time) (pending, ready bool) {
 
 // updateSelf, between shifts, runs a newly installed rota in this process's place, once it has
 // settled; while it settles it waits, so no shift starts on the old one. It returns false when
-// there is nothing to do or the new one would not start, and the organizer goes on.
+// there is nothing to do or the new one would not start, and the organizer goes on. One that
+// refuses the team as it is is not tried again, nor does it stop a shift, until a setting changes.
 func (o *organizer) updateSelf(ctx context.Context, w *selfWatch) bool {
 	for since := time.Now(); ; {
 		pending, ready := w.check(time.Now())
@@ -96,12 +124,22 @@ func (o *organizer) updateSelf(ctx context.Context, w *selfWatch) bool {
 			return false
 		}
 		if ready {
-			logf("a new rota is installed: restarting with it")
-			o.write()
-			err := restart(w.exe)
-			logf("warn: the new rota would not start, so this one goes on: %v", err)
+			stamp := w.stamp()
+			err := opens(ctx, w.exe, o.Config)
+			if ctx.Err() != nil {
+				return false // the organizer stops: neither the new one nor this one goes on
+			}
+			if err != nil {
+				logf("warn: the new rota refuses the team as it is, so this one goes on until a setting changes: %v", err)
+			} else {
+				logf("a new rota is installed: restarting with it")
+				o.write()
+				err = restart(w.exe)
+				logf("warn: the new rota would not start, so this one goes on: %v", err)
+				stamp = ""
+			}
 			w.mu.Lock()
-			w.failed, w.failedAt = w.seen, time.Now()
+			w.failed, w.failedAt, w.refused = w.seen, time.Now(), stamp
 			w.mu.Unlock()
 			return false
 		}

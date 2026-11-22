@@ -388,7 +388,10 @@ with it within seconds: the pages and the schedule are the new version's without
 it, and it stays the same process, so the menu bar that started it still controls it. A shift that
 runs then stops between two of its steps, or while it waits for your answer (after 15 minutes at
 most, whatever it does), and resumes its Claude session where it stopped, in the new version. One that will not start is reported in rota.log, and the
-old one goes on. The menu bar takes the new rota as soon as it has settled. Opened as rota.app, it
+old one goes on, trying it again 10 minutes later. Before it restarts, the organizer has the new one open the team
+folder and `rota.conf` as `rota config` does: one that refuses them, such as a file edited by hand with a mistake or a
+setting the new version no longer takes, would stop as it started and leave no organizer to say why. The old one then
+goes on too, says why in rota.log, and tries the new one again, without stopping a shift for it, once a setting changes. The menu bar takes the new rota as soon as it has settled. Opened as rota.app, it
 opens the new one as the app and quits, since macOS shows a menu bar icon only for an app opened as
 one; run as `rota tray`, it restarts in its place. Either way an organizer it started goes on and
 becomes the new one's, and an `rota web` it started stops, since the new one starts its own when
@@ -736,6 +739,13 @@ the organizer not stopped it (its start plus `run_minutes`): an update after its
 day. Status says `ready to
 resume its interrupted shift`. A shift the operator stops, or that runs out of time or pool, starts over
 as before.
+
+However a shift ends, what it left running ends with it. A command the agent ran in the background, such as
+`nohup ./test-all > log &`, is in a process group of its own and, once the shell that started it is done, has
+no parent but launchd: it would run on for weeks, holding its ports and its build folder. Once Claude has
+ended, rota ends each process begun during the shift, working in the agent's work folder, with no parent left,
+and all it started (SIGTERM, then SIGKILL 5 seconds later), and says in rota.log what it ended. A terminal of
+yours in that folder has a parent and is never one.
 
 ## Your report
 

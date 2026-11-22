@@ -69,6 +69,7 @@ func fakeGh(t *testing.T, script string) {
 
 func open(t *testing.T, root string) *Team {
 	t.Helper()
+	t.Cleanup(refreshing.Wait) // before the team folder goes
 	team, err := Open(root, "rota.conf")
 	if err != nil {
 		t.Fatal(err)
@@ -90,6 +91,7 @@ func at(s string) time.Time {
 // runShift is rota run [agent] at now ("" is now).
 func runShift(t *testing.T, root, name, now string, force bool) error {
 	t.Helper()
+	t.Cleanup(refreshing.Wait) // before the team folder goes
 	team, err := Open(root, "rota.conf")
 	if err != nil {
 		return err
@@ -1232,6 +1234,47 @@ func TestAnInterruptedShiftResumesOutsideItsHours(t *testing.T) {
 	agent("own_hours: true\n")
 	if w := why(36 * time.Minute); !strings.HasPrefix(w, "outside hours") {
 		t.Fatalf("a shift in a window it owns ends with the window: %q", w)
+	}
+}
+
+// What a shift ran in the background, in a process group of its own as Claude Code's commands
+// are, ends with the shift, with what it started: "nohup ./test-all &" no longer runs on for
+// weeks once the shell that started it is done. What it started outside its work folder is not
+// the shift's to end.
+func TestWhatAShiftLeftRunningEndsWithIt(t *testing.T) {
+	root := t.TempDir()
+	claude := filepath.Join(root, "claude")
+	os.WriteFile(claude, []byte("#!/bin/bash\nread -r prompt\nset -m\n"+
+		"nohup bash -c 'sleep 300 & echo $! > "+root+"/grand.pid; wait' >/dev/null 2>&1 & echo $! > "+root+"/test.pid\n"+
+		"(cd / && exec nohup sleep 301 >/dev/null 2>&1) & echo $! > "+root+"/away.pid\n"+
+		`set +m; echo '{"type":"system","subtype":"init","session_id":"sess-7"}'; sleep 30`+"\n"), 0o755)
+	write(t, filepath.Join(root, "rota.conf"), "usage: off\nlisten: off\ncommit: false\ntriage_model: off\nsync_repos: false\nclaude_bin: "+claude+"\n")
+	write(t, filepath.Join(root, "agents", "alpha.md"), "---\nenabled: true\nrun_minutes: 60\nrepos: x/r\ntools: Read\n---\nalpha\n")
+	ctx, cancel := context.WithTimeout(context.Background(), 1500*time.Millisecond) // the organizer stops
+	defer cancel()
+	out := captureStdout(t, func() { open(t, root).RunShift(ctx, "alpha", time.Now(), true, false) })
+	pid := func(name string) int {
+		n, err := strconv.Atoi(strings.TrimSpace(readAll(filepath.Join(root, name))))
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		return n
+	}
+	for _, name := range []string{"test.pid", "grand.pid", "away.pid"} {
+		n := pid(name)
+		t.Cleanup(func() { syscall.Kill(n, syscall.SIGKILL) })
+	}
+	away := pid("away.pid")
+	for _, name := range []string{"test.pid", "grand.pid"} {
+		if syscall.Kill(pid(name), 0) == nil {
+			t.Errorf("%s still runs after its shift", name)
+		}
+	}
+	if syscall.Kill(away, 0) != nil {
+		t.Error("what it started outside its work folder runs on")
+	}
+	if !strings.Contains(out, "alpha's shift left running, now ended: bash -c sleep 300") {
+		t.Fatalf("the log says what it ended:\n%s", out)
 	}
 }
 
@@ -2848,6 +2891,7 @@ func TestAnUncleanCheckoutIsFlagged(t *testing.T) {
 // that are not such a checkout (another name, another owner, its own repositories) stay.
 func TestACheckoutOfARepositoryNoLongerListedIsRemoved(t *testing.T) {
 	root := t.TempDir()
+	fakeGh(t, "exit 1") // GitHub knows none of its repositories
 	work := filepath.Join(root, "work", "dev")
 	git := func(dir string, args ...string) {
 		t.Helper()
@@ -3386,7 +3430,7 @@ func TestTheOrganizerRestartsWithANewlyInstalledRota(t *testing.T) {
 	if pending, ready := w.check(time.Now()); !pending || ready {
 		t.Fatal("a missing rota is being installed: pending, not ready")
 	}
-	write(t, exe, "new, a longer file")
+	write(t, exe, "#!/bin/sh\nexit 0\n") // as rota config: it opens the team as it is
 	os.Chmod(exe, 0o755)
 	o.updateSelf(context.Background(), w)
 	if len(ran) != 1 || ran[0] != w.exe {
@@ -3399,11 +3443,31 @@ func TestTheOrganizerRestartsWithANewlyInstalledRota(t *testing.T) {
 	if o.updateSelf(context.Background(), w); len(ran) != 2 {
 		t.Fatalf("but later, in case it failed for a moment: %q", ran)
 	}
-	write(t, exe, "newer still, and longer again")
+	write(t, exe, "#!/bin/sh\n# newer still\nexit 0\n")
 	os.Chmod(exe, 0o755)
 	o.updateSelf(context.Background(), w)
 	if len(ran) != 3 {
 		t.Fatalf("a newer one is tried: %q", ran)
+	}
+	// one that refuses the config, as one edited by hand since: this one goes on, and says why
+	w.stamp = team.Config.settingsStamp
+	write(t, exe, "#!/bin/sh\n[ \"$*\" = \"-root "+root+" -config rota.conf config\" ] || exit 3\necho 'warn: something else' >&2\necho 'rota: rota.conf: labels: x: too long' >&2\nexit 1\n")
+	os.Chmod(exe, 0o755)
+	out := captureStdout(t, func() {
+		if o.updateSelf(context.Background(), w) || len(ran) != 3 {
+			t.Errorf("a rota that refuses the config does not take this one's place: %q", ran)
+		}
+	})
+	if !strings.Contains(out, "refuses the team as it is, so this one goes on until a setting changes: rota.conf: labels: x: too long") {
+		t.Fatalf("it says why: %s", out)
+	}
+	w.failedAt = w.failedAt.Add(-selfRetry)
+	if pending, _ := w.check(time.Now()); pending {
+		t.Fatal("it is not tried again, nor does it stop a shift, while the settings are as they were")
+	}
+	write(t, filepath.Join(root, "rota.conf"), "usage: off\nlisten: off\nlabels: x 000000 fixed\n")
+	if pending, _ := w.check(time.Now()); !pending {
+		t.Fatal("once they change, it is tried again")
 	}
 	os.Remove(exe) // an install that failed halfway: the organizer schedules again
 	selfGiveUp = 50 * time.Millisecond
