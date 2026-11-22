@@ -25,16 +25,17 @@ import (
 // local agent, or a joined host. It carries everything the executor needs except
 // secrets, which stay on the executing machine.
 type Job struct {
-	ID         string   `json:"id"`
-	Agent      string   `json:"agent"`
-	Repos      []string `json:"repos,omitempty"`
-	Args       []string `json:"args"`
-	Prompt     string   `json:"prompt"`
-	RunMinutes int      `json:"run_minutes"`
-	WorkDir    string   `json:"work_dir,omitempty"` // relative to the executor's root; default work/<agent>
-	EnvFile    string   `json:"env_file,omitempty"` // relative to the executor's root; default secrets/<agent>.env
-	GhUser     string   `json:"gh_user,omitempty"`  // GH_TOKEN comes from this account's gh login on the executor
-	LiveLog    string   `json:"live_log,omitempty"` // off | tools | all: what the executor reports live
+	ID         string    `json:"id"`
+	Agent      string    `json:"agent"`
+	Repos      []string  `json:"repos,omitempty"`
+	Args       []string  `json:"args"`
+	Prompt     string    `json:"prompt"`
+	RunMinutes int       `json:"run_minutes"`
+	WorkDir    string    `json:"work_dir,omitempty"` // relative to the executor's root; default work/<agent>
+	EnvFile    string    `json:"env_file,omitempty"` // relative to the executor's root; default secrets/<agent>.env
+	GhUser     string    `json:"gh_user,omitempty"`  // GH_TOKEN comes from this account's gh login on the executor
+	LiveLog    string    `json:"live_log,omitempty"` // off | tools | all: what the executor reports live
+	Began      time.Time `json:"began,omitzero"`     // a resumed shift: when the shift it resumes began
 }
 
 // Result is what comes back: claude's raw stdout plus how the shift ended.
@@ -177,8 +178,12 @@ func execShift(ctx context.Context, c *Config, job Job, onLine func(string), not
 			res.Output = fmt.Sprintf("claude exited: %v", runErr)
 		}
 	}
-	if res.Started {
-		if ended := endLeftBehind(work, start); len(ended) > 0 {
+	if res.Started && !(res.Status == "stopped" && resumes(context.Cause(ctx))) {
+		since := start // what the shift it resumes left running, it ends too
+		if !job.Began.IsZero() && job.Began.Before(since) {
+			since = job.Began
+		}
+		if ended := endLeftBehind(work, since); len(ended) > 0 {
 			logf("%s's shift left running, now ended: %s", job.Agent, strings.Join(ended, "; "))
 		}
 	}

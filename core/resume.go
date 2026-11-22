@@ -93,6 +93,7 @@ func sessionOf(output string) string {
 // The checkouts are not synced: they hold the work in progress.
 func resumeJob(job Job, a *Agent, r resumable, inbox string, window int) Job {
 	job.Args = withResume(job.Args, r.Session)
+	job.Began = r.Began
 	job.Repos = nil
 	job.RunMinutes = max(a.RunMinutes-r.Minutes, resumeMinutes)
 	if window > 0 {
@@ -122,7 +123,7 @@ func withResume(args []string, session string) []string {
 	return append(out, args[at:]...)
 }
 
-const resumePrompt = `Your shift that began at {began} stopped after {minutes} minutes: the organizer was stopped, and whatever was running then was stopped with it. It resumes now, in the same checkouts. Check where you were, finish the work, and end with your final message in the sections the brief asks for. You have {run_minutes} minutes.{notes}`
+const resumePrompt = `Your shift that began at {began} stopped after {minutes} minutes: the organizer was stopped, and claude with it. It resumes now, in the same checkouts. What you ran in the background may still run or have finished: check before you run it again. Check where you were, finish the work, and end with your final message in the sections the brief asks for. You have {run_minutes} minutes.{notes}`
 
 // resumeText is what the journal says of a shift that will resume.
 func resumeText(minutes int, why string) string {

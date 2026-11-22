@@ -15,6 +15,13 @@ import (
 	"time"
 )
 
+// resumes says whether a shift stopped for cause resumes later, as outcome records it: the
+// organizer stopped, or a new rota took its place. What it left running then goes on, for the
+// resumed shift to use (a test run it waits for), and ends when that shift ends.
+func resumes(cause error) bool {
+	return cause != errOperatorCancel && cause != errPoolUsed && cause != errHoursEnded
+}
+
 // endLeftBehind ends what a shift left running once its claude has ended. A command that the
 // agent ran in the background, as "nohup ./test-all > log &", leaves claude's process group, so
 // stopping the shift misses it, and once the shell that started it is done, its parent is

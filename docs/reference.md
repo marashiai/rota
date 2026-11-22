@@ -740,12 +740,13 @@ day. Status says `ready to
 resume its interrupted shift`. A shift the operator stops, or that runs out of time or pool, starts over
 as before.
 
-However a shift ends, what it left running ends with it. A command the agent ran in the background, such as
-`nohup ./test-all > log &`, is in a process group of its own and, once the shell that started it is done, has
-no parent but launchd: it would run on for weeks, holding its ports and its build folder. Once Claude has
-ended, rota ends each process begun during the shift, working in the agent's work folder, with no parent left,
-and all it started (SIGTERM, then SIGKILL 5 seconds later), and says in rota.log what it ended. A terminal of
-yours in that folder has a parent and is never one.
+What a shift left running ends with it. A command the agent ran in the background, such as `nohup ./test-all >
+log &`, is in a process group of its own and, once the shell that started it is done, has no parent but
+launchd: it would run on for weeks, holding its ports and its build folder. Once Claude has ended, rota ends
+each process begun during the shift, working in the agent's work folder, with no parent left, and all it
+started (SIGTERM, then SIGKILL 5 seconds later), and says in rota.log what it ended. A terminal of yours in that
+folder has a parent and is never one. A shift that will resume keeps them running: the resumed shift may wait
+for that test run, and ends them, from when the first shift began, when it ends.
 
 ## Your report
 

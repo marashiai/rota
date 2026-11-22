@@ -1239,42 +1239,61 @@ func TestAnInterruptedShiftResumesOutsideItsHours(t *testing.T) {
 
 // What a shift ran in the background, in a process group of its own as Claude Code's commands
 // are, ends with the shift, with what it started: "nohup ./test-all &" no longer runs on for
-// weeks once the shell that started it is done. What it started outside its work folder is not
-// the shift's to end.
+// weeks once the shell that started it is done. A shift the organizer's stop interrupts leaves it
+// running for the shift that resumes it, which may wait for it, and that one ends it. What it
+// started outside its work folder is not the shift's to end.
 func TestWhatAShiftLeftRunningEndsWithIt(t *testing.T) {
 	root := t.TempDir()
 	claude := filepath.Join(root, "claude")
-	os.WriteFile(claude, []byte("#!/bin/bash\nread -r prompt\nset -m\n"+
-		"nohup bash -c 'sleep 300 & echo $! > "+root+"/grand.pid; wait' >/dev/null 2>&1 & echo $! > "+root+"/test.pid\n"+
+	os.WriteFile(claude, []byte("#!/bin/bash\nread -r prompt\n"+
+		`case "$*" in *--resume*) echo '{"type":"result","subtype":"success","is_error":false,"result":"done","num_turns":2,"session_id":"sess-7","usage":{}}'; exit 0;; esac`+"\n"+
+		"set -m\nnohup bash -c 'sleep 300 & echo $! > "+root+"/grand.pid; wait' >/dev/null 2>&1 & echo $! > "+root+"/test.pid\n"+
 		"(cd / && exec nohup sleep 301 >/dev/null 2>&1) & echo $! > "+root+"/away.pid\n"+
 		`set +m; echo '{"type":"system","subtype":"init","session_id":"sess-7"}'; sleep 30`+"\n"), 0o755)
 	write(t, filepath.Join(root, "rota.conf"), "usage: off\nlisten: off\ncommit: false\ntriage_model: off\nsync_repos: false\nclaude_bin: "+claude+"\n")
 	write(t, filepath.Join(root, "agents", "alpha.md"), "---\nenabled: true\nrun_minutes: 60\nrepos: x/r\ntools: Read\n---\nalpha\n")
+	pids := func() (test, grand, away int) {
+		t.Helper()
+		var n [3]int
+		for i, name := range []string{"test.pid", "grand.pid", "away.pid"} {
+			var err error
+			if n[i], err = strconv.Atoi(strings.TrimSpace(readAll(filepath.Join(root, name)))); err != nil {
+				t.Fatalf("%s: %v", name, err)
+			}
+			pid := n[i]
+			t.Cleanup(func() { syscall.Kill(pid, syscall.SIGKILL) })
+		}
+		return n[0], n[1], n[2]
+	}
+	runs := func(n int) bool { return syscall.Kill(n, 0) == nil }
+
 	ctx, cancel := context.WithTimeout(context.Background(), 1500*time.Millisecond) // the organizer stops
 	defer cancel()
-	out := captureStdout(t, func() { open(t, root).RunShift(ctx, "alpha", time.Now(), true, false) })
-	pid := func(name string) int {
-		n, err := strconv.Atoi(strings.TrimSpace(readAll(filepath.Join(root, name))))
-		if err != nil {
-			t.Fatalf("%s: %v", name, err)
+	captureStdout(t, func() { open(t, root).RunShift(ctx, "alpha", time.Now(), true, false) })
+	test, grand, away := pids()
+	if !runs(test) || !runs(grand) {
+		t.Fatal("an interrupted shift leaves its test run running for the shift that resumes it")
+	}
+	out := captureStdout(t, func() {
+		if err := runShift(t, root, "alpha", "", false); err != nil {
+			t.Error(err)
 		}
-		return n
+	})
+	if runs(test) || runs(grand) {
+		t.Error("the resumed shift ends what the shift it resumes left running")
 	}
-	for _, name := range []string{"test.pid", "grand.pid", "away.pid"} {
-		n := pid(name)
-		t.Cleanup(func() { syscall.Kill(n, syscall.SIGKILL) })
-	}
-	away := pid("away.pid")
-	for _, name := range []string{"test.pid", "grand.pid"} {
-		if syscall.Kill(pid(name), 0) == nil {
-			t.Errorf("%s still runs after its shift", name)
-		}
-	}
-	if syscall.Kill(away, 0) != nil {
+	if !runs(away) {
 		t.Error("what it started outside its work folder runs on")
 	}
 	if !strings.Contains(out, "alpha's shift left running, now ended: bash -c sleep 300") {
 		t.Fatalf("the log says what it ended:\n%s", out)
+	}
+
+	ctx, stop := context.WithCancelCause(context.Background())
+	time.AfterFunc(1500*time.Millisecond, func() { stop(errOperatorCancel) })
+	captureStdout(t, func() { open(t, root).RunShift(ctx, "alpha", time.Now(), true, false) })
+	if test, grand, _ := pids(); runs(test) || runs(grand) {
+		t.Error("a shift the operator stops ends what it left running at once: it starts over")
 	}
 }
 
