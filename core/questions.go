@@ -104,7 +104,7 @@ func (t *Team) AskWith(q Question) (string, error) {
 
 func (c *Config) askQuestion(q Question) (string, error) {
 	clean := func(s string) string { return strings.Join(strings.Fields(s), " ") }
-	q.Text, q.Subject, q.Recommend, q.Importance = clean(q.Text), clean(q.Subject), clean(q.Recommend), strings.ToLower(clean(q.Importance))
+	q.Text, q.Subject, q.Recommend, q.Importance = keepLines(q.Text), clean(q.Subject), clean(q.Recommend), strings.ToLower(clean(q.Importance))
 	for i := range q.Options {
 		q.Options[i] = clean(q.Options[i])
 	}
@@ -139,7 +139,7 @@ func (c *Config) askQuestion(q Question) (string, error) {
 		}
 	}
 	for _, o := range c.Questions() { // the same question about something else is another question
-		if o.Agent == q.Agent && o.Text == q.Text && o.About == q.About {
+		if o.Agent == q.Agent && o.Line() == q.Line() && o.About == q.About {
 			return o.ID, nil
 		}
 	}
@@ -208,6 +208,23 @@ func aboutRef(text string) string {
 	return ""
 }
 
+// keepLines is a question's text with its paragraphs and lists, which the mail draws as Markdown:
+// each line without the spaces it ends with, and at most one blank line between two.
+func keepLines(text string) string {
+	var lines []string
+	for _, l := range strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n") {
+		l = strings.TrimRight(l, " \t\r")
+		if l == "" && (len(lines) == 0 || lines[len(lines)-1] == "") {
+			continue
+		}
+		lines = append(lines, l)
+	}
+	return strings.TrimSpace(strings.Join(lines, "\n"))
+}
+
+// Line is the question's text on one line, as a note or a list quotes it.
+func (q Question) Line() string { return strings.Join(strings.Fields(q.Text), " ") }
+
 // ref is the pull request or issue the question is about: the one it says, else the first its
 // text names in full; "" for none.
 func (q Question) ref() string {
@@ -229,7 +246,7 @@ func (t *Team) Answer(id, answer string) error {
 	if err != nil {
 		return err
 	}
-	if err := t.addNote(q.Agent, q.ref(), "human", fmt.Sprintf("answering your question \"%s\": %s", q.Text, answer), now); err != nil {
+	if err := t.addNote(q.Agent, q.ref(), "human", fmt.Sprintf("answering your question \"%s\": %s", q.Line(), answer), now); err != nil {
 		return err
 	}
 	if !t.Steerable(q.Agent) { // its running shift gets the answer
@@ -247,7 +264,7 @@ func (t *Team) Dismiss(id string) error {
 		return err
 	}
 	return t.addNote(q.Agent, q.ref(), "human",
-		fmt.Sprintf("dismissed your question \"%s\" without an answer: do not ask it again unless something about it changes", q.Text), now)
+		fmt.Sprintf("dismissed your question \"%s\" without an answer: do not ask it again unless something about it changes", q.Line()), now)
 }
 
 // Withdraw closes one of the agent's own questions that no longer needs an answer.
@@ -289,7 +306,7 @@ func (t *Team) settleQuestions(repo string, items map[int]openItem, held []strin
 		if _, err := t.closeQuestion(q.ID, func(Question) error { return nil }, func(q *Question) { q.Withdrawn, q.Settled = now, why }); err != nil {
 			continue // answered meanwhile
 		}
-		if err := t.addNote(q.Agent, ref, "organizer", fmt.Sprintf("your question \"%s\" closed unanswered, as %s: ask it again only if it still needs the human", q.Text, why), now); err != nil {
+		if err := t.addNote(q.Agent, ref, "organizer", fmt.Sprintf("your question \"%s\" closed unanswered, as %s: ask it again only if it still needs the human", q.Line(), why), now); err != nil {
 			fmt.Fprintln(os.Stderr, "warn: the note on a closed question:", err)
 		}
 	}
@@ -359,7 +376,7 @@ func (c *Config) questionsFor(agent string) string {
 	var lines []string
 	for _, q := range c.Questions() {
 		if q.Agent == agent {
-			lines = append(lines, "- "+q.Asked.In(c.Zone.Location).Format("2006-01-02")+", id "+q.ID+": "+q.Text)
+			lines = append(lines, "- "+q.Asked.In(c.Zone.Location).Format("2006-01-02")+", id "+q.ID+": "+q.Line())
 		}
 	}
 	return orNone(strings.Join(lines, "\n"))

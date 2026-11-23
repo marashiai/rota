@@ -863,7 +863,7 @@ func (c *console) pickQuestion(title string, do func(core.Question)) {
 	default:
 		var ids, labels []string
 		for _, q := range qs {
-			ids, labels = append(ids, q.ID), append(labels, q.Agent+": "+q.Text)
+			ids, labels = append(ids, q.ID), append(labels, q.Agent+": "+q.Line())
 		}
 		c.pick(title, ids, labels, "", func(id string) {
 			for _, q := range qs {

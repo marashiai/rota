@@ -206,7 +206,7 @@ func (t *Team) summarize(ctx context.Context, summary, from, news string, at tim
 func (t *Team) reportPrompt(summary, from, news string, at time.Time) string {
 	var qs strings.Builder
 	for _, q := range t.Questions() {
-		fmt.Fprintf(&qs, "- %s asks: %s\n", q.Agent, strings.Join(strings.Fields(q.Text), " "))
+		fmt.Fprintf(&qs, "- %s asks: %s\n", q.Agent, q.Line())
 	}
 	done := ""
 	if from != at.Format("2006-01-02") {

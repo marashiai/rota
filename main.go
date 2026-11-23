@@ -85,8 +85,8 @@ in an agent's shift:
   ask <question> [--subject "<a few words>"] [--option "<answer>"]... [--recommend "<answer>"]
         [--step "<step>"]... [--importance high|low] [--about <repo>#<n>]
                     ask the human in their mail, which they read when they choose; prints the
-                    question's id. Options are the answers they tap, steps make a to-do they
-                    tick and mark done
+                    question's id. Its text keeps its paragraphs and lists (Markdown); options
+                    are the answers they tap, steps make a to-do they tick and mark done
   wait <id>         wait up to 8 minutes for the answer; says whether to keep waiting
   say [--end] <text>
                     answer what the human wrote you in the team chat, where they hear of it at

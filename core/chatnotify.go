@@ -173,9 +173,9 @@ func (t *Team) Notice(now time.Time) Notice {
 	}
 	if len(asked) > 0 && asked[len(asked)-1].Asked.After(n.At) {
 		q := asked[len(asked)-1]
-		n = Notice{Title: q.Agent + " asks you", Body: or(q.Subject, q.Text), Tag: "rota-questions", URL: "/#questions", At: q.Asked}
+		n = Notice{Title: q.Agent + " asks you", Body: or(q.Subject, q.Line()), Tag: "rota-questions", URL: "/#questions", At: q.Asked}
 		if len(asked) > 1 {
-			n.Title, n.Body = strconv.Itoa(len(asked))+" questions for you", q.Agent+": "+or(q.Subject, q.Text)
+			n.Title, n.Body = strconv.Itoa(len(asked))+" questions for you", q.Agent+": "+or(q.Subject, q.Line())
 		}
 	}
 	if t.Notifies("") {

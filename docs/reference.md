@@ -36,7 +36,8 @@ line `@human: <question>` is a question for you: it waits in `questions/`, the c
 show it and macOS notifies you, and your answer, from either, goes to the agent's inbox and wakes it for a
 shift, even one not due yet. Until then the agent's brief lists it, so it does not ask again. During a
 shift on the organizer's machine an agent asks at once with `rota ask <question>`, keeps working, and
-`rota wait <id>` brings it your answer. `rota ask` also takes a subject the inbox shows it by
+`rota wait <id>` brings it your answer. Its text keeps its paragraphs and lists, which the mail shows as
+Markdown. `rota ask` also takes a subject the inbox shows it by
 (`--subject`), the answers you tap, the one it recommends (`--option`, `--recommend`), the steps of a to-do
 you tick and mark done (`--step`), how much it matters (`--importance`) and what it is about (`--about`); after `answer_minutes` (30) without one it sets that work aside
 for a later shift. You can dismiss a question instead of answering it: it closes, and the agent's inbox

@@ -443,6 +443,17 @@ func TestAQuestionSaysWhatTheHumanNeeds(t *testing.T) {
 	if th := threadOf(t, open(t, root).Mail(time.Now()), "q:"+spaced); th.Msgs[0].Steps[0] != "cp 'a  b.env' .env" {
 		t.Fatalf("a step's command keeps its spaces: %q", th.Msgs[0].Steps[0])
 	}
+	listed, _ := team.AskWith(Question{Agent: "developer", Text: "The plan, in order:  \r\n1. the share code\n2. the play host\n\n\n\nAgree?\n",
+		Options: []string{"Agree", "Change it"}})
+	if th := threadOf(t, open(t, root).Mail(time.Now()), "q:"+listed); th.Msgs[0].Text != "The plan, in order:\n1. the share code\n2. the play host\n\nAgree?" {
+		t.Fatalf("a question keeps its list and its paragraphs: %q", th.Msgs[0].Text)
+	}
+	if err := team.Answer(listed, "Agree"); err != nil {
+		t.Fatal(err)
+	}
+	if n := team.Notes("developer"); !strings.Contains(n[len(n)-1].Text, `"The plan, in order: 1. the share code 2. the play host Agree?": Agree`) {
+		t.Fatalf("the answer quotes the question on one line: %q", n[len(n)-1].Text)
+	}
 	if err := team.Answer(id, "Drop it"); err != nil {
 		t.Fatal(err)
 	}
