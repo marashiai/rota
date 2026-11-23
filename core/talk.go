@@ -41,6 +41,7 @@ type chatTalk struct {
 	Heard   []Note    `json:"heard,omitempty"`   // what rota listen brought in this shift's talks: read
 	Ended   string    `json:"ended,omitempty"`   // why the last one ended: end (the agent ended it) or quiet
 	Stop    *talkStop `json:"stop,omitempty"`    // the human stopped the agent: what the organizer's steering tells the shift, at its next look
+	Replied bool      `json:"replied,omitempty"` // the shift answered the human in the chat: what it says there later goes on what they began
 }
 
 // talkStop is the human stopping an agent at work here that has their words (chatedit.go): the shift
@@ -263,28 +264,37 @@ func (c *Config) HeardText(h Heard) string {
 
 // sayInTalk is the agent's words in its talk, and last, its last words, which end it. Outside a
 // talk, words that answer the human's in the chat of the last talk_minutes begin one: those reached
-// the shift as it began, in its brief, and the human may be there still; so do words that answer
-// nothing, first: the agent needs the human now (it writes the chat only for that), and waits for
-// their answer as in any talk.
-func (c *Config) sayInTalk(agent string, last, first bool) error {
+// the shift as it began, in its brief, and the human may be there still. Answering, or in a talk,
+// the shift has answered the human in the chat (answeredInChat).
+func (c *Config) sayInTalk(agent string, last, answering bool) error {
 	unlock, err := c.lockInbox(agent)
 	if err != nil {
 		return err
 	}
 	defer unlock()
 	tk, now := c.loadTalk(agent), time.Now()
+	replied := tk.Replied
+	if c.Steerable(agent) && (answering || tk.Open) {
+		tk.Replied = true
+	}
 	switch {
 	case tk.Open && last:
 		tk.end("end")
 	case tk.Open:
 		tk.heard(now)
 		tk.Last = now
-	case !last && c.Steerable(agent) && (first || c.wroteTo(agent, now.Add(-c.talkQuiet()))):
-		tk = chatTalk{Open: true, Since: now, Last: now, Heard: tk.Heard, Stop: tk.Stop}
-	default:
+	case !last && c.Steerable(agent) && c.wroteTo(agent, now.Add(-c.talkQuiet())):
+		tk = chatTalk{Open: true, Since: now, Last: now, Heard: tk.Heard, Stop: tk.Stop, Replied: tk.Replied}
+	case tk.Replied == replied:
 		return nil
 	}
 	return c.saveTalk(agent, tk)
+}
+
+// answeredInChat says whether the agent's running shift here answered the human in the chat: what
+// it says there now goes on what they began, as telling them that what it said it would do is done.
+func (c *Config) answeredInChat(agent string) bool {
+	return c.Steerable(agent) && c.loadTalk(agent).Replied
 }
 
 // wroteTo says whether the human wrote to the agent in the chat since then.

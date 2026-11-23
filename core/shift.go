@@ -501,11 +501,6 @@ func (t *Team) record(ctx context.Context, a *Agent, r Run, res Result, text str
 	}
 	fmt.Printf("%s: %s on %s, %s of the team pool, %d turns, %d min\n", a.Name, r.Status, vars["{host}"], r.PctText(t.Config), r.Turns, r.Seconds/60)
 	if lines, asks := forHuman(text), humanQuestions(text); r.Status == "ok" && (lines != "" || len(asks) > 0) {
-		if lines != "" { // the human's mail has it as the agent's message, beside the day's report
-			if err := t.keepUpdate(a.Name, lines, vars["{log}"], ended); err != nil {
-				fmt.Fprintln(os.Stderr, "warn: the update for the human:", err)
-			}
-		}
 		if err := t.report(ctx, a.Name, lines, asks, ended); err != nil {
 			fmt.Fprintln(os.Stderr, "warn: the report:", err)
 		}

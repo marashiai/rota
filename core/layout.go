@@ -20,7 +20,6 @@ const (
 	evidenceDir  = "evidence"       // evidence/<repo>-<branch>/: screenshots, test output and reviews a pull request points to
 	questionsDir = "questions"      // questions/<id>.json: what agents asked the human, while open
 	closedDir    = "closed"         // questions/closed/<id>.json: answered, dismissed or withdrawn
-	updatesDir   = "updates"        // updates/<id>.json: what a shift said the human should know, one message each
 	sentDir      = "sent"           // sent/<id>.json: a message the human sent an agent, and its answers
 	chatFile     = "chat.jsonl"     // the team chat: the human, the Team and the agents at work, a line each
 	mailFile     = ".mail.json"     // the human's marks on their mail: read, starred, snoozed, archived, moved; and how they like it

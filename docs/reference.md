@@ -42,7 +42,10 @@ you tick and mark done (`--step`), how much it matters (`--importance`) and what
 for a later shift. You can dismiss a question instead of answering it: it closes, and the agent's inbox
 says so. An agent withdraws its own question that no longer needs an answer with a line
 `@human withdraw <id>` in its final message (its brief lists the ids), or `rota withdraw <id>` during
-its shift. Closed questions are kept in `questions/closed/`.
+its shift. A question about a pull request or issue closes by itself once GitHub no longer lists that one
+as open, merged or closed, so it does not wait on you for nothing: the mail says why, and the agent's inbox
+too, which asks again only if it still needs you. One whose pull request or issue carried the `hold_label`
+stays, as its rollout may still wait on you. Closed questions are kept in `questions/closed/`.
 
 An agent with `until_done: true` runs shift after shift while each ends with `More: yes`,
 then waits for one of its triggers, a note from you or your answer; `every` does not apply to it.
@@ -402,10 +405,14 @@ you open a page.
 `rota start` serves the team on `http://127.0.0.1:7900` as a mail client, on a phone and on a computer
 alike. It is where you use rota:
 
-- **Inbox**: what needs you in Focused, the smaller things in Other, and what the team did in Updates.
-  Each agent's question is a thread: you answer it with a tap when it offers answers, tick off a to-do's
-  steps, or write back. Each pull request that waits for your review is a thread too, with the notes you
-  sent and the agents' answers to each; you review it in gloss and approve or reply from the thread. You
+- **Inbox**: what needs you in Focused, the smaller things in Other, and the day's report in Updates.
+  The team writes you only when it needs you: what a shift says you should know is in the report, no
+  message of its own. Each agent's question is a thread: you answer it with a tap when it offers answers,
+  tick off a to-do's steps, or write back. Each pull request that waits for your review is a thread too,
+  from its author, with why it comes there in the order to review them as a line ("Why here"), which
+  ordering them again does not touch, and the notes you sent and the agents' answers to each; you review
+  it in gloss and approve or reply from the thread. An agent's answer to your message leaves the inbox
+  once you read it. You
   star, snooze, archive or move a thread, by a swipe on a phone or a key on a computer (`?` lists them).
 - **Folders**: Reviews (every open pull request, in the order to review it, each under what it waits
   for), Waiting (what an agent is on for you), Starred, Snoozed, Sent, All messages, Issues (the open
@@ -486,8 +493,10 @@ alike. It is where you use rota:
   else and you say no), when neither of you says anything for `talk_minutes` (5), or with its shift;
   then it goes back to its work where it left it, and the chat says so. Your first words tell it what to
   do even when your team's own `brief.md` predates talks. A new rota waits for a talk to end before it
-  takes over the running shift. An agent answers you in its chat, never in your mail, and asks you there
-  too. Offline, when it is not its turn, your words wait for its next shift, which answers them first
+  takes over the running shift. An agent answers you in its chat, never in your mail. The chat is yours
+  to begin: an agent never writes you there first (rota refuses it), and what it needs from you it asks
+  in your mail, so one question reaches you once. A shift that answered you there may still tell you
+  there, later, that what it said it would do is done. Offline, when it is not its turn, your words wait for its next shift, which answers them first
   thing: they ask for that shift, as a message does, the chat says so, and it shows the agent typing as
   that shift begins. One at work on another machine, away from the chat, gets them after its current
   step and answers as its shift there ends (a line `@human say: <answer>` in its final message). Words a
@@ -546,9 +555,8 @@ With `web: tailscale`, rota also has Tailscale serve the pages over HTTPS at thi
 tailnet), and the agents' links use that address. Something else Tailscale already serves on port 443 is
 left alone. In Settings there, "Turn on" under This device registers it for notifications (`push.json` in
 the team folder), and each device gets a push signed with the team's key (`secrets/web-push-key.pem`, made
-once), as Settings › Notifications says you hear of each: Chat, what is synchronous and needs you now,
-when an agent or the Team says you something in the chat that you did not see within ten seconds on any
-device (All, or None); Messages, your mail, which you read when you choose, when an agent asks you
+once), as Settings › Notifications says you hear of each: Chat, your talks, when an agent or the Team
+answers you in the chat and you did not see it within ten seconds on any device (All, or None); Messages, your mail, which you read when you choose, when an agent asks you
 something or answers your review notes (Focused: all but the unimportant; All; or None). The push carries
 no content: the phone fetches what to show from the pages over the tailnet (`notify.json`) and shows the
 newest; off the tailnet it only says an agent asks or tells you something. Tapping it opens the chat, the
@@ -754,7 +762,8 @@ for that test run, and ends them, from when the first shift began, when it ends.
 waits for you, what was done today and what was found, each in a line with its link, about 200 words.
 Every shift ends with a "For the human" section, or "none": an agent writes there only what is new and
 needs you, such as a serious problem it found, never that nothing needs you, nor what already waits in
-your inbox; it comes to you as its message. When one ends with something for you, or with a question, the organizer has `report_model` (sonnet, no tools) write the report anew from
+your inbox. It goes into this report, and is no message of its own: what only you can decide is a
+question. When one ends with something for you, or with a question, the organizer has `report_model` (sonnet, no tools) write the report anew from
 the report as it stands, that section and the open questions. So it is never more than a shift behind,
 and what is done no longer waits. Each day has its own report, and earlier days' reports are kept as
 they were. A new day starts from the last day's: what waited still waits, and Done today starts empty.

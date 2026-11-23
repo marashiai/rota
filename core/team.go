@@ -624,7 +624,7 @@ func (c *Config) Stamp() string {
 	for _, f := range []string{stateFile, spendFile, hostsFile, ".paused", ".run-now", logDir, openFile, queueFile, planFile, seenFile, mailFile, filterFile(ReviewsTab), filterFile(IssuesTab), steerDir, talkDir, chatFile, ".chat-busy"} {
 		add(c.Path(f))
 	}
-	for _, dir := range []string{journalDir, reportsDir, questionsDir, inboxDir, agentsDir, updatesDir, sentDir} {
+	for _, dir := range []string{journalDir, reportsDir, questionsDir, inboxDir, agentsDir, sentDir} {
 		add(c.Path(dir))
 		entries, _ := os.ReadDir(c.Path(dir))
 		for _, e := range entries {

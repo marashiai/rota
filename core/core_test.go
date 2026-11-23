@@ -2843,6 +2843,70 @@ func TestAQuestionCanBeDismissedOrWithdrawn(t *testing.T) {
 	}
 }
 
+// A question about a pull request or issue closes by itself once GitHub no longer lists that one as
+// open: merged or closed, it would wait on the human for nothing. Its agent is told, and the mail
+// says why. One whose pull request carried the hold_label stays, at every list after, as its
+// rollout may still wait on the human; so do one written since GitHub was asked, and one about what
+// is still open.
+func TestAQuestionClosesWithWhatItIsAbout(t *testing.T) {
+	root := t.TempDir()
+	write(t, filepath.Join(root, "rota.conf"), "usage: off\nlisten: off\nhold_label: rota:needs-rollout\n")
+	write(t, filepath.Join(root, "agents", "alpha.md"), "---\nenabled: true\nrepos: o/app\n---\nalpha\n")
+	prs := filepath.Join(root, "prs.json")
+	fakeGh(t, `case "$1 $2" in "pr list") cat `+prs+`;; *) echo '[]';; esac`)
+	pr := func(n int, labels string) string {
+		return `{"number":` + strconv.Itoa(n) + `,"title":"t","headRefName":"alpha/x","baseRefName":"main","headRefOid":"abc","updatedAt":"2026-11-05T10:00:00Z","body":"","labels":[` + labels + `]}`
+	}
+	list := func(prs ...string) {
+		t.Helper()
+		write(t, filepath.Join(root, "prs.json"), "["+strings.Join(prs, ",")+"]")
+		fresh, retry := openFresh, openRetry
+		openFresh, openRetry = 0, 0 // asked now
+		open(t, root).refreshOpen()
+		openFresh, openRetry = fresh, retry
+	}
+	list(pr(1, ""), pr(2, ""), pr(3, `{"name":"rota:needs-rollout"}`))
+	team := open(t, root)
+	asked := time.Now().Add(-time.Minute)
+	merged, _ := team.askQuestion(Question{Agent: "alpha", Text: "Open an issue for the rest?", About: "o/app#1", Asked: asked})
+	still, _ := team.askQuestion(Question{Agent: "alpha", Text: "Keep the flag?", About: "o/app#2", Asked: asked})
+	rollout, _ := team.askQuestion(Question{Agent: "alpha", Text: "Roll it out", About: "o/app#3", Asked: asked, Steps: []string{"Turn it on"}})
+	since, _ := team.askQuestion(Question{Agent: "alpha", Text: "And the new one?", About: "o/app#4", Asked: asked}) // at its shift's start
+	later := time.Now().Add(time.Hour)                                                                               // written as the next list is under way
+	os.Chtimes(filepath.Join(root, "questions", since+".json"), later, later)
+	list(pr(2, ""))
+	var left []string
+	for _, q := range team.Questions() {
+		left = append(left, q.ID)
+	}
+	want := []string{still, rollout, since}
+	slices.Sort(left)
+	slices.Sort(want)
+	if !slices.Equal(left, want) {
+		t.Fatalf("only the question about the merged one closes: %v, not %s", left, merged)
+	}
+	if b := inboxText(team, "alpha"); !strings.Contains(b, `your question "Open an issue for the rest?" closed unanswered, as o/app#1 is no longer open`) {
+		t.Fatalf("its agent is told:\n%s", b)
+	}
+	if _, _, err := team.WaitAnswer(merged, time.Second, time.Time{}); err == nil || !strings.Contains(err.Error(), "closed unanswered: o/app#1 is no longer open") {
+		t.Fatalf("a shift waiting for it hears why: %v", err)
+	}
+	th := threadOf(t, team.Mail(time.Now()), "q:"+merged)
+	if th.Box != BoxDone || th.Msgs[len(th.Msgs)-1].From != "team" || th.Msgs[len(th.Msgs)-1].Text != "_Closed unanswered: o/app#1 is no longer open._" {
+		t.Fatalf("the mail says why it closed: %+v", th)
+	}
+	list(pr(2, ""))
+	if len(team.Questions()) != 3 {
+		t.Fatalf("what closed carrying the hold_label holds its question at every list after: %d open", len(team.Questions()))
+	}
+	team.Withdraw("alpha", rollout)
+	list(pr(2, ""))
+	var l openList
+	if b, err := os.ReadFile(filepath.Join(root, openFile)); err != nil || json.Unmarshal(b, &l) != nil || len(l.Held) != 0 {
+		t.Fatalf("what is held goes once no question is about it: %+v %v", l.Held, err)
+	}
+}
+
 // During its shift an agent asks with rota ask and waits for the answer with rota wait: the
 // answer arrives at once, or after answer_minutes it is told to set the work aside.
 func TestAShiftAsksAndWaitsForTheAnswer(t *testing.T) {

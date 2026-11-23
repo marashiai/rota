@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -388,9 +389,17 @@ func (t *Team) saidLast(agent, line string) bool {
 // ChatSay is what an agent says in the chat from its shift, with rota say: an agent's name only,
 // never the Team's. It answers what the human wrote it since its last words, as the Team's answer
 // does, and names the last. In a talk, it is the agent's turn in it; last, its last words, which
-// end it. Words that answer nothing begin a talk: the agent needs the human now, and waits there
-// for their answer.
+// end it. The chat is the human's to begin: words that answer nothing are refused, and the agent
+// asks in the mail instead, so one question reaches the human once; unless they go on what the
+// human began, in a talk, with the human there in the last talk_minutes, or once the shift answered
+// them in the chat (what it said it would do, done).
 func (t *Team) ChatSay(agent, text string, last bool) error {
+	return t.chatSay(agent, text, last, false)
+}
+
+// chatSay is ChatSay; invited, the words go on what the human began, as the same final message's
+// answer to them before.
+func (t *Team) chatSay(agent, text string, last, invited bool) error {
 	text = strings.TrimSpace(text)
 	switch {
 	case text == "":
@@ -402,14 +411,20 @@ func (t *Team) ChatSay(agent, text string, last bool) error {
 	}
 	said := ChatMsg{From: agent, Text: text}
 	asked := chatPending(t.Chat(400), agent)
+	if len(asked) == 0 && !invited && !t.Talking(agent) && !t.wroteTo(agent, time.Now().Add(-t.talkQuiet())) && !t.answeredInChat(agent) {
+		return errUninvited
+	}
 	if len(asked) > 0 {
 		said.Answer = asked[len(asked)-1].ID
 	}
 	if _, err := t.chatAppend(said); err != nil {
 		return err
 	}
-	return t.sayInTalk(agent, last, len(asked) == 0)
+	return t.sayInTalk(agent, last, len(asked) > 0)
 }
+
+// errUninvited is rota say with nothing of the human's to answer.
+var errUninvited = errors.New("nothing the human wrote you in the team chat waits for your answer, and the chat is theirs to begin: ask them in their mail with rota ask, and go on with your work")
 
 // Presence is an agent as the chat shows it: online while it works here, when what the human
 // writes it reaches its shift after its current step and it stops its work to talk with them, or

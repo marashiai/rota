@@ -16,16 +16,17 @@ import (
 	"unicode"
 )
 
-// The human's mail: what the team asks and tells the human, as threads a mail client shows. Each
-// thread is made from what rota keeps anyway: a question an agent asked, a pull request that
-// waits for the human, what a shift said the human should know, the day's report. Only the human's own marks are kept for the mail itself, in .mail.json:
+// The human's mail: what the team asks the human, as threads a mail client shows. Each thread is
+// made from what rota keeps anyway: a question an agent asked, a pull request that waits for the
+// human, the human's message to an agent and its answers, the day's report. What a shift says the
+// human should know is no message: the day's report has it. Only the human's own marks are kept for the mail itself, in .mail.json:
 // what they read, starred, snoozed, archived or moved, and how they like their inbox.
 
 // Where a thread is.
 const (
 	BoxInbox   = "inbox"   // it needs the human
 	BoxWaiting = "waiting" // the human waits on an agent
-	BoxUpdates = "updates" // the team tells the human something; nothing to do
+	BoxUpdates = "updates" // the day's report: nothing to do
 	BoxDone    = "done"    // answered, archived or approved
 	BoxOpen    = "open"    // a pull request the agents still work on: listed, not in the inbox
 )
@@ -41,7 +42,7 @@ const (
 	rankLow
 )
 
-// mailKeep is how long what is done stays in the mail: answered questions, updates, reports.
+// mailKeep is how long what is done stays in the mail: answered questions, read answers.
 const mailKeep = 30 * 24 * time.Hour
 
 // reportDays is how many days' reports the mail holds.
@@ -50,7 +51,7 @@ const reportDays = 7
 // Thread is one conversation about one thing.
 type Thread struct {
 	ID      string    `json:"id"`
-	Kind    string    `json:"kind"` // ask, do (a to-do: steps the human takes), review, update, digest, or msg (the human's message to an agent)
+	Kind    string    `json:"kind"` // ask, do (a to-do: steps the human takes), review, digest, or msg (the human's message to an agent)
 	Box     string    `json:"box"`
 	Subject string    `json:"subject"`
 	Repo    string    `json:"repo,omitempty"`  // owner/name
@@ -87,6 +88,7 @@ type PRThread struct {
 	Depth    int      `json:"depth,omitempty"` // how far it sits under the one it waits for
 	Waiting  int      `json:"waiting,omitempty"`
 	Answered bool     `json:"answered,omitempty"` // an agent answered the human's notes since they last opened the review
+	Why      string   `json:"why,omitempty"`      // why it comes there in the order to review them, as the agent that ordered them said: a line of the thread, no message
 	Labels   []string `json:"labels,omitempty"`   // its own labels, then those of the open issues it is for: what the Reviews folder narrows to
 	Marks    []Mark   `json:"marks,omitempty"`    // where it stands, as the console marks it, which narrows the folder too
 }
@@ -252,6 +254,7 @@ type mailMark struct {
 	Ticks  []int     `json:"ticks,omitempty"`
 	Box    string    `json:"box,omitempty"` // of a pull request: where it was last seen, and since when
 	In     time.Time `json:"in,omitzero"`
+	Kept   bool      `json:"kept,omitempty"` // moved back to the inbox: an answer the human read stays there until archived
 }
 
 // mailState is .mail.json.
@@ -314,10 +317,12 @@ func (t *Team) Mail(now time.Time) Mail {
 	labels := t.repoLabels()
 	threads := t.questionThreads(labels, now)
 	threads = append(threads, t.reviewThreads(labels)...)
-	threads = append(threads, t.updateThreads(now)...)
 	threads = append(threads, t.reportThreads(now)...)
 	threads = append(threads, t.messageThreads(labels, now)...)
 	t.markThreads(threads, now)
+	threads = slices.DeleteFunc(threads, func(th Thread) bool { // an answer read, done, goes after mailKeep as any done thread
+		return th.Kind == "msg" && th.Box == BoxDone && now.Sub(th.At) > mailKeep
+	})
 	slices.SortStableFunc(threads, func(a, b Thread) int { return b.At.Compare(a.At) })
 	m := Mail{Threads: threads, Members: t.Members(now), Repos: []RepoLabel{}, Prefs: t.mailPrefs(), Filters: map[string]MailFilter{}}
 	if s, _, _ := t.readMail(); s.Filters != nil {
@@ -337,7 +342,8 @@ func (t *Team) Mail(now time.Time) Mail {
 // markThreads puts the human's marks on the threads: an archived one is done until it brings
 // something new, and one back from a snooze is new again. A pull request's thread is new when it
 // comes into the inbox, which the mail keeps: GitHub does not say when it began to wait for the
-// human. What the mail finds when it begins counts as read.
+// human. An agent's answer to the human's message is done once they read it. What the mail finds
+// when it begins counts as read.
 func (t *Team) markThreads(threads []Thread, now time.Time) {
 	s, ok, err := t.readMail()
 	if !ok {
@@ -369,6 +375,9 @@ func (t *Team) markThreads(threads []Thread, now time.Time) {
 			th.Box = BoxDone
 		}
 		th.Unread = m.Unread || th.news.After(later(m.Read, s.Since))
+		if th.Kind == "msg" && th.Box == BoxInbox && !th.Unread && !m.Kept { // an answer the human read needs nothing more of them
+			th.Box = BoxDone
+		}
 	}
 	if err != nil || ok && len(moved) == 0 {
 		return
@@ -443,7 +452,7 @@ func (c *Config) markMail(id, action, arg string, now time.Time) (was mailMark, 
 		case "archive":
 			m.Done = now
 		case "unarchive":
-			m.Done = time.Time{}
+			m.Done, m.Kept = time.Time{}, true
 		case "snooze":
 			m.Snooze = until
 		case "unsnooze":
@@ -480,7 +489,7 @@ func (c *Config) mailPrefs() MailPrefs {
 
 // Notifies says whether the human's devices hear of something in their mail of importance (high,
 // "" or low), as they chose: everything, what Focused shows (all but the unimportant), or nothing.
-// The mail is what they read when they choose; the chat, what needs them now, has a setting of its
+// The mail is what they read when they choose; the chat, their talks, which only they begin, has a setting of its
 // own (NotifiesChat).
 func (c *Config) Notifies(importance string) bool {
 	switch c.mailPrefs().Notify {
@@ -575,6 +584,8 @@ func (t *Team) questionThreads(labels map[string]string, now time.Time) []Thread
 			th.Msgs = append(th.Msgs, Message{From: "you", To: q.Agent, At: q.Answered, Text: q.Answer})
 		case !q.Dismissed.IsZero():
 			th.Msgs = append(th.Msgs, Message{From: "you", To: q.Agent, At: q.Dismissed, Text: "_Dismissed without an answer._"})
+		case q.Settled != "":
+			th.Msgs = append(th.Msgs, Message{From: "team", At: q.Withdrawn, Text: "_Closed unanswered: " + q.Settled + "._"})
 		case !q.Withdrawn.IsZero():
 			th.Msgs = append(th.Msgs, Message{From: q.Agent, At: q.Withdrawn, Text: "_No longer needs an answer._"})
 		}
@@ -692,12 +703,10 @@ func (t *Team) reviewThreads(labels map[string]string) []Thread {
 				say = "You approved it. It is a draft again, and merges once it is ready."
 			}
 		}
-		first := Message{From: from, To: "you", At: it.Updated, Text: say}
-		if p.Why != "" && q.By != "" {
-			first = Message{From: q.By, To: "you", At: q.Time, Text: p.Why}
-		}
-		th.Msgs = append([]Message{first}, talkMessages(it.Talk, pr.Author)...)
-		slices.SortStableFunc(th.Msgs, func(a, b Message) int { return a.At.Compare(b.At) })
+		pr.Why = p.Why // ordering them again, as the agent that orders them does every shift, brings the human nothing new
+		talked := talkMessages(it.Talk, pr.Author)
+		slices.SortStableFunc(talked, func(a, b Message) int { return a.At.Compare(b.At) })
+		th.Msgs = append([]Message{{From: from, To: "you", At: it.Updated, Text: say}}, talked...) // where it stands first: never after an answer, which shows open as the last
 		if p.answered {
 			if len(it.Talk.Notes) == 0 { // read before the talk was kept: its latest answer
 				th.Msgs = append(th.Msgs, Message{From: it.Talk.By, To: "you", At: it.Talk.Answered, Text: it.Talk.Answer})
@@ -769,61 +778,9 @@ func prSubject(title string) string {
 	return string(r)
 }
 
-// update is updates/<id>.json: what one shift said the human should know.
-type update struct {
-	Agent string    `json:"agent"`
-	At    time.Time `json:"at"`
-	Text  string    `json:"text"`
-	Log   string    `json:"log,omitempty"`
-}
-
-// keepUpdate keeps what a shift said the human should know as its message to them; updates older
-// than mailKeep go.
-func (c *Config) keepUpdate(agent, text, logPath string, at time.Time) error {
-	u := update{Agent: agent, At: at, Text: text}
-	if logPath != "" && logPath != "none" {
-		u.Log = filepath.Base(filepath.Dir(logPath)) + "/" + strings.TrimSuffix(filepath.Base(logPath), ".jsonl")
-	}
-	dir := c.Path(updatesDir)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
-	}
-	cutoff := at.Add(-mailKeep).Format("20060102")
-	if entries, err := os.ReadDir(dir); err == nil {
-		for _, e := range entries {
-			if name := e.Name(); len(name) >= 8 && name[:8] < cutoff {
-				os.Remove(filepath.Join(dir, name))
-			}
-		}
-	}
-	b, _ := json.Marshal(u)
-	id := at.Format("20060102-150405") + "-" + agent
-	tmp := filepath.Join(dir, "."+id+".tmp")
-	if err := os.WriteFile(tmp, b, 0o644); err != nil {
-		return err
-	}
-	return os.Rename(tmp, filepath.Join(dir, id+".json"))
-}
-
-// updateThreads are what the shifts said the human should know, each its own message.
-func (t *Team) updateThreads(now time.Time) []Thread {
-	files, _ := filepath.Glob(filepath.Join(t.Path(updatesDir), "*.json"))
-	var out []Thread
-	for _, f := range files {
-		var u update
-		if b, err := os.ReadFile(f); err != nil || json.Unmarshal(b, &u) != nil || now.Sub(u.At) > mailKeep {
-			continue
-		}
-		id := strings.TrimSuffix(filepath.Base(f), ".json")
-		out = append(out, Thread{ID: "u:" + id, Kind: "update", Box: BoxUpdates, Subject: subjectOf(u.Text), At: u.At, news: u.At,
-			Msgs: []Message{{From: u.Agent, To: "you", At: u.At, Text: u.Text, Log: u.Log}}})
-	}
-	return out
-}
-
 // messageThreads are the threads of the human's messages to agents: one waits while its agent
 // has not read one of the human's messages since its last answer, comes into the inbox when the
-// agent answers, and is otherwise only sent. One whose only message was taken back is gone. Seen
+// agent answers, until the human read it (markThreads), and is otherwise only sent. One whose only message was taken back is gone. Seen
 // is when the agent read the human's last message, if it read all of them.
 func (t *Team) messageThreads(labels map[string]string, now time.Time) []Thread {
 	var out []Thread

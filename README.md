@@ -167,8 +167,8 @@ machines can run its shifts. Nothing is opened to the internet.
    `https://<machine>.<tailnet>.ts.net`, and shows that address under the switch.
 4. Open that address on your phone. On an iPhone, add it to the Home Screen first (Share, Add to Home
    Screen) and open it from there. Then turn on notifications in
-   **Settings › Notifications › This device**. Chat is what needs you now: you hear at once of what an
-   agent or the Team says you there, unless you saw it. Messages are your mail, which you read when
+   **Settings › Notifications › This device**. Chat is your talks: you hear at once of what an agent or
+   the Team answers you there, unless you saw it; only you begin them. Messages are your mail, which you read when
    you choose: you hear of what lands in Focused (an agent asks you something or answers your review),
    of all of it, or of none.
 

@@ -126,7 +126,7 @@ function folder() {
 }
 
 // ---------- filters: what narrows any list of mail, and search, as its chips say ----------
-const KINDS = [['ask', 'Questions'], ['do', 'To-dos'], ['review', 'Pull requests'], ['msg', 'Your messages'], ['update', 'Updates'], ['digest', 'Reports']];
+const KINDS = [['ask', 'Questions'], ['do', 'To-dos'], ['review', 'Pull requests'], ['msg', 'Your messages'], ['digest', 'Reports']];
 const DATES = [['today', 'Today'], ['week', 'Past 7 days']];
 const filtering = () => Object.values(S.f).some(Boolean);
 const mailFolder = v => ['inbox', 'waiting', 'starred', 'snoozed', 'sent', 'all'].includes(v) || v.startsWith('repo:');
@@ -136,7 +136,7 @@ function passes(t) {
   if (c.unread && !t.unread && !S.keepRead.has(t.id)) return false; // one read while it is listed stays until the filters change
   if (c.star && !t.star) return false;
   if (c.from && !t.msgs.some(m => m.from === c.from)) return false;
-  if (c.kind && t.kind !== c.kind) return false;
+  if (c.kind && KINDS.some(k => k[0] === c.kind) && t.kind !== c.kind) return false; // a kind no longer made narrows nothing
   if (c.repo && t.repo !== c.repo) return false;
   if (c.date) { const d = new Date(); if (c.date === 'today') d.setHours(0, 0, 0, 0); else d.setDate(d.getDate() - 7); if (new Date(t.at) < d) return false; }
   return true;
@@ -170,7 +170,7 @@ function parse(q) {
   return f;
 }
 function hay(t) {
-  return (t.subject + ' ' + (t.label || '') + ' ' + (t.ref || '') + ' ' + ((repoOf(t.repo) || {}).name || '') + ' ' +
+  return (t.subject + ' ' + (t.label || '') + ' ' + (t.ref || '') + ' ' + ((repoOf(t.repo) || {}).name || '') + ' ' + ((t.pr && t.pr.why) || '') + ' ' +
     t.msgs.map(m => m.from + ' ' + (m.to || '') + ' ' + m.plain).join(' ')).toLowerCase();
 }
 function results() {
@@ -183,7 +183,7 @@ function results() {
     if (is.includes('unread') && !t.unread) return false;
     if (is.includes('starred') && !t.star) return false;
     if (is.includes('waiting') && t.box !== 'waiting') return false;
-    const kinds = {todo: 'do', question: 'ask', update: 'update', report: 'digest', pr: 'review'};
+    const kinds = {todo: 'do', question: 'ask', report: 'digest', pr: 'review'};
     for (const w of is) if (kinds[w] && t.kind !== kinds[w]) return false;
     if (is.includes('approved') && !(t.pr && t.pr.state === 'approved')) return false;
     if (is.includes('review') && !(t.pr && t.pr.state === 'review')) return false;
@@ -206,7 +206,7 @@ function people(t) {
   if (seen.length === 1 && seen[0] === 'me') return 'To: ' + esc(t.msgs[0].to || '');
   return esc(seen.join(', ')) + (t.msgs.length > 1 ? `<span class="cnt">${t.msgs.length}</span>` : '');
 }
-const TAG = {ask: ['Question', 'ask'], do: ['To do', 'do'], update: ['Update', 'update'], digest: ['Report', 'digest']};
+const TAG = {ask: ['Question', 'ask'], do: ['To do', 'do'], digest: ['Report', 'digest']};
 const PRTAG = {review: ['Review', 'review'], waiting: ['Waiting', 'wait'], approved: ['Approved', 'ok'], open: ['In progress', 'wait']};
 function kindTag(t) {
   const tag = t.pr ? PRTAG[t.pr.state] || PRTAG.open : TAG[t.kind];
@@ -221,6 +221,7 @@ function whyOf(t) {
 // snippet: what the newest message says beyond the subject the row already shows
 function snippet(t) {
   if (t.pr && t.pr.state === 'waiting') return esc(`${t.pr.author || 'An agent'} is working on your ${plural(t.pr.waiting || 1, 'note')}`);
+  if (t.pr && t.pr.why && t.msgs.length === 1) return hl(t.pr.why); // why it comes there in the order: what the human decides in it
   let p = last(t).plain.replace(/^[\w./-]+#\d+:\s*/, '');
   const s = t.subject.replace(/…$/, '');
   if (s && p.startsWith(s)) p = p.slice(s.length).replace(/^[\s.?!:;,]+/, '');
@@ -242,7 +243,7 @@ function emptyText() {
   if (filtering()) return [S.f.unread && Object.values(S.f).filter(Boolean).length === 1 ? 'No unread messages here' : 'No messages here match the filters', ''];
   if (S.view === 'inbox' && S.tab === 'focused') { const o = split().other.length; return ['Nothing needs you now', o ? `${plural(o, 'smaller thing')} wait${o === 1 ? 's' : ''} in Other.` : 'The team has all it needs.']; }
   if (S.view === 'inbox' && S.tab === 'other') return ['Nothing else', 'What needs you is in Focused.'];
-  if (S.view === 'inbox' && S.tab === 'updates') return ['No updates', 'The team tells you here what it did.'];
+  if (S.view === 'inbox' && S.tab === 'updates') return ['No reports', 'Your team\'s daily report comes here: what it did, and what you should know.'];
   if (S.view === 'waiting') return ['Nothing waits for an agent', 'What you send an agent waits here until it answers.'];
   return ['Nothing here', ''];
 }
@@ -477,6 +478,7 @@ function threadPane(id) {
   if (!t) return `<div class="empty"><b>No message selected</b>Choose one from the list.</div>`;
   const n = t.msgs.length, r = repoOf(t.repo);
   let h = `<div class="th"><h1>${esc(t.subject)}</h1><div class="chips">${statusChip(t)}${r ? `<span class="chip"><i style="--c:${r.color}"></i>${esc(r.name)}</span>` : ''}${t.label ? `<span class="chip ref">${esc(t.label)}</span>` : ''}${(t.why || []).map(w => `<span class="chip why amber">${esc(w)}</span>`).join('')}</div>`;
+  if (t.pr && t.pr.why) h += `<p class="plan"><b>Why here:</b> ${esc(t.pr.why)}</p>`;
   t.msgs.forEach((m, i) => {
     const open = i === n - 1 || t.expand;
     const who = m.from === 'you' ? 'You' : m.from === 'team' ? 'Team' : m.from;
@@ -1122,7 +1124,7 @@ function screenContext() {
   if (t) {
     if (t.pr) return {about: `Pull request ${t.ref || t.label}${quoted(t.subject)}${t.pr.author ? ', by ' + t.pr.author : ''}`, agent: agentOf(t.pr.author)};
     const who = peer(t), what = t.qid ? (t.kind === 'do' ? `${who}'s to-do for you` : `${who}'s question`) : t.kind === 'msg' ? `Your message to ${who}`
-      : t.kind === 'update' ? `${who}'s update` : t.kind === 'digest' ? 'The daily report' : 'A message';
+      : t.kind === 'digest' ? 'The daily report' : 'A message';
     return {about: what[0].toUpperCase() + what.slice(1) + quoted(t.subject) + (t.ref ? ` (${t.ref})` : ''), agent: agentOf(who)};
   }
   const run = /^run:(\d{4}-\d\d-\d\d)\/(\d\d)(\d\d)-(.+)$/.exec(S.view);

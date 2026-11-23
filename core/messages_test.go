@@ -34,7 +34,7 @@ func noteIDs(team *Team, agent, text string) map[string]bool {
 
 // The human's message to an agent reaches it as a note that names its id; the thread waits until
 // the agent reads it, is only sent once it did, and comes into the inbox when the agent answers,
-// with rota reply or a line in its final message. A message after it goes on in the same thread
+// with rota reply or a line in its final message, until the human read the answer. A message after it goes on in the same thread
 // and has an id of its own, which finds the thread.
 func TestAMessageAndItsAnswer(t *testing.T) {
 	root, team := mailTeam(t)
@@ -63,6 +63,14 @@ func TestAMessageAndItsAnswer(t *testing.T) {
 	th, _ := msgThread(t, root, id)
 	if th.Box != BoxInbox || !th.Unread || len(th.Msgs) != 2 || th.Msgs[1].From != "developer" || th.Msgs[1].Text != "Done: #676 is part of #673." {
 		t.Fatalf("the answer brings it to the inbox: %+v", th)
+	}
+	team.MarkMail("m:"+id, "read", "", time.Now())
+	if th, _ = msgThread(t, root, id); th.Box != BoxDone || th.Unread {
+		t.Fatalf("an answer the human read needs nothing more of them, and leaves the inbox: %+v", th)
+	}
+	team.MarkMail("m:"+id, "unread", "", time.Now())
+	if th, _ = msgThread(t, root, id); th.Box != BoxInbox {
+		t.Fatalf("marked unread, it is back: %+v", th)
 	}
 	if _, err := team.SendMessage("developer", "", "And rebase it.", id); err != nil {
 		t.Fatal(err)

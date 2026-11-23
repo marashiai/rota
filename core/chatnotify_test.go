@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -153,22 +154,42 @@ func TestTheChatHasANotificationSettingOfItsOwn(t *testing.T) {
 	}
 }
 
-// An agent that needs the human now writes them in the chat, and its first words begin a talk: it
-// waits there for their answer, which rota listen brings. Its last words end it.
-func TestAnAgentWritesTheHumanWhenItNeedsThemNow(t *testing.T) {
+// The chat is the human's to begin: an agent's words that answer nothing of theirs are refused,
+// from its shift here and from another machine, and it asks in the mail instead, so one question
+// reaches the human once. Once the human wrote it there, it answers them, and the shift that
+// answered them may tell them later what it said it would do, after the talk is over; its next
+// shift may not. A final message's lines after its answer go on it.
+func TestTheChatIsTheHumansToBegin(t *testing.T) {
 	team, _, _ := talkTeam(t)
-	if err := team.ChatSay("qa", "The deploy fails its health check: shall I roll it back?", false); err != nil || !team.Talking("qa") {
-		t.Fatalf("its first words begin a talk: %v", err)
+	before := len(team.Chat(400))
+	if err := team.ChatSay("qa", "The deploy fails its health check: shall I roll it back?", false); !errors.Is(err, errUninvited) || team.Talking("qa") || len(team.Chat(400)) != before {
+		t.Fatalf("words that answer nothing are refused, and say nothing: %v", err)
 	}
-	if busy := team.ChatBusy(); len(busy) != 0 {
-		t.Fatalf("it waits for the human; nobody answers yet: %v", busy)
+	if undelivered := team.routeNotes("qa", "## Notes to teammates\n@human say: shall I roll it back?\n", time.Now()); len(undelivered) != 1 || !strings.Contains(undelivered[0], "rota ask") {
+		t.Fatalf("nor from another machine: %v", undelivered)
 	}
-	team.ChatSend("@qa yes, roll it back", nil)
-	if h, err := team.Listen("qa", time.Second, time.Time{}); err != nil || team.HeardText(h) != "the human: yes, roll it back\n" {
-		t.Fatalf("rota listen brings their answer: %+v %v", h, err)
+	team.ChatSend("@qa is the deploy healthy?", nil)
+	if err := team.ChatSay("qa", "No: its health check fails. Shall I roll it back?", false); err != nil {
+		t.Fatalf("it answers what the human wrote it: %v", err)
 	}
-	if err := team.ChatSay("qa", "Rolled back; it is healthy again.", true); err != nil || team.Talking("qa") {
-		t.Fatalf("its last words end it: %v", err)
+	if msgs := team.Chat(400); msgs[len(msgs)-1].From != "qa" || msgs[len(msgs)-1].Answer == "" {
+		t.Fatalf("its answer names what it answers: %+v", msgs[len(msgs)-1])
+	}
+	if err := team.ChatSay("qa", "I will look into it and tell you here.", true); err != nil || team.Talking("qa") {
+		t.Fatalf("its last words end the talk: %v", err)
+	}
+	team.TalkMinutes = 0.0001 // the human went quiet long ago
+	time.Sleep(20 * time.Millisecond)
+	if err := team.ChatSay("qa", "Done: it is healthy again.", false); err != nil {
+		t.Fatalf("the shift that answered them tells them it is done: %v", err)
+	}
+	os.Remove(team.talkFile("qa")) // its next shift
+	if err := team.ChatSay("qa", "Anything else?", false); !errors.Is(err, errUninvited) {
+		t.Fatalf("its next shift begins nothing: %v", err)
+	}
+	team.ChatSend("@qa and the logs?", nil)
+	if undelivered := team.routeNotes("qa", "## Notes to teammates\n@human say: The logs are clean.\n@human say: The alert is off too.\n", time.Now()); len(undelivered) != 0 {
+		t.Fatalf("a final message's line after its answer goes on it: %v", undelivered)
 	}
 }
 

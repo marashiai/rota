@@ -173,9 +173,12 @@ func (t *Team) routeNotes(from, text string, now time.Time) []string {
 			undelivered = append(undelivered, fmt.Sprintf("@human re %s: %v", m[1], err))
 		}
 	}
+	invited := false                                             // a line after its answer goes on what the human began
 	for _, m := range chatSaid.FindAllStringSubmatch(text, -1) { // its answer in the team chat, from where rota say does not work
-		if err := t.ChatSay(from, m[1], false); err != nil {
+		if err := t.chatSay(from, m[1], false, invited); err != nil {
 			undelivered = append(undelivered, fmt.Sprintf("@human say: %v", err))
+		} else {
+			invited = true
 		}
 	}
 	for _, m := range noteLine.FindAllStringSubmatch(text, -1) {

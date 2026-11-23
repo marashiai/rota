@@ -84,14 +84,15 @@ in an agent's shift:
                     clears it. Roles read it as {plan}; the Issues tab lists the issues in it
   ask <question> [--subject "<a few words>"] [--option "<answer>"]... [--recommend "<answer>"]
         [--step "<step>"]... [--importance high|low] [--about <repo>#<n>]
-                    ask the human in their mail, which they read when they choose (what needs
-                    them now, say in the team chat); prints the question's id. Options are the
-                    answers they tap, steps make a to-do they tick and mark done
+                    ask the human in their mail, which they read when they choose; prints the
+                    question's id. Options are the answers they tap, steps make a to-do they
+                    tick and mark done
   wait <id>         wait up to 8 minutes for the answer; says whether to keep waiting
   say [--end] <text>
-                    say something in the team chat, where the human hears of it at once: answer
-                    what they wrote you there, or, when you need them now, begin a talk; in a
-                    talk, your work waits until it is over, and --end says your last words in it
+                    answer what the human wrote you in the team chat, where they hear of it at
+                    once; the chat is theirs to begin, so with nothing of theirs to answer it is
+                    refused. In a talk, your work waits until it is over, and --end says your
+                    last words in it
   listen            in a talk, wait up to 90 seconds for the human's next words; says when the
                     talk is over: neither said anything for talk_minutes
   reply <id> <answer>
@@ -441,6 +442,9 @@ func command(ctx context.Context, args []string, root, conf string, now time.Tim
 		words, last := args[1:], false
 		if len(words) > 0 && words[0] == "--end" {
 			words, last = words[1:], true
+		}
+		if len(words) > 0 && strings.HasPrefix(strings.TrimSpace(words[0]), "-") { // --help, say: never words for the human
+			return fmt.Errorf("rota say knows --end, not %s: rota say [--end] <words>", words[0])
 		}
 		if err := t.ChatSay(agent, strings.Join(words, " "), last); err != nil {
 			return err

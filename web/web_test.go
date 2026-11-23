@@ -520,10 +520,10 @@ func TestTheAppReadsAndActsOnTheMail(t *testing.T) {
 			Rank                                            int
 			Unread                                          bool
 			PR                                              *struct {
-				State, Author string
-				Add           int
-				Labels        []string
-				Marks         []struct{ Emoji string }
+				State, Author, Why string
+				Add                int
+				Labels             []string
+				Marks              []struct{ Emoji string }
 			}
 			Msgs []struct {
 				From, HTML, Plain, Recommend string
@@ -552,7 +552,7 @@ func TestTheAppReadsAndActsOnTheMail(t *testing.T) {
 	if one.Box != "inbox" || one.PR.State != "review" || one.PR.Author != "alpha" || one.PR.Add != 5 || one.Review != "/review/o/app/1/" || one.URL != "https://github.com/o/app/pull/1" || one.Label != "app#1" {
 		t.Fatalf("a pull request ready for review: %+v %+v", one, one.PR)
 	}
-	if five.Subject != "<b>second</b> in the order" || five.Msgs[0].Plain != "it unblocks the release" || !(q.Rank < five.Rank && five.Rank < one.Rank) {
+	if five.Subject != "<b>second</b> in the order" || five.PR.Why != "it unblocks the release" || len(five.Msgs) != 1 || five.Msgs[0].From == "triage" || !(q.Rank < five.Rank && five.Rank < one.Rank) {
 		t.Fatalf("the question first, then the pull requests in the triage's order: %+v", five)
 	}
 	if three := m.Threads[byID["pr:o/app#3"]].PR; !slices.Equal(three.Labels, []string{"UI", "priority:high"}) || len(waits.PR.Marks) != 1 || waits.PR.Marks[0].Emoji != core.WaitsMark {

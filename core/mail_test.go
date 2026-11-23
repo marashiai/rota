@@ -43,9 +43,6 @@ func mailTeam(t *testing.T) (string, *Team) {
 	if err := team.Answer(id, "No"); err != nil {
 		t.Fatal(err)
 	}
-	if err := team.keepUpdate("developer", "Opened **#9**: a new stack gets its hosts by itself.\n\nNothing to do.", "/x/logs/2026-11-08/0200-developer.jsonl", asked); err != nil {
-		t.Fatal(err)
-	}
 	write(t, filepath.Join(root, reportsDir, time.Now().Format("2006-01-02")+".md"), "# Sunday 8 November\n\nAll quiet.\n")
 	return root, open(t, root)
 }
@@ -86,7 +83,8 @@ func TestTheMailHoldsWhatWaitsAndWhatHappened(t *testing.T) {
 		}
 	}
 	one := threadOf(t, m, "pr:o/shop-creator#1")
-	if one.Subject != "Ready one" || one.PR.Author != "developer" || one.PR.Add != 12 || one.Msgs[0].From != "triage" || one.Msgs[0].Text != "High: it blocks the rollout" ||
+	if one.Subject != "Ready one" || one.PR.Author != "developer" || one.PR.Add != 12 || one.PR.Why != "High: it blocks the rollout" || len(one.Msgs) != 1 ||
+		one.Msgs[0].From != "developer" || one.Msgs[0].Text != "Ready for your review." || !one.At.Equal(one.Msgs[0].At) ||
 		strings.Join(one.Why, ",") != "🔥 high,🚀 needs rollout" {
 		t.Fatalf("a pull request ready for review: %+v %+v", one, one.PR)
 	}
@@ -100,17 +98,14 @@ func TestTheMailHoldsWhatWaitsAndWhatHappened(t *testing.T) {
 	if !(five.Rank < ask.Rank && ask.Rank < one.Rank) {
 		t.Fatalf("an answer, then a question, then a review: ranks %d %d %d", five.Rank, ask.Rank, one.Rank)
 	}
-	var update, report Thread
+	var report Thread
 	for _, th := range m.Threads {
 		switch th.Kind {
 		case "update":
-			update = th
+			t.Fatalf("what a shift says the human should know is no message, only the day's report: %+v", th)
 		case "digest":
 			report = th
 		}
-	}
-	if update.Subject != "Opened #9: a new stack gets its hosts by itself" || update.Box != BoxUpdates || update.Msgs[0].Log != "2026-11-08/0200-developer" {
-		t.Fatalf("the update: %+v", update)
 	}
 	if report.Subject != "Your team today" || report.Msgs[0].Text != "All quiet." || report.Msgs[0].From != "team" {
 		t.Fatalf("the report: %+v", report)
@@ -314,22 +309,6 @@ func TestSubjects(t *testing.T) {
 		if got := subjectOf(in); got != want {
 			t.Errorf("subjectOf(%q) = %q, want %q", in, got, want)
 		}
-	}
-}
-
-func TestOldUpdatesGo(t *testing.T) {
-	_, team := mailTeam(t)
-	old := time.Now().Add(-mailKeep - 48*time.Hour)
-	team.keepUpdate("developer", "old news", "", old)
-	team.keepUpdate("developer", "new news", "", time.Now())
-	files, _ := filepath.Glob(filepath.Join(team.Path(updatesDir), "*.json"))
-	for _, f := range files {
-		if strings.HasPrefix(filepath.Base(f), old.Format("20060102")) {
-			t.Fatalf("%s is older than the mail keeps", f)
-		}
-	}
-	if len(files) != 2 { // the fixture's and the new one
-		t.Fatalf("%d updates kept", len(files))
 	}
 }
 

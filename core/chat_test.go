@@ -615,42 +615,45 @@ func TestTheTeamDoesWhatTheHumanCanDo(t *testing.T) {
 	}
 
 	// the mail filed, and back as it was
+	if _, err := team.ask("developer", "Keep the old logs?", time.Now().Add(-time.Hour)); err != nil {
+		t.Fatal(err)
+	}
 	m := team.Mail(time.Now())
-	var update, report string
+	var ask, report string // the open question and the day's report, which the human files as any thread
 	for _, th := range m.Threads {
-		switch th.Kind {
-		case "update":
-			update = th.ID
-		case "digest":
+		switch {
+		case th.Subject == "Keep the old logs?":
+			ask = th.ID
+		case th.Kind == "digest":
 			report = th.ID
 		}
 	}
 	refused(ChatChange{Do: "archive"}, ChatChange{Do: "archive", Threads: []string{"u:nothing"}},
-		ChatChange{Do: "snooze", Threads: []string{update}, Until: time.Now().Add(-time.Hour).Format(time.RFC3339)},
-		ChatChange{Do: "snooze", Threads: []string{update}, Until: "tomorrow"})
-	id, card = propose(ChatChange{Do: "archive", Threads: []string{update, report, update}})
+		ChatChange{Do: "snooze", Threads: []string{ask}, Until: time.Now().Add(-time.Hour).Format(time.RFC3339)},
+		ChatChange{Do: "snooze", Threads: []string{ask}, Until: "tomorrow"})
+	id, card = propose(ChatChange{Do: "archive", Threads: []string{ask, report, ask}})
 	if card.Title != "2 threads" || len(card.Lines) != 2 || len(card.Threads) != 2 {
 		t.Fatalf("the archive's card: %+v", card)
 	}
 	apply(id, "Archived: 2 threads")
-	if m := team.Mail(time.Now()); threadOf(t, m, update).Box != BoxDone || threadOf(t, m, report).Box != BoxDone {
+	if m := team.Mail(time.Now()); threadOf(t, m, ask).Box != BoxDone || threadOf(t, m, report).Box != BoxDone {
 		t.Fatal("archived")
 	}
 	undo(id, "as it was")
-	if m := team.Mail(time.Now()); threadOf(t, m, update).Box != BoxUpdates || threadOf(t, m, report).Box != BoxUpdates {
+	if m := team.Mail(time.Now()); threadOf(t, m, ask).Box != BoxInbox || threadOf(t, m, report).Box != BoxUpdates {
 		t.Fatal("back where they were")
 	}
 	until := time.Now().Add(24 * time.Hour).Truncate(time.Second)
-	id, card = propose(ChatChange{Do: "snooze", Thread: update, Until: until.Format(time.RFC3339)})
-	if !strings.HasPrefix(card.Say, "Snooze until ") || card.Title != threadWords(threadOf(t, m, update)) {
+	id, card = propose(ChatChange{Do: "snooze", Thread: ask, Until: until.Format(time.RFC3339)})
+	if !strings.HasPrefix(card.Say, "Snooze until ") || card.Title != threadWords(threadOf(t, m, ask)) {
 		t.Fatalf("the snooze's card: %+v", card)
 	}
 	apply(id, "Snoozed")
-	if th := threadOf(t, team.Mail(time.Now()), update); !th.Snooze.Equal(until) {
+	if th := threadOf(t, team.Mail(time.Now()), ask); !th.Snooze.Equal(until) {
 		t.Fatalf("snoozed: %v", th.Snooze)
 	}
 	undo(id, "as it was")
-	if th := threadOf(t, team.Mail(time.Now()), update); !th.Snooze.IsZero() {
+	if th := threadOf(t, team.Mail(time.Now()), ask); !th.Snooze.IsZero() {
 		t.Fatalf("not snoozed: %v", th.Snooze)
 	}
 	t0 := time.Now().Add(-2 * time.Hour).Truncate(time.Second)
@@ -661,33 +664,33 @@ func TestTheTeamDoesWhatTheHumanCanDo(t *testing.T) {
 	if s, _, _ := team.readMail(); !s.Marks[report].Done.Equal(t0) {
 		t.Fatalf("archived again since when it was, not now: %v", s.Marks[report].Done)
 	}
-	id, _ = propose(ChatChange{Do: "snooze", Threads: []string{update}, Until: until.Format(time.RFC3339)})
+	id, _ = propose(ChatChange{Do: "snooze", Threads: []string{ask}, Until: until.Format(time.RFC3339)})
 	apply(id, "Snoozed")
 	later := until.Add(time.Hour)
-	team.MarkMail(update, "snooze", later.Format(time.RFC3339), time.Now()) // the human snoozes it longer
+	team.MarkMail(ask, "snooze", later.Format(time.RFC3339), time.Now()) // the human snoozes it longer
 	undo(id, "as it was")
-	if th := threadOf(t, team.Mail(time.Now()), update); !th.Snooze.Equal(later) {
+	if th := threadOf(t, team.Mail(time.Now()), ask); !th.Snooze.Equal(later) {
 		t.Fatalf("undo took back the human's own snooze: %v", th.Snooze)
 	}
-	team.MarkMail(update, "unsnooze", "", time.Now())
-	id, _ = propose(ChatChange{Do: "star", Threads: []string{update}})
+	team.MarkMail(ask, "unsnooze", "", time.Now())
+	id, _ = propose(ChatChange{Do: "star", Threads: []string{ask}})
 	apply(id, "Starred")
-	id, _ = propose(ChatChange{Do: "other", Threads: []string{update}})
+	id, _ = propose(ChatChange{Do: "other", Threads: []string{ask}})
 	apply(id, "Moved to Other")
 	undo(id, "as it was")
-	if th := threadOf(t, team.Mail(time.Now()), update); !th.Star || th.Place != "" {
+	if th := threadOf(t, team.Mail(time.Now()), ask); !th.Star || th.Place != "" {
 		t.Fatalf("starred, and not moved: %+v", th)
 	}
 	s0, _, _ := team.readMail()
-	before := s0.Marks[update]
-	read, _ := propose(ChatChange{Do: "read", Threads: []string{update}})
+	before := s0.Marks[ask]
+	read, _ := propose(ChatChange{Do: "read", Threads: []string{ask}})
 	apply(read, "Marked read")
-	unread, _ := propose(ChatChange{Do: "unread", Threads: []string{update}})
+	unread, _ := propose(ChatChange{Do: "unread", Threads: []string{ask}})
 	apply(unread, "Marked unread")
 	undo(read, "as it was") // out of order: each puts back its own
 	undo(unread, "as it was")
-	if s, _, _ := team.readMail(); !s.Marks[update].Read.Equal(before.Read) || s.Marks[update].Unread != before.Unread {
-		t.Fatalf("read and unread undone: %+v, before %+v", s.Marks[update], before)
+	if s, _, _ := team.readMail(); !s.Marks[ask].Read.Equal(before.Read) || s.Marks[ask].Unread != before.Unread {
+		t.Fatalf("read and unread undone: %+v, before %+v", s.Marks[ask], before)
 	}
 
 	// a role, and back unless it changed since

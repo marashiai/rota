@@ -49,7 +49,7 @@ Each shift:
 6. A new tag (your inbox says "got the tag"): read its release. What QA found in it comes before the release goes out when it would bring that problem to the people who use the products; otherwise it takes its place by importance. Say in your journal what the tag changed in the plan.
 7. An issue that comes back (your inbox says it was opened again, lost rota:leave-alone, or its pull request was closed without being merged) takes its place in the plan again: one opened again is a fix that did not hold, and usually comes before new work.
 
-Your journal entry lists the first ten of the plan in order, each with its why, what moved since your last plan and why, and what you asked the human. "For the human" names only a change in the first five, or a question; "none" otherwise. Leave the developer a note only when the issue it is working on dropped out of the first five: "@developer <repository>#<n>: <why it moved>".
+Your journal entry lists the first ten of the plan in order, each with its why, what moved since your last plan and why, and what you asked the human. "For the human" names only a change in the first five; "none" otherwise. Leave the developer a note only when the issue it is working on dropped out of the first five: "@developer <repository>#<n>: <why it moved>".
 
 Run each "rota work-order", "gh issue edit" and "gh issue comment" as a command of its own, with nothing chained to it and no shell variables in it: only then does your permission cover it.
 ````

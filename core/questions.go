@@ -19,7 +19,8 @@ import (
 // or the menu bar; the answer goes to the agent's inbox, and to its shift if that is waiting
 // for it (rota wait). The human may dismiss it unanswered instead, and the agent is told; the
 // agent may withdraw it when it no longer needs an answer ("@human withdraw <id>" in its final
-// message, or rota withdraw). Closed questions are kept in questions/closed/.
+// message, or rota withdraw), and one about a pull request or issue closes by itself once that is
+// merged or closed (settleQuestions). Closed questions are kept in questions/closed/.
 
 // Question is one question, open or closed. One asked with rota ask may say more than its text:
 // a few words to show it by, the answers to choose from and the one the agent recommends, the
@@ -39,7 +40,8 @@ type Question struct {
 	Answer     string    `json:"answer,omitempty"`
 	Answered   time.Time `json:"answered,omitempty"`
 	Dismissed  time.Time `json:"dismissed,omitempty"` // closed unanswered by the human
-	Withdrawn  time.Time `json:"withdrawn,omitempty"` // closed unanswered by the agent
+	Withdrawn  time.Time `json:"withdrawn,omitempty"` // closed unanswered by the agent, or by rota (Settled)
+	Settled    string    `json:"settled,omitempty"`   // why rota closed it unanswered: what it is about is no longer open
 }
 
 // ErrDismissed is what waiting for an answer the human dismissed brings.
@@ -259,6 +261,40 @@ func (c *Config) Withdraw(agent, id string) error {
 	return err
 }
 
+// settleQuestions closes, unanswered, the open questions about a pull request or issue of repo
+// that GitHub no longer lists as open (items, as listed since then): merged or closed, what the
+// question is about is settled, and it would wait on the human for nothing. One about what closed
+// carrying the hold_label (held) stays: its rollout may still wait on the human. One written since
+// the listing began waits for the next, which lists what it is about if that was opened meanwhile;
+// so does every one of a list as long as GitHub lists, which may have left some out. The agent is
+// told, and asks again if it still needs the answer.
+func (t *Team) settleQuestions(repo string, items map[int]openItem, held []string, since time.Time) {
+	if len(items) >= openLimit {
+		return
+	}
+	for _, q := range t.Questions() {
+		ref := q.ref()
+		r, num, ok := strings.Cut(ref, "#")
+		n, err := strconv.Atoi(num)
+		if !ok || err != nil || r != repo || slices.Contains(held, ref) {
+			continue
+		}
+		if _, open := items[n]; open {
+			continue
+		}
+		if fi, err := os.Stat(filepath.Join(t.Path(questionsDir), q.ID+".json")); err != nil || !fi.ModTime().Before(since) {
+			continue // written since: an agent may ask about what it opened after the listing began, at its shift's start time
+		}
+		now, why := time.Now(), ref+" is no longer open"
+		if _, err := t.closeQuestion(q.ID, func(Question) error { return nil }, func(q *Question) { q.Withdrawn, q.Settled = now, why }); err != nil {
+			continue // answered meanwhile
+		}
+		if err := t.addNote(q.Agent, ref, "organizer", fmt.Sprintf("your question \"%s\" closed unanswered, as %s: ask it again only if it still needs the human", q.Text, why), now); err != nil {
+			fmt.Fprintln(os.Stderr, "warn: the note on a closed question:", err)
+		}
+	}
+}
+
 // WaitAnswer waits for the answer to a question, at most max, no longer than answer_minutes
 // after it was asked, and not past end, when the shift must have its work put away: the answer,
 // or "" and whether waiting longer can still bring one. A question closed unanswered is an
@@ -284,6 +320,8 @@ func (c *Config) WaitAnswer(id string, max time.Duration, end time.Time) (string
 			return q.Answer, false, nil
 		case !q.Dismissed.IsZero():
 			return "", false, ErrDismissed
+		case q.Settled != "":
+			return "", false, fmt.Errorf("question %s closed unanswered: %s", id, q.Settled)
 		case !q.Withdrawn.IsZero():
 			return "", false, fmt.Errorf("question %s was withdrawn", id)
 		case c.talkWaits(q.Agent):

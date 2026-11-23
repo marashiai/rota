@@ -348,7 +348,12 @@ type openList struct {
 	Time  time.Time                   `json:"time"`  // when GitHub last listed all of them
 	Tried time.Time                   `json:"tried"` // when it was last asked
 	Repos map[string]map[int]openItem `json:"repos"`
+	Held  []string                    `json:"held,omitempty"` // owner/name#n that closed carrying the hold_label, which an open question is about: it does not close by itself (settleQuestions)
 }
+
+// openLimit is the most pull requests, and the most issues, GitHub lists of one repository: a list
+// that has as many may leave some out, and says nothing about what closed.
+const openLimit = 1000
 
 type openItem struct {
 	Title string `json:"title"`
@@ -426,12 +431,13 @@ func (t *Team) refreshOpen() {
 	if b, err := os.ReadFile(t.Path(openFile)); err == nil && json.Unmarshal(b, &old) == nil && !old.due() {
 		return // it has just asked
 	}
-	l := openList{Time: old.Time, Tried: time.Now(), Repos: map[string]map[int]openItem{}}
+	l := openList{Time: old.Time, Tried: time.Now(), Repos: map[string]map[int]openItem{}, Held: old.Held}
 	load, _ := reviewLoader() // without gh's login, the notes keep where they last stood
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 	failed := false
 	var news []Answer
+	fresh := map[string]bool{} // listed now, not kept from before
 	for _, repo := range t.teamRepos() {
 		wg.Add(1)
 		go func() {
@@ -448,6 +454,8 @@ func (t *Team) refreshOpen() {
 			defer mu.Unlock()
 			if err != nil {
 				failed = true
+			} else {
+				fresh[repo] = true
 			}
 			if listed {
 				l.Repos[repo] = items
@@ -459,8 +467,38 @@ func (t *Team) refreshOpen() {
 	if !failed { // a repository that did not answer is asked again after openRetry
 		l.Time = l.Tried
 	}
+	for repo := range fresh {
+		l.Held = t.held(l.Held, repo, old.Repos[repo], l.Repos[repo])
+	}
 	t.writeOpen(l)
 	t.tellAnswers(news)
+	for repo := range fresh {
+		t.settleQuestions(repo, l.Repos[repo], l.Held, l.Tried)
+	}
+}
+
+// held is the list of what closed carrying the hold_label, with what of repo's did since it was
+// last listed (was, now), and only what an open question is about: its rollout may still wait on
+// the human, so the question does not close by itself.
+func (t *Team) held(list []string, repo string, was, now map[int]openItem) []string {
+	if t.HoldLabel != "" && len(now) < openLimit {
+		for n, it := range was {
+			if _, open := now[n]; !open && hasLabel(it.Labels, t.HoldLabel) {
+				list = append(list, repo+"#"+strconv.Itoa(n))
+			}
+		}
+	}
+	asked := map[string]bool{}
+	for _, q := range t.Questions() {
+		asked[q.ref()] = true
+	}
+	var out []string
+	for _, ref := range list {
+		if asked[ref] && !slices.Contains(out, ref) {
+			out = append(out, ref)
+		}
+	}
+	return out
 }
 
 // relistOpen asks GitHub again for one repository's open pull requests and issues, at once: after
@@ -474,6 +512,7 @@ func (t *Team) relistOpen(repo string) error {
 	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX); err != nil { // after a refresh under way
 		return err
 	}
+	since := time.Now()
 	items, err := t.listOpen(repo)
 	if err != nil {
 		return err
@@ -487,9 +526,11 @@ func (t *Team) relistOpen(repo string) error {
 	}
 	load, _ := reviewLoader()
 	news := t.readTalk(repo, items, l.Repos[repo], load)
+	l.Held = t.held(l.Held, repo, l.Repos[repo], items)
 	l.Repos[repo] = items
 	t.writeOpen(l)
 	t.tellAnswers(news)
+	t.settleQuestions(repo, items, l.Held, since)
 	return nil
 }
 
@@ -533,10 +574,10 @@ func (t *Team) listOpen(repo string) (map[int]openItem, error) {
 		CreatedAt time.Time `json:"createdAt"`
 	}
 	ctx := context.Background()
-	if err := t.gh(ctx, &prs, "pr", "list", "-R", repo, "--state", "open", "--limit", "1000", "--json", "number,title,headRefName,baseRefName,headRefOid,updatedAt,body,labels,additions,deletions,changedFiles,isDraft,closingIssuesReferences"); err != nil {
+	if err := t.gh(ctx, &prs, "pr", "list", "-R", repo, "--state", "open", "--limit", strconv.Itoa(openLimit), "--json", "number,title,headRefName,baseRefName,headRefOid,updatedAt,body,labels,additions,deletions,changedFiles,isDraft,closingIssuesReferences"); err != nil {
 		return nil, err
 	}
-	if err := t.gh(ctx, &issues, "issue", "list", "-R", repo, "--state", "open", "--limit", "1000", "--json", "number,title,labels,createdAt"); err != nil {
+	if err := t.gh(ctx, &issues, "issue", "list", "-R", repo, "--state", "open", "--limit", strconv.Itoa(openLimit), "--json", "number,title,labels,createdAt"); err != nil {
 		return nil, err
 	}
 	names := func(ls []ghLabel) []string {
