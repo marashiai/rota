@@ -290,7 +290,7 @@ func TestTheConsoleChangesTheTeam(t *testing.T) {
 	if f := agentFile(); !strings.Contains(f, "model: opus") || !strings.Contains(f, "run_minutes: 20") || !strings.Contains(f, "Alpha fixes **bugs**.") {
 		t.Fatalf("settings not written:\n%s", f)
 	}
-	if !strings.Contains(screen(c), "Timeout") || c.t.Agent("alpha").RunMinutes != 20 {
+	if !strings.Contains(screen(c), "Time limit, or check every") || c.t.Agent("alpha").RunMinutes != 20 {
 		t.Fatal("the console rereads what it wrote")
 	}
 	press(c, "backspace")
