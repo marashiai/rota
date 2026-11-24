@@ -64,7 +64,7 @@
 .vmic-pad{padding-right:34px!important}
 .vpill,.vstop,.vnote{position:fixed;z-index:2147483001;display:none;align-items:center;gap:6px;border:0;margin:0;border-radius:999px;padding:8px 13px;font:600 13px/1.2 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#1b1b1f;color:#fff;box-shadow:0 4px 16px rgba(0,0,0,.28);cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:manipulation;white-space:nowrap}
 .vpill.show,.vstop.show,.vnote.show{display:flex}
-.vstop{left:50%;transform:translateX(-50%);bottom:calc(env(safe-area-inset-bottom,0px) + 92px)}
+.vpill,.vstop{left:50%;transform:translateX(-50%);bottom:calc(env(safe-area-inset-bottom,0px) + 92px)} /* one place, away from the menu a phone or tablet shows by the selection */
 .vnote{left:50%;transform:translateX(-50%);top:calc(env(safe-area-inset-top,0px) + 12px);cursor:default;font-weight:500;white-space:normal;max-width:min(92vw,520px);border-radius:12px}
 @media (prefers-color-scheme:dark){.vpill,.vstop,.vnote{background:#ececf1;color:#121216}.vmic{color:#a3a3ae}}
 @keyframes vpulse{0%,100%{box-shadow:0 0 0 0 rgba(217,48,37,.5)}50%{box-shadow:0 0 0 7px rgba(217,48,37,0)}}
@@ -160,6 +160,7 @@
     const run = {stopped: false, btn, cancel: null, ctl: window.AbortController ? new AbortController() : null};
     reading = run;
     if (btn) btn.classList.add('on');
+    pill.classList.remove('show');
     stopper.classList.add('show');
     if (elevenSays() && opened()) readEleven(run, parts(text, [160, 400, Math.min(1200, V.max || 1200)])); // ElevenLabs makes speech about three times faster than it is spoken
     else {
@@ -182,6 +183,7 @@
     if (!rec && !busy) audioMode('auto');
     if (run.btn) run.btn.classList.remove('on');
     stopper.classList.remove('show');
+    placePill();
   }
   function fetchPart(text, run) {
     const p = ask('/api/voice/say', new URLSearchParams({text}), run.ctl ? run.ctl.signal : undefined).then(async r => {
@@ -254,27 +256,23 @@
   // ---- read what is selected ----
   const FIELD_TYPES = ['', 'text', 'search', 'url', 'email'];
   const isField = x => !!x && (x.tagName === 'TEXTAREA' || x.tagName === 'INPUT' && FIELD_TYPES.includes((x.getAttribute('type') || '').toLowerCase()));
-  function selection() { // the words selected and where they are on the screen
+  function selection() { // the words selected, in a field or on the page
     const a = document.activeElement;
-    if (isField(a) && a.selectionEnd > a.selectionStart) return {text: a.value.slice(a.selectionStart, a.selectionEnd), rect: a.getBoundingClientRect()};
+    if (isField(a) && a.selectionEnd > a.selectionStart) return {text: a.value.slice(a.selectionStart, a.selectionEnd)};
     const s = window.getSelection();
-    if (!s || s.isCollapsed || !s.rangeCount) return null;
+    if (!s || s.isCollapsed) return null;
     const text = s.toString();
-    if (!text.trim()) return null;
-    const range = s.getRangeAt(0), rects = range.getClientRects();
-    return {text, rect: rects.length ? rects[rects.length - 1] : range.getBoundingClientRect()};
+    return text.trim() ? {text} : null;
   }
+  // placePill shows Read aloud while words are selected, always in one place, where Stop reading
+  // shows while it reads: by the selection, it would cover the menu an iPhone or iPad shows there,
+  // above or below the words as room allows.
   let shown = '', selT = 0;
   function placePill() {
     const sel = selection();
     if (!sel) { pill.classList.remove('show'); shown = ''; return; }
     shown = sel.text;
-    pill.classList.add('show');
-    const w = pill.offsetWidth, h = pill.offsetHeight, r = sel.rect;
-    const left = Math.max(8, Math.min(innerWidth - w - 8, r.right - w / 2));
-    let top = r.bottom + 10; // under the words: a phone shows its own menu over them
-    if (top + h > innerHeight - 8) top = Math.max(8, r.top - h - 10);
-    pill.style.left = left + 'px'; pill.style.top = top + 'px';
+    pill.classList.toggle('show', !reading);
   }
   document.addEventListener('selectionchange', () => { clearTimeout(selT); selT = setTimeout(placePill, 180); });
   pill.addEventListener('click', e => {
