@@ -543,11 +543,19 @@ let VOICES = null; // the ElevenLabs voices to choose from, as rota lists them
 function voiceSettings() {
   const v = window.rotaVoice;
   if (!v) return '';
-  const V = v.info, D = v.device, by = (with_, why, none) => with_ === 'ElevenLabs' ? 'ElevenLabs' : with_ ? `The browser's own${V.key && why ? ': ' + why : ''}` : none;
+  const V = v.info, D = v.device, c = v.can();
+  // voiceUse is a choice of who reads aloud or listens on this device, ElevenLabs or its own, with
+  // what happens: ElevenLabs chosen but unable, this device does it
+  const voiceUse = (what, label, eleven, why, device, does, none, own) => {
+    const mine = D[what] === 'device' ? 'device' : 'eleven';
+    const now = mine === 'device' ? (device ? 'This device’s own ' + own : none) : eleven ? 'ElevenLabs' : `ElevenLabs cannot: ${why || 'no ElevenLabs key'}. ${device ? 'This device ' + does + ' instead' : none}`;
+    return `<div class="fld"><span>${label}<span class="small fsub">${esc(now)}</span></span><span class="mini"><button class="${mine === 'eleven' ? 'on' : ''}" data-vuse="${what}" data-v="eleven">ElevenLabs</button><button class="${mine === 'device' ? 'on' : ''}" data-vuse="${what}" data-v="device"${device ? '' : ' disabled'}>This device</button></span></div>`;
+  };
   if (V.key && !VOICES) v.voiceList().then(j => { VOICES = j; if (S.view === 'settings' && !typing()) render(); });
   let h = `<div class="gh2">Voice</div><div class="card">
-    <div class="fld"><span>Read aloud<span class="small fsub">${esc(by(v.readsWith(), V.sayWhy, 'This browser cannot read aloud'))}</span></span></div>
-    <div class="fld"><span>Dictation<span class="small fsub">${esc(by(v.listensWith(), V.listenWhy, 'This browser has none'))}</span></span></div>`;
+    ${voiceUse('say', 'Read aloud', c.elevenSay, V.sayWhy, c.deviceSay, 'reads', 'This browser cannot read aloud', 'voice')}
+    ${voiceUse('listen', 'Dictation', c.elevenListen, V.listenWhy, c.deviceListen, 'listens', 'This browser has no dictation', 'dictation')}
+    <div class="fld"><span class="small">Each device chooses for itself: ElevenLabs costs credits, its own is free.</span></div>`;
   if (V.key) { // the ElevenLabs voice, for every device
     const list = (VOICES && VOICES.voices) || [], opt = x => `<option value="${esc(x.id)}"${x.id === V.voice ? ' selected' : ''}>${esc(x.name)}${x.about ? ' · ' + esc(x.about) : ''}</option>`;
     const own = list.filter(x => x.own), theirs = list.filter(x => !x.own);
@@ -560,7 +568,7 @@ function voiceSettings() {
     const mine = bv.filter(x => langs.includes(x.lang.slice(0, 2).toLowerCase())), rest = bv.filter(x => !mine.includes(x));
     const opt = x => `<option value="${esc(x.uri)}"${x.uri === D.voice ? ' selected' : ''}>${esc(x.name)} · ${esc(x.lang)}</option>`;
     h += `<div class="fld" style="display:block"><div>This device’s voice</div><div class="vrow"><select id="vbrowser" aria-label="This device’s voice"><option value=""${D.voice ? '' : ' selected'}>Its default</option><optgroup label="Your languages">${mine.map(opt).join('')}</optgroup><optgroup label="Other languages">${rest.map(opt).join('')}</optgroup></select><button class="btn" data-vsample="browser">${I.speaker}Sample</button></div>
-      <div class="small">${V.say ? 'Reads when ElevenLabs cannot.' : 'Reads aloud on this device.'} Each device has its own.</div></div>`;
+      <div class="small">${v.readsWith() === 'ElevenLabs' ? 'Reads when ElevenLabs cannot.' : 'Reads aloud on this device.'} Each device has its own.</div></div>`;
   }
   const sp = Math.min(3, Math.max(1, Number(V.speed) || 1));
   h += `<div class="fld" style="display:block"><div>Speed</div><div class="vrow"><input id="vspeed" type="range" min="1" max="3" step="0.05" value="${sp}" aria-label="Speed"><input id="vspeedn" type="text" inputmode="decimal" data-nomic autocomplete="off" value="${sp.toFixed(2)}" aria-label="Speed, exactly"><span>×</span><button class="btn" data-vspeed="1"${Math.abs(sp - 1) < 0.001 ? ' disabled' : ''}>1×</button></div>
@@ -574,10 +582,10 @@ function voiceSample(kind, btn) {
   const v = window.rotaVoice;
   if (kind === 'eleven') {
     const x = ((VOICES && VOICES.voices) || []).find(x => x.id === v.info.voice);
-    v.say(`Hi, I'm ${x ? x.name : 'your ElevenLabs voice'}. This is how I read your messages in rota.`, btn);
+    v.say(`Hi, I'm ${x ? x.name : 'your ElevenLabs voice'}. This is how I read your messages in rota.`, btn, 'eleven');
   } else {
     const x = v.browserVoices().find(x => x.uri === v.device.voice);
-    v.say(`Hi, I'm ${x ? x.name : 'this device’s voice'}. This is how I read your messages in rota.`, btn, true);
+    v.say(`Hi, I'm ${x ? x.name : 'this device’s voice'}. This is how I read your messages in rota.`, btn, 'browser');
   }
 }
 async function voiceSet(set, kind) { // a team setting of the voice, then how it sounds
@@ -585,7 +593,7 @@ async function voiceSet(set, kind) { // a team setting of the voice, then how it
   if (said === null || said === undefined) return;
   await rotaVoice.refresh();
   render();
-  voiceSample(kind || (rotaVoice.info.say ? 'eleven' : 'browser'));
+  voiceSample(kind || (rotaVoice.readsWith() === 'ElevenLabs' ? 'eleven' : 'browser'));
 }
 document.addEventListener('change', e => {
   const x = e.target;
@@ -596,7 +604,7 @@ document.addEventListener('change', e => {
     if (!isFinite(n)) { toast('Type a speed from 1 to 3, such as 1.75'); render(); return; }
     voiceSet({voice_speed: String(Math.round(Math.min(3, Math.max(1, n)) * 100) / 100)});
   }
-  else if (x.id === 'vvol') { rotaVoice.setDevice({volume: x.value / 100}); voiceSample(rotaVoice.info.say ? 'eleven' : 'browser'); }
+  else if (x.id === 'vvol') { rotaVoice.setDevice({volume: x.value / 100}); voiceSample(rotaVoice.readsWith() === 'ElevenLabs' ? 'eleven' : 'browser'); }
 });
 document.addEventListener('input', e => {
   if (e.target.id === 'vvol') { const t = document.getElementById('vvoltext'); if (t) t.textContent = e.target.value + '%'; }
@@ -1909,6 +1917,7 @@ document.addEventListener('click', e => {
   if (d.say !== undefined) { e.stopPropagation(); const box = b.closest('.brow, .msg'), mb = box && box.querySelector('.mb'); if (mb) rotaVoice.say(mb.innerText, b); return; }
   if (d.vkey !== undefined || d.vkeyrm !== undefined) { voiceKey(d.vkeyrm !== undefined); return; }
   if (d.vsample) { voiceSample(d.vsample, b); return; }
+  if (d.vuse) { rotaVoice.setDevice({[d.vuse]: d.v === 'device' ? 'device' : 'eleven'}); render(); return; }
   if (d.vspeed) { voiceSet({voice_speed: d.vspeed}); return; }
   if (d.view) { if (leaveOK()) goView(d.view); return; }
   if (d.atab) { if (!leaveOK()) return; S.aTab = d.atab; S.roleDraft = null; S.adv = null; S.edits = {}; render(); return; }

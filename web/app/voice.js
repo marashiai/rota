@@ -33,7 +33,9 @@
   const V = {known: false, key: false, say: false, listen: false, sayWhy: '', listenWhy: '', max: 5000, voice: '', speed: 1};
   // DEV is what this device keeps for itself: the browser's voice it reads with (its voiceURI; ''
   // its default), as each device has its own, and how loud it reads, 0 to 1.
-  const DEV = {voice: '', volume: 1};
+  // say and listen: who reads aloud and who takes dictation on it, 'eleven' (ElevenLabs, when it
+  // can) or 'device' (its own), whatever rota may.
+  const DEV = {voice: '', volume: 1, say: 'eleven', listen: 'eleven'};
   try { Object.assign(DEV, JSON.parse(localStorage.getItem('rota.voice') || '{}')); } catch (e) { /* a private window: the defaults */ }
   function setDevice(patch) {
     Object.assign(DEV, patch);
@@ -66,8 +68,8 @@
     return asking;
   }
   function changed() { document.dispatchEvent(new CustomEvent('rotavoice')); placeMic(); }
-  const elevenSays = () => V.say;
-  const elevenListens = () => V.listen && canRecord;
+  const elevenSays = () => V.say && DEV.say !== 'device';
+  const elevenListens = () => V.listen && canRecord && DEV.listen !== 'device';
   const canListen = () => window.isSecureContext !== false && (elevenListens() || !!SR); // a microphone needs https or this machine
   document.addEventListener('visibilitychange', () => { if (!document.hidden) look(); }); // a key set elsewhere meanwhile
 
@@ -186,9 +188,10 @@
   }
 
   let reading = null; // {stopped, btn, cancel}
-  // say reads text aloud: with ElevenLabs when it may, else with this device's voice; with
-  // browser true, with this device's voice whatever ElevenLabs may (its sample in Settings).
-  function say(text, btn, browser) {
+  // say reads text aloud: as this device chose, ElevenLabs when it may, else its own voice; use
+  // 'eleven' or 'browser' reads with that one whatever this device chose (a sample in Settings).
+  function say(text, btn, use) {
+    const browser = use === 'browser' || use !== 'eleven' && !elevenSays();
     if (reading && btn && reading.btn === btn) { stop(); return; } // its button again: stop
     stop();
     text = clean(text);
@@ -200,9 +203,9 @@
     pill.classList.remove('show');
     showPaused(false);
     player.classList.add('show');
-    if (!browser && elevenSays() && opened()) readEleven(run, parts(text, sizes()));
+    if (!browser && V.say && opened()) readEleven(run, parts(text, sizes()));
     else {
-      if (browser) { /* asked for */ } else if (V.key && (V.say || !V.known)) fell(V.known ? 'This browser cannot play the audio ElevenLabs reads: the browser reads it' : 'rota had not said yet whether ElevenLabs reads: the browser reads it');
+      if (use || DEV.say === 'device') { /* asked for */ } else if (V.key && (V.say || !V.known)) fell(V.known ? 'This browser cannot play the audio ElevenLabs reads: the browser reads it' : 'rota had not said yet whether ElevenLabs reads: the browser reads it');
       else if (V.key && V.sayWhy) note(V.sayWhy + ': the browser reads it');
       readBrowser(run, text);
     }
@@ -556,6 +559,8 @@
     paused: () => !!(reading && reading.paused),
     readsWith: () => elevenSays() ? 'ElevenLabs' : canSpeak ? 'browser' : '',
     listensWith: () => elevenListens() ? 'ElevenLabs' : SR ? 'browser' : '',
+    // can says what could read and listen here, whatever this device chose
+    can: () => ({elevenSay: !!V.say, elevenListen: !!(V.listen && canRecord), deviceSay: canSpeak, deviceListen: !!SR && window.isSecureContext !== false}),
     device: DEV,
     setDevice,
     browserVoices,

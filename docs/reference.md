@@ -528,7 +528,8 @@ alike. It is where you use rota:
   reads aloud and writes down what you said, in whatever language, for what the key may do: a key can be
   limited to some of its uses, and rota asks ElevenLabs once a day what yours may, at the cost of one word
   read and half a second of silence written down. Without a key, or for what it may not, the browser's
-  own voice and dictation do it. The key stays on the team machine, in `secrets/elevenlabs.key`: the pages
+  own voice and dictation do it; and each device chooses in Settings, Voice, for reading aloud and for
+  dictation each, ElevenLabs or its own: its own costs nothing. The key stays on the team machine, in `secrets/elevenlabs.key`: the pages
   send rota the text or the recording, and rota asks ElevenLabs. Settings, Voice, lists the voices to
   choose from, each with a Sample to hear it: the ElevenLabs voices it keeps for good, and your own
   once the key may list them (its "Voices: read" permission), for every device (`voice` in
