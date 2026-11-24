@@ -85,11 +85,11 @@
   };
   const style = document.createElement('style');
   style.textContent = `
-.vmic{position:fixed;z-index:2147483000;width:28px;height:28px;border-radius:50%;border:0;margin:0;padding:0;display:none;align-items:center;justify-content:center;background:transparent;color:#6b6b78;cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+.vmic{position:absolute;z-index:2147483000;width:28px;height:28px;border-radius:50%;border:0;margin:0;padding:0;display:none;align-items:center;justify-content:center;background:transparent;color:#6b6b78;cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
 .vmic.show{display:flex}.vmic:hover{background:rgba(127,127,140,.16)}
 .vmic.rec{background:#d93025;color:#fff;animation:vpulse 1.2s ease-in-out infinite}
 .vmic.busy{cursor:progress}.vmic.busy svg{animation:vspin 1s linear infinite}
-.vmic-pad{padding-right:34px!important}
+.vmic-pad{padding-right:34px!important}.vmic-host{position:relative}.vmic.vmic-corner{position:fixed}
 .vpill,.vplay,.vnote{position:fixed;z-index:2147483001;display:none;align-items:center;gap:6px;border:0;margin:0;border-radius:999px;padding:8px 13px;font:600 13px/1.2 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#1b1b1f;color:#fff;box-shadow:0 4px 16px rgba(0,0,0,.28);cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:manipulation;white-space:nowrap}
 .vpill.show,.vplay.show,.vnote.show{display:flex}
 .vplay{padding:0;gap:0;cursor:default} /* one pill: pause or play, then stop */
@@ -407,23 +407,46 @@
   const drawn = (f, href) => f && !f.isConnected && f.id && location.href === href ? document.getElementById(f.id) || f : f;
   // placeMic puts the microphone in the field written in. While it records or writes down, it
   // stays on the screen whatever the page draws, so a tap always stops it.
+  // The microphone sits in the field's own box, just after the field, so it moves with the field
+  // whatever scrolls: the page, a list, or a phone's view with its keyboard up. The field's box
+  // holds it (vmic-host) while it is there; once hidden, it leaves the page's boxes.
+  let host = null;
+  function unhost() {
+    if (host) host.classList.remove('vmic-host');
+    host = null;
+  }
   function placeMic() {
     const f = rec ? (rec.field = drawn(rec.field, rec.href)) : field;
-    const on = !!f && f.isConnected;
+    const on = !!f && f.isConnected && !!f.parentElement && f.offsetWidth > 0 && f.offsetHeight > 0;
     const show = canListen() && (rec || busy || on && document.activeElement === f);
     document.querySelectorAll('.vmic-pad').forEach(x => { if (x !== f || !show) x.classList.remove('vmic-pad'); });
-    if (!show) { mic.classList.remove('show'); return; }
-    let r = on ? f.getBoundingClientRect() : null;
-    if (!r || !r.width || !r.height || r.bottom < 0 || r.top > innerHeight) {
-      if (!rec && !busy) { mic.classList.remove('show'); return; }
-      r = null; // the field is gone or out of view: the microphone waits at the corner
+    if (!show || !on && !rec && !busy) {
+      mic.classList.remove('show');
+      unhost();
+      if (mic.parentNode !== document.body && document.body) document.body.appendChild(mic);
+      return;
     }
     mic.classList.add('show');
-    if (!r) { mic.style.left = (innerWidth - 44) + 'px'; mic.style.top = (innerHeight - 120) + 'px'; return; }
+    if (!on) { // the field is gone while it records: the microphone waits at the corner, to stop it
+      unhost();
+      if (mic.parentNode !== document.body) document.body.appendChild(mic);
+      mic.classList.add('vmic-corner');
+      mic.style.left = (innerWidth - 44) + 'px'; mic.style.top = (innerHeight - 120) + 'px';
+      return;
+    }
+    mic.classList.remove('vmic-corner');
+    const box = f.parentElement;
+    if (host !== box) {
+      unhost();
+      if (getComputedStyle(box).position === 'static') { box.classList.add('vmic-host'); host = box; }
+    }
+    if (mic.parentNode !== box || mic.previousSibling !== f) box.insertBefore(mic, f.nextSibling);
     f.classList.add('vmic-pad');
-    const tall = f.tagName === 'TEXTAREA' && r.height > 44;
-    mic.style.left = (r.right - 32) + 'px';
-    mic.style.top = (tall ? r.bottom - 32 : r.top + (r.height - 28) / 2) + 'px';
+    // the field's place in the box both are placed in (its offsetParent, which holds the
+    // microphone as well)
+    const tall = f.tagName === 'TEXTAREA' && f.offsetHeight > 44;
+    mic.style.left = (f.offsetLeft + f.offsetWidth - 32) + 'px';
+    mic.style.top = (tall ? f.offsetTop + f.offsetHeight - 32 : f.offsetTop + (f.offsetHeight - 28) / 2) + 'px';
   }
   let rafT = 0;
   const soon = () => { if (!rafT) rafT = requestAnimationFrame(() => { rafT = 0; placeMic(); if (pill.classList.contains('show')) placePill(); }); };
