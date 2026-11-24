@@ -545,7 +545,7 @@ function voiceSettings() {
   return `<div class="gh2">Voice</div><div class="card">
     <div class="fld"><span>Read aloud<span class="small fsub">${esc(by(v.readsWith(), V.sayWhy, 'This browser cannot read aloud'))}</span></span></div>
     <div class="fld"><span>Dictation<span class="small fsub">${esc(by(v.listensWith(), V.listenWhy, 'This browser has none'))}</span></span></div>
-    <div class="fld" style="display:block"><div>ElevenLabs key</div><div class="small">${V.key ? 'Set. It stays on this Mac, in the team folder’s secrets; ElevenLabs reads and listens for what the key may do.' : 'None. With a key from elevenlabs.io, ElevenLabs reads aloud and takes dictation, for what the key may do.'}</div>
+    <div class="fld" style="display:block"><div>ElevenLabs key</div><div class="small">${V.key ? (V.keyEnd ? `<b>••••${esc(V.keyEnd)}</b> is set. ` : 'Set. ') + 'It stays on this Mac, in the team folder’s secrets; ElevenLabs reads and listens for what the key may do.' : 'None. With a key from elevenlabs.io, ElevenLabs reads aloud and takes dictation, for what the key may do.'}</div>
       <div class="vkey"><input id="vkey" type="password" autocomplete="off" spellcheck="false" placeholder="${V.key ? 'Paste another key' : 'Paste your key'}" aria-label="ElevenLabs key"><button class="btn" data-vkey>Save</button>${V.key ? '<button class="btn" data-vkeyrm>Remove</button>' : ''}</div></div></div>`;
 }
 async function voiceKey(remove) {

@@ -406,8 +406,11 @@ func (sp *settingsPage) rows(c *console) []row {
 		f := &core.ConfigFields[i]
 		if f.Key == "voice" && strings.Contains(voiceKeyRow, strings.ToLower(sp.filter)) { // the key, with the voice it reads in
 			key := "none: the pages read aloud and take dictation with the browser's own"
-			if c.t.VoiceKey() != "" {
+			if k := c.t.VoiceKey(); k != "" {
 				key = "set, in secrets/elevenlabs.key"
+				if end := core.KeyEnd(k); end != "" {
+					key = "••••" + end + ", in secrets/elevenlabs.key"
+				}
 			}
 			rows = append(rows, row{section: f.Section, key: voiceKeyRow, label: voiceKeyRow, value: key, set: c.t.VoiceKey() != "",
 				help: "With an ElevenLabs key, the pages read aloud and take dictation with ElevenLabs, for what the key may do; else with the browser's own. ⏎ pastes a key; an empty one removes it."})

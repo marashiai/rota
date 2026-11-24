@@ -75,7 +75,7 @@ func (f *fakeEleven) serve(t *testing.T) {
 
 func TestTheVoiceIsElevenLabsForWhatItsKeyMay(t *testing.T) {
 	root, team := mailTeam(t)
-	f := &fakeEleven{say: map[string]bool{"sk_both": true, "sk_say": true}, listen: map[string]bool{"sk_both": true}}
+	f := &fakeEleven{say: map[string]bool{"sk_long_key_both": true, "sk_say": true}, listen: map[string]bool{"sk_long_key_both": true}}
 	f.serve(t)
 	ctx := context.Background()
 
@@ -95,6 +95,9 @@ func TestTheVoiceIsElevenLabsForWhatItsKeyMay(t *testing.T) {
 		t.Fatal("the key is in rota.conf")
 	}
 	v := team.Voice(ctx)
+	if v.KeyEnd != "" {
+		t.Fatalf("a short key shows none of itself: %q", v.KeyEnd)
+	}
 	if !v.Key || !v.Say || v.Listen || !strings.Contains(v.ListenWhy, "missing the permission speech_to_text") || v.SayWhy != "" {
 		t.Fatalf("a key that may only read aloud: %+v", v)
 	}
@@ -123,11 +126,11 @@ func TestTheVoiceIsElevenLabsForWhatItsKeyMay(t *testing.T) {
 		t.Fatal("a key that may not write down writes down")
 	}
 
-	if err := team.SetVoiceKey("sk_both"); err != nil {
+	if err := team.SetVoiceKey("sk_long_key_both"); err != nil {
 		t.Fatal(err)
 	}
-	if v := team.Voice(ctx); !v.Say || !v.Listen {
-		t.Fatalf("another key is asked about at once: %+v", v)
+	if v := team.Voice(ctx); !v.Say || !v.Listen || v.KeyEnd != "both" {
+		t.Fatalf("another key is asked about at once, and shows its end: %+v", v)
 	}
 	text, err := team.Transcribe(ctx, strings.NewReader("webm audio"), "speech.webm", "audio/webm")
 	if err != nil || text != "Merge the five pull requests." || f.file != "webm audio" || f.fileModel != listenModel {
@@ -135,7 +138,7 @@ func TestTheVoiceIsElevenLabsForWhatItsKeyMay(t *testing.T) {
 	}
 
 	// the key loses a permission at ElevenLabs: the pages use the browser's own from then on
-	delete(f.say, "sk_both")
+	delete(f.say, "sk_long_key_both")
 	if err := team.ReadAloud(ctx, "Hello", io.Discard); err == nil || !strings.Contains(err.Error(), "text_to_speech") {
 		t.Fatalf("a refused reading: %v", err)
 	}

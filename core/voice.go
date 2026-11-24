@@ -50,6 +50,16 @@ func (c *Config) VoiceKey() string {
 	return strings.TrimSpace(string(b))
 }
 
+// KeyEnd is the last four characters of a key, which tell keys apart without giving one away;
+// none of a key so short that four would be most of it.
+func KeyEnd(key string) string {
+	r := []rune(strings.TrimSpace(key))
+	if len(r) < 12 {
+		return ""
+	}
+	return string(r[len(r)-4:])
+}
+
 // SetVoiceKey keeps key as the ElevenLabs key, readable by this user only; "" removes it.
 func (c *Config) SetVoiceKey(key string) error {
 	key = strings.TrimSpace(key)
@@ -86,9 +96,10 @@ func (c *Config) SetVoiceKey(key string) error {
 // VoiceUse says who reads aloud and who takes dictation: ElevenLabs, or the browser, and why not
 // ElevenLabs.
 type VoiceUse struct {
-	Key       bool   `json:"key"`    // the human gave rota a key
-	Say       bool   `json:"say"`    // ElevenLabs reads aloud
-	Listen    bool   `json:"listen"` // ElevenLabs writes down what was said
+	Key       bool   `json:"key"`              // the human gave rota a key
+	KeyEnd    string `json:"keyEnd,omitempty"` // its last characters, so they see which key it is
+	Say       bool   `json:"say"`              // ElevenLabs reads aloud
+	Listen    bool   `json:"listen"`           // ElevenLabs writes down what was said
 	SayWhy    string `json:"sayWhy,omitempty"`
 	ListenWhy string `json:"listenWhy,omitempty"`
 }
@@ -141,7 +152,7 @@ func (c *Config) Voice(ctx context.Context) VoiceUse {
 		_, err := elevenListen(ctx, key, bytes.NewReader(silence()), "silence.wav", "audio/wav")
 		voiceFound.listen, voiceFound.listenWhy, voiceFound.listenAgain = err == nil, whyNot(err), now.Add(again(err))
 	}
-	return VoiceUse{Key: true, Say: voiceFound.say, Listen: voiceFound.listen, SayWhy: voiceFound.sayWhy, ListenWhy: voiceFound.listenWhy}
+	return VoiceUse{Key: true, KeyEnd: KeyEnd(key), Say: voiceFound.say, Listen: voiceFound.listen, SayWhy: voiceFound.sayWhy, ListenWhy: voiceFound.listenWhy}
 }
 
 // voice is the ElevenLabs voice that reads aloud.
