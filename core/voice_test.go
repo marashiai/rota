@@ -101,7 +101,7 @@ func TestTheVoiceIsElevenLabsForWhatItsKeyMay(t *testing.T) {
 	if !v.Key || !v.Say || v.Listen || !strings.Contains(v.ListenWhy, "missing the permission speech_to_text") || v.SayWhy != "" {
 		t.Fatalf("a key that may only read aloud: %+v", v)
 	}
-	if f.voice != "JBFqnCBsd6RMkjVDRZzb" || f.model != sayModel {
+	if f.voice != "g7LVvkPWALzPxOQbF6OE" || f.model != sayModel {
 		t.Fatalf("the voice and model asked for: %q %q", f.voice, f.model)
 	}
 	asked := f.sayN.Load() + f.listenN.Load()

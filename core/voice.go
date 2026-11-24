@@ -165,8 +165,9 @@ func (c *Config) Voice(ctx context.Context) VoiceUse {
 	return VoiceUse{Key: true, KeyEnd: KeyEnd(key), Say: voiceFound.say, Listen: voiceFound.listen, SayWhy: voiceFound.sayWhy, ListenWhy: voiceFound.listenWhy}
 }
 
-// voice is the ElevenLabs voice that reads aloud.
-func (c *Config) voice() string { return or(strings.TrimSpace(c.VoiceID), "JBFqnCBsd6RMkjVDRZzb") }
+// voice is the ElevenLabs voice that reads aloud. Jade is one of ElevenLabs' Infinity voices, which
+// it keeps for good: the default voices before them stop at the end of 2026.
+func (c *Config) voice() string { return or(strings.TrimSpace(c.VoiceID), "g7LVvkPWALzPxOQbF6OE") }
 
 func voiceOf(key, voice string) string {
 	sum := sha256.Sum256([]byte(key + "\x00" + voice))
