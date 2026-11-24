@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +13,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 // fakeEleven answers as ElevenLabs does: it reads aloud and writes down for the keys that may,
@@ -203,5 +205,68 @@ func TestTheVoiceReadsAtItsSpeedAndListsItsChoices(t *testing.T) {
 	list, why = team.Voices(ctx)
 	if why != "" || len(list) != len(infinityVoices)+1 || list[0].ID != "MINE" || !list[0].Own || list[0].About != "female, american" {
 		t.Fatalf("the account's own first, no default voice, no voice twice: %q %+v", why, list[:2])
+	}
+}
+
+// failAfter is a page that stops listening after its first bytes.
+type failAfter struct{ n int }
+
+func (f *failAfter) Write(b []byte) (int, error) {
+	if f.n++; f.n > 1 {
+		return 0, errors.New("the page left")
+	}
+	return len(b), nil
+}
+
+// What ElevenLabs read is kept, and the same text in the same voice is read from there at no cost,
+// also when the page stopped listening before its end; what was read least lately goes first.
+func TestReadAloudKeepsWhatItRead(t *testing.T) {
+	root, team := mailTeam(t)
+	f := &fakeEleven{say: map[string]bool{"sk_long_key_both": true}, listen: map[string]bool{}}
+	f.serve(t)
+	ctx := context.Background()
+	team.SetVoiceKey("sk_long_key_both")
+	read := func(text string) string {
+		t.Helper()
+		var b bytes.Buffer
+		if err := team.ReadAloud(ctx, text, &b); err != nil {
+			t.Fatal(err)
+		}
+		return b.String()
+	}
+	first, asked := read("Two pull requests wait."), f.sayN.Load()
+	if again := read("Two pull requests wait."); again != first || f.sayN.Load() != asked {
+		t.Fatalf("the same text again: ElevenLabs asked %d more times, %q", f.sayN.Load()-asked, again)
+	}
+	team.VoiceID = "OZ0L6eISlOejga3XjDFt"
+	if read("Two pull requests wait."); f.sayN.Load() != asked+1 {
+		t.Fatal("another voice reads it anew")
+	}
+	if err := team.ReadAloud(ctx, "A long answer.", &failAfter{}); err != nil {
+		t.Fatalf("a page that stops listening: %v", err)
+	}
+	asked = f.sayN.Load()
+	if got := read("A long answer."); got != "ID3 mp3 of: A long answer." || f.sayN.Load() != asked {
+		t.Fatalf("what the page stopped listening to is kept whole: %q, asked again %v", got, f.sayN.Load() != asked)
+	}
+	entries, _ := os.ReadDir(filepath.Join(root, ".voice"))
+	if len(entries) != 3 {
+		t.Fatalf("three readings kept, nothing half: %d", len(entries))
+	}
+	was := voiceCacheMax
+	defer func() { voiceCacheMax = was }()
+	voiceCacheMax = 70 // two readings
+	old := time.Now().Add(-time.Hour)
+	for _, e := range entries {
+		os.Chtimes(filepath.Join(root, ".voice", e.Name()), old, old)
+	}
+	read("Two pull requests wait.") // read lately: kept
+	read("Something new.")
+	if entries, _ = os.ReadDir(filepath.Join(root, ".voice")); len(entries) != 2 {
+		t.Fatalf("the cache keeps to its size, the least read lately going first: %d left", len(entries))
+	}
+	asked = f.sayN.Load()
+	if read("Two pull requests wait."); f.sayN.Load() != asked {
+		t.Fatal("what was read lately was removed")
 	}
 }

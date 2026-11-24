@@ -520,8 +520,11 @@ alike. It is where you use rota:
 - **Voice**: every field you write in, in the app and in gloss's review pages, shows a microphone while
   you write in it: tap it, speak, and tap it again, and what you said is written where the cursor is,
   for you to edit; nothing is sent. Each message an agent or the Team writes you has a speaker that
-  reads it aloud, and anything you select, anywhere in the pages, gets a Read aloud button beside it;
-  Stop reading ends it. With an ElevenLabs key (Settings, Voice; or the console's Settings tab), ElevenLabs
+  reads it aloud, and anything you select, anywhere in the pages, gets a Read aloud button, at the
+  foot of the screen, away from the menu a phone or tablet shows by the selection; while it reads,
+  Pause (then Play) and Stop are there. rota keeps what ElevenLabs read on the team machine, 500 MB at
+  most, the least read lately going first, so the same text in the same voice is read again at no
+  cost, at any speed, and a reading you stopped is kept whole, as it was paid for. With an ElevenLabs key (Settings, Voice; or the console's Settings tab), ElevenLabs
   reads aloud and writes down what you said, in whatever language, for what the key may do: a key can be
   limited to some of its uses, and rota asks ElevenLabs once a day what yours may, at the cost of one word
   read and half a second of silence written down. Without a key, or for what it may not, the browser's

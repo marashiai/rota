@@ -322,6 +322,9 @@ func noteRefused(key, voice string, say bool, err error) {
 }
 
 // ReadAloud reads text aloud with ElevenLabs, writing the MP3 to w; it writes nothing when it fails.
+// What ElevenLabs read is kept (voiceCache), and the same text in the same voice is read from
+// there again, at no cost; it is kept whole even when the page stops listening before its end, as
+// it was paid for.
 func (c *Config) ReadAloud(ctx context.Context, text string, w io.Writer) error {
 	key, voice := c.VoiceKey(), c.voice()
 	if key == "" {
@@ -330,9 +333,91 @@ func (c *Config) ReadAloud(ctx context.Context, text string, w io.Writer) error 
 	if text = strings.TrimSpace(text); text == "" || len([]rune(text)) > SayMax {
 		return fmt.Errorf("a text to read is 1 to %d characters", SayMax)
 	}
-	err := elevenSay(ctx, key, voice, text, w)
+	dir := c.Path(voiceCacheDir)
+	sum := sha256.Sum256([]byte(voice + "\x00" + sayModel + "\x00" + sayFormat + "\x00" + text))
+	path := filepath.Join(dir, fmt.Sprintf("%x.mp3", sum))
+	if f, err := os.Open(path); err == nil {
+		defer f.Close()
+		now := time.Now()
+		os.Chtimes(path, now, now) // read lately: kept longest
+		_, err = io.Copy(w, f)
+		return err
+	}
+	os.MkdirAll(dir, 0o700)
+	tmp, err := os.CreateTemp(dir, ".part-*")
+	if err != nil {
+		err = elevenSay(ctx, key, voice, text, w) // read, not kept
+		noteRefused(key, voice, true, err)
+		return err
+	}
+	defer os.Remove(tmp.Name()) // gone once renamed
+	err = elevenSay(context.WithoutCancel(ctx), key, voice, text, &keepWrite{file: tmp, page: w})
 	noteRefused(key, voice, true, err)
-	return err
+	if cerr := tmp.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		return err
+	}
+	if err := os.Rename(tmp.Name(), path); err == nil {
+		pruneVoiceCache(dir, voiceCacheMax)
+	}
+	return nil
+}
+
+// voiceCacheDir keeps what ElevenLabs read, voiceCacheMax bytes of it at most: what was read
+// least lately goes first.
+const voiceCacheDir = ".voice"
+
+var voiceCacheMax int64 = 500 << 20
+
+// sayFormat is the audio ElevenLabs reads into.
+const sayFormat = "mp3_44100_128"
+
+// keepWrite writes what ElevenLabs reads to the cache, and to the page while it listens: a page
+// that stopped listening does not stop the keeping.
+type keepWrite struct {
+	file *os.File
+	page io.Writer // nil once the page stopped listening
+}
+
+func (k *keepWrite) Write(b []byte) (int, error) {
+	if k.page != nil {
+		if _, err := k.page.Write(b); err != nil {
+			k.page = nil
+		}
+	}
+	return k.file.Write(b)
+}
+
+// pruneVoiceCache removes what was read least lately until the cache holds max bytes at most.
+func pruneVoiceCache(dir string, max int64) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	type kept struct {
+		path string
+		size int64
+		at   time.Time
+	}
+	var all []kept
+	var total int64
+	for _, e := range entries {
+		if fi, err := e.Info(); err == nil && fi.Mode().IsRegular() && strings.HasSuffix(e.Name(), ".mp3") {
+			all = append(all, kept{filepath.Join(dir, e.Name()), fi.Size(), fi.ModTime()})
+			total += fi.Size()
+		}
+	}
+	slices.SortFunc(all, func(a, b kept) int { return a.at.Compare(b.at) })
+	for _, k := range all {
+		if total <= max {
+			return
+		}
+		if os.Remove(k.path) == nil {
+			total -= k.size
+		}
+	}
 }
 
 // Transcribe writes down what a recording says, with ElevenLabs.
@@ -389,7 +474,7 @@ func elevenError(resp *http.Response) error {
 // and the pages change it, keeping the voice's pitch (voice_speed).
 func elevenSay(ctx context.Context, key, voice, text string, w io.Writer) error {
 	body, _ := json.Marshal(map[string]string{"text": text, "model_id": sayModel})
-	u := ElevenAPI + "/v1/text-to-speech/" + url.PathEscape(voice) + "/stream?output_format=mp3_44100_128"
+	u := ElevenAPI + "/v1/text-to-speech/" + url.PathEscape(voice) + "/stream?output_format=" + sayFormat
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, bytes.NewReader(body))
 	if err != nil {
 		return err

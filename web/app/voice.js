@@ -77,6 +77,8 @@
     mic: svg('<rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10v1a7 7 0 0 0 14 0v-1"/><line x1="12" y1="18" x2="12" y2="22"/>'),
     speaker: svg('<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M19 5a10 10 0 0 1 0 14"/>'),
     stop: svg('<rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor"/>'),
+    pause: svg('<rect x="6" y="5" width="4" height="14" rx="1" fill="currentColor"/><rect x="14" y="5" width="4" height="14" rx="1" fill="currentColor"/>'),
+    play: svg('<polygon points="7 5 19 12 7 19 7 5" fill="currentColor"/>'),
     wait: svg('<circle cx="12" cy="12" r="9" stroke-dasharray="14 42"/>'),
   };
   const style = document.createElement('style');
@@ -86,11 +88,12 @@
 .vmic.rec{background:#d93025;color:#fff;animation:vpulse 1.2s ease-in-out infinite}
 .vmic.busy{cursor:progress}.vmic.busy svg{animation:vspin 1s linear infinite}
 .vmic-pad{padding-right:34px!important}
-.vpill,.vstop,.vnote{position:fixed;z-index:2147483001;display:none;align-items:center;gap:6px;border:0;margin:0;border-radius:999px;padding:8px 13px;font:600 13px/1.2 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#1b1b1f;color:#fff;box-shadow:0 4px 16px rgba(0,0,0,.28);cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:manipulation;white-space:nowrap}
-.vpill.show,.vstop.show,.vnote.show{display:flex}
-.vpill,.vstop{left:50%;transform:translateX(-50%);bottom:calc(env(safe-area-inset-bottom,0px) + 92px)} /* one place, away from the menu a phone or tablet shows by the selection */
+.vpill,.vplay button,.vnote{position:fixed;z-index:2147483001;display:none;align-items:center;gap:6px;border:0;margin:0;border-radius:999px;padding:8px 13px;font:600 13px/1.2 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#1b1b1f;color:#fff;box-shadow:0 4px 16px rgba(0,0,0,.28);cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:manipulation;white-space:nowrap}
+.vpill.show,.vnote.show{display:flex}.vplay button{position:static;display:flex}
+.vplay{position:fixed;z-index:2147483001;display:none;gap:8px}.vplay.show{display:flex}
+.vpill,.vplay{left:50%;transform:translateX(-50%);bottom:calc(env(safe-area-inset-bottom,0px) + 92px)} /* one place, away from the menu a phone or tablet shows by the selection */
 .vnote{left:50%;transform:translateX(-50%);top:calc(env(safe-area-inset-top,0px) + 12px);cursor:default;font-weight:500;white-space:normal;max-width:min(92vw,520px);border-radius:12px}
-@media (prefers-color-scheme:dark){.vpill,.vstop,.vnote{background:#ececf1;color:#121216}.vmic{color:#a3a3ae}}
+@media (prefers-color-scheme:dark){.vpill,.vplay button,.vnote{background:#ececf1;color:#121216}.vmic{color:#a3a3ae}}
 @keyframes vpulse{0%,100%{box-shadow:0 0 0 0 rgba(217,48,37,.5)}50%{box-shadow:0 0 0 7px rgba(217,48,37,0)}}
 @keyframes vspin{to{transform:rotate(360deg)}}
 .vsay.on{color:#d93025}`;
@@ -102,7 +105,13 @@
   };
   const mic = make('vmic', ICON.mic, 'Speak: what you say is written here');
   const pill = make('vpill', ICON.speaker + '<span>Read aloud</span>');
-  const stopper = make('vstop', ICON.stop + '<span>Stop reading</span>');
+  // the player, while it reads: pause or play, and stop
+  const player = document.createElement('div');
+  player.className = 'vplay'; player.setAttribute('role', 'group'); player.setAttribute('aria-label', 'Reading aloud');
+  const pauser = make('vpause', ICON.pause + '<span>Pause</span>');
+  const stopper = make('vstop', ICON.stop + '<span>Stop</span>');
+  player.append(pauser, stopper);
+  function showPaused(paused) { pauser.innerHTML = paused ? ICON.play + '<span>Play</span>' : ICON.pause + '<span>Pause</span>'; }
   const noteEl = document.createElement('div');
   noteEl.className = 'vnote'; noteEl.setAttribute('role', 'status');
   let noteT = 0;
@@ -112,13 +121,13 @@
   }
   // A tap on these keeps the focus and the selection where they are: on a phone the keyboard
   // stays up and the selected words stay selected.
-  for (const b of [mic, pill, stopper]) {
+  for (const b of [mic, pill, pauser, stopper]) {
     b.addEventListener('pointerdown', e => e.preventDefault());
     b.addEventListener('mousedown', e => e.preventDefault());
   }
   function mount() {
     document.head.appendChild(style);
-    for (const x of [mic, pill, stopper, noteEl]) document.body.appendChild(x);
+    for (const x of [mic, pill, player, noteEl]) document.body.appendChild(x);
   }
   if (document.body) mount(); else document.addEventListener('DOMContentLoaded', mount);
 
@@ -187,7 +196,8 @@
     reading = run;
     if (btn) btn.classList.add('on');
     pill.classList.remove('show');
-    stopper.classList.add('show');
+    showPaused(false);
+    player.classList.add('show');
     if (!browser && elevenSays() && opened()) readEleven(run, parts(text, sizes()));
     else {
       if (browser) { /* asked for */ } else if (V.key && (V.say || !V.known)) fell(V.known ? 'This browser cannot play the audio ElevenLabs reads: the browser reads it' : 'rota had not said yet whether ElevenLabs reads: the browser reads it');
@@ -195,10 +205,29 @@
       readBrowser(run, text);
     }
   }
+  // pause pauses a reading, or plays it on from where it paused: ElevenLabs's audio by stopping
+  // the clock of what plays it, the browser's voice as it pauses itself.
+  function pause() {
+    const run = reading;
+    if (!run) return;
+    run.paused = !run.paused;
+    if (run.kind === 'browser') { if (run.paused) speechSynthesis.pause(); else speechSynthesis.resume(); }
+    else if (actx) { if (run.paused) actx.suspend().catch(() => {}); else actx.resume().catch(() => {}); }
+    if (!run.paused && run.wake) run.wake();
+    showPaused(run.paused);
+  }
+  // unpaused waits while the reading is paused: between two parts, the next waits for Play.
+  async function unpaused(run) {
+    while (run.paused && !run.stopped) await new Promise(r => { run.wake = r; });
+  }
   function stop() {
     const run = reading;
     if (!run) return;
+    if (run.paused) { // what was paused plays no more, and whatever reads next is not paused
+      if (run.kind === 'browser') speechSynthesis.resume(); else if (actx) actx.resume().catch(() => {});
+    }
     run.stopped = true;
+    if (run.wake) run.wake();
     if (run.cancel) run.cancel();
     if (run.ctl) run.ctl.abort(); // the parts asked for ahead
     done(run);
@@ -208,7 +237,7 @@
     reading = null;
     if (!rec && !busy) audioMode('auto');
     if (run.btn) run.btn.classList.remove('on');
-    stopper.classList.remove('show');
+    player.classList.remove('show');
     placePill();
   }
   function fetchPart(text, run) {
@@ -221,6 +250,7 @@
     return p;
   }
   async function readEleven(run, ps) {
+    run.kind = 'eleven';
     // the parts asked for ahead, two at a time: read fast, a part plays quicker than ElevenLabs
     // makes the next one
     const ahead = [];
@@ -247,10 +277,10 @@
   // speed is how fast the voice reads, 1 to 3 (voice_speed).
   const speed = () => Math.min(3, Math.max(1, Number(V.speed) || 1));
   // sizes are how long the parts of an ElevenLabs reading are: the first short, so it starts soon,
-  // the next ones made while those before play. ElevenLabs makes speech about 2.8 times faster
-  // than it is spoken at 1x; read faster, the parts grow less.
+  // the next ones made while those before play, two at a time, so even read at 3x none waits. They
+  // are the same at every speed, so what rota keeps of a reading serves every speed.
   function sizes() {
-    const grow = Math.max(1.25, 2.5 / speed()), out = [160];
+    const grow = 1.25, out = [160];
     while (out.length < 12 && out[out.length - 1] < 1200) out.push(Math.min(1200, Math.round(out[out.length - 1] * grow)));
     return out.map(x => Math.min(x, V.max || 1200));
   }
@@ -291,6 +321,7 @@
     }
     if (run.stopped) return '';
     try { buffer = await stretched(buffer); } catch (e) { /* at its own speed */ }
+    await unpaused(run);
     if (run.stopped) return '';
     if (actx.state !== 'running') try { await actx.resume(); } catch (e) { /* said below */ }
     if (actx.state !== 'running') return 'This browser did not let the page play sound (' + actx.state + ')';
@@ -307,6 +338,7 @@
     });
   }
   function readBrowser(run, text) {
+    run.kind = 'browser';
     if (!canSpeak) { note('This browser cannot read aloud'); done(run); return; }
     const ps = parts(text, [200]); // a browser stops a long utterance midway
     let i = 0, started = false;
@@ -327,10 +359,11 @@
     speechSynthesis.cancel();
     next();
     setTimeout(() => { // a phone may drop it without a word: Stop reading does not stay
-      if (!started && reading === run && !speechSynthesis.speaking) { done(run); note('The browser did not read it: tap again to read it'); }
+      if (!started && reading === run && !run.paused && !speechSynthesis.speaking) { done(run); note('The browser did not read it: tap again to read it'); }
     }, 3000);
   }
   stopper.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); stop(); });
+  pauser.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); pause(); });
 
   // ---- read what is selected ----
   const FIELD_TYPES = ['', 'text', 'search', 'url', 'email'];
@@ -517,6 +550,8 @@
     say,
     stop,
     reading: () => !!reading,
+    pause,
+    paused: () => !!(reading && reading.paused),
     readsWith: () => elevenSays() ? 'ElevenLabs' : canSpeak ? 'browser' : '',
     listensWith: () => elevenListens() ? 'ElevenLabs' : SR ? 'browser' : '',
     device: DEV,
