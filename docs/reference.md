@@ -48,7 +48,9 @@ as open, merged or closed, so it does not wait on you for nothing: the mail says
 too, which asks again only if it still needs you. One whose pull request or issue carried the `hold_label`
 stays, as its rollout may still wait on you. Closed questions are kept in `questions/closed/`.
 
-An agent with `extend: true` works past its `run_minutes` while it makes real progress: when they are up,
+When Claude stops a shift because its usage limit is reached (its 5-hour window, or its week), the shift is
+interrupted as by an update: what it left running goes on, no shift starts until the limit resets, when
+Claude says it does, and then it resumes where it left off. An agent with `extend: true` works past its `run_minutes` while it makes real progress: when they are up,
 rota checks what the shift did since it began or was last checked (with `triage_model`), and it goes on
 for another `run_minutes`, checked again, or ends when it is stuck, loops or waits on nothing; the log
 says which and why, and a shift that cannot be checked goes on. An agent with `until_done: true` runs shift after shift while each ends with `More: yes`,

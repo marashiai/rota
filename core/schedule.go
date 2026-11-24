@@ -26,6 +26,7 @@ type schedule struct {
 	now        time.Time
 	usage      *Usage // what Claude reports now; without it the pool cannot be enforced
 	week       time.Time
+	limit      time.Time // while Claude's usage limit is reached: when it resets (limit.go)
 	from       time.Time // when the week's count began: week, or when Claude reset its count since (countFrom)
 	hosts      map[string]HostState
 	asked      map[string]bool // asked to run now
@@ -72,6 +73,7 @@ func (t *Team) schedule(now time.Time, u *Usage, hosts []HostState) *schedule {
 	}
 	s.week = weekStart(t.Config, s.now, u)
 	s.from = countFrom(s.week, t.Runs, u)
+	s.limit = t.limitHold(s.now)
 	s.pool, s.period = t.TeamPct/7, "today"
 	if t.Pacing == "weekly" {
 		s.pool, s.period = t.TeamPct, "this week"
@@ -442,6 +444,9 @@ func (s *schedule) eligible(a *Agent) (bool, string) {
 	if s.paused[a.Name] && !s.byHand[a.Name] {
 		return false, "paused"
 	}
+	if !s.limit.IsZero() { // Claude would refuse it, the human's request too
+		return false, "Claude's usage limit is reached; it resets at " + s.limit.Local().Format("Mon 15:04")
+	}
 	if a.Host != "" {
 		if ok, why := s.hostReady(a); !ok {
 			return false, why
@@ -557,6 +562,9 @@ func (s *schedule) nextRun(a *Agent) (time.Time, string) {
 		if due := s.due(a); due.After(s.now) {
 			at = due
 		}
+	}
+	if s.limit.After(at) { // the organizer looks again when Claude's usage limit resets
+		at = s.limit
 	}
 	switch {
 	case s.usage != nil && s.pool <= 0:

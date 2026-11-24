@@ -363,6 +363,17 @@ func (t *Team) outcome(ctx, sctx context.Context, a *Agent, res Result, s *sched
 		if res.Checked != "" {
 			text = fmt.Sprintf("Ended after %d minutes, as rota's check found it no longer worked: %s. Partial output:\n\n%s", mins, res.Checked, partial)
 		}
+	case res.Status == "limited": // as an update: it resumes where it left off, once the limit resets
+		why := "Claude's usage limit was reached (" + strings.TrimSuffix(res.Limit, ".") + ")"
+		r.Status, r.Session, text = "interrupted", sessionOf(res.Output), fmt.Sprintf("Interrupted after %d minutes because %s. Partial output:\n\n%s", mins, why, partial)
+		if r.Session != "" {
+			text = resumeText(mins, why)
+			r.Reason = fmt.Sprintf("Claude's usage limit was reached; the shift resumes where it left off once it resets, at %s.", res.Until.Local().Format("Mon 15:04"))
+		}
+		if err := t.holdForLimit(res.Until, res.Limit); err != nil {
+			fmt.Fprintln(os.Stderr, "warn: the other shifts may meet Claude's usage limit too:", err)
+		}
+		logf("Claude's usage limit is reached: no shift starts until it resets at %s, and %s's resumes then", res.Until.Local().Format("Mon 15:04"), a.Name)
 	case res.Status == "lost" || res.Status == "busy" || res.Status == "failed":
 		r.Status, text = res.Status, res.Output
 	case !haveResult:
@@ -406,7 +417,10 @@ func (t *Team) record(ctx context.Context, a *Agent, r Run, res Result, text str
 	var advice string
 	resumes := r.Status == "interrupted" && r.Session != ""
 	if resumes {
-		r.Retry, r.Reason = "yes", "The organizer stopped (an update, a restart, a logout); the shift resumes where it left off."
+		r.Retry = "yes"
+		if r.Reason == "" {
+			r.Reason = "The organizer stopped (an update, a restart, a logout); the shift resumes where it left off."
+		}
 	} else if !r.IsRun() {
 		attempts := t.schedule(r.Time, nil, nil).stat(a).Attempts
 		v := judge(ctx, t.Config, a, r, res, attempts+1)

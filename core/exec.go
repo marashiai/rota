@@ -42,13 +42,15 @@ type Job struct {
 
 // Result is what comes back: claude's raw stdout plus how the shift ended.
 type Result struct {
-	ID      string `json:"id"`
-	Output  string `json:"output"`
-	Status  string `json:"status"`            // done | failed | stopped | timeout | lost | busy
-	Checked string `json:"checked,omitempty"` // a timeout: why rota's check ended it (extend)
-	Seconds int    `json:"seconds"`
-	Started bool   `json:"started"`        // claude was actually launched (so some of the pool may have been used)
-	Disk    *int64 `json:"disk,omitempty"` // the work folder's size in bytes once claude ended; nil: not measured
+	ID      string    `json:"id"`
+	Output  string    `json:"output"`
+	Status  string    `json:"status"`            // done | failed | stopped | timeout | lost | busy
+	Checked string    `json:"checked,omitempty"` // a timeout: why rota's check ended it (extend)
+	Limit   string    `json:"limit,omitempty"`   // limited: Claude's usage limit, as Claude said it (limit.go)
+	Until   time.Time `json:"until,omitzero"`    // limited: when it resets
+	Seconds int       `json:"seconds"`
+	Started bool      `json:"started"`        // claude was actually launched (so some of the pool may have been used)
+	Disk    *int64    `json:"disk,omitempty"` // the work folder's size in bytes once claude ended; nil: not measured
 }
 
 // execShift runs one shift on this machine, calling onLine for every line claude
@@ -217,8 +219,11 @@ func execShift(ctx context.Context, c *Config, job Job, onLine func(string), not
 		if runErr != nil && out.Len() == 0 {
 			res.Output = fmt.Sprintf("claude exited: %v", runErr)
 		}
+		if until, said, ok := usageLimit(res.Output, time.Now()); ok { // it resumes once the limit resets
+			res.Status, res.Limit, res.Until = "limited", said, until
+		}
 	}
-	if res.Started && !(res.Status == "stopped" && resumes(context.Cause(ctx))) {
+	if res.Started && res.Status != "limited" && !(res.Status == "stopped" && resumes(context.Cause(ctx))) {
 		since := start // what the shift it resumes left running, it ends too
 		if !job.Began.IsZero() && job.Began.Before(since) {
 			since = job.Began
