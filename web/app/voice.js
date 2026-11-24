@@ -117,10 +117,12 @@
     return actx;
   }
 
-  // parts cuts text where a reader pauses: the first part short, so it starts soon.
-  function parts(text, first, rest) {
+  // parts cuts text where a reader pauses, each part at most as long as limits says, the last limit
+  // for every part after: a short first part starts soon, and each next one is made while the one
+  // before plays.
+  function parts(text, limits) {
     const out = [];
-    let left = text, lim = first;
+    let left = text, lim = limits[0];
     while (left) {
       if (left.length <= lim) { out.push(left); break; }
       let cut = -1;
@@ -133,7 +135,7 @@
       if (cut < 1) cut = lim;
       out.push(left.slice(0, cut).trim());
       left = left.slice(cut).trim();
-      lim = rest;
+      lim = limits[Math.min(out.length, limits.length - 1)];
     }
     return out.filter(Boolean);
   }
@@ -152,7 +154,7 @@
     reading = run;
     if (btn) btn.classList.add('on');
     stopper.classList.add('show');
-    if (elevenSays() && opened()) readEleven(run, parts(text, 280, Math.min(1500, V.max || 1500)));
+    if (elevenSays() && opened()) readEleven(run, parts(text, [160, 400, Math.min(1200, V.max || 1200)])); // ElevenLabs makes speech about three times faster than it is spoken
     else {
       if (V.key && (V.say || !V.known)) fell(V.known ? 'This browser cannot play the audio ElevenLabs reads: the browser reads it' : 'rota had not said yet whether ElevenLabs reads: the browser reads it');
       else if (V.key && V.sayWhy) note(V.sayWhy + ': the browser reads it');
@@ -221,7 +223,7 @@
   }
   function readBrowser(run, text) {
     if (!canSpeak) { note('This browser cannot read aloud'); done(run); return; }
-    const ps = parts(text, 200, 200); // a browser stops a long utterance midway
+    const ps = parts(text, [200]); // a browser stops a long utterance midway
     let i = 0, started = false;
     const next = () => {
       if (run.stopped || reading !== run) return;

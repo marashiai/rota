@@ -26,11 +26,12 @@ import (
 
 const voiceKeyFile = "secrets/elevenlabs.key"
 
-// The ElevenLabs models rota uses: the fast one that reads in many languages, and the one that
-// writes down what was said, in whatever language.
+// The ElevenLabs models rota uses: its most expressive voice (about 0.9 s to its first sound,
+// three times faster than it speaks, so the pages read in parts that grow), and its most
+// accurate writing down of a recording, in whatever language.
 const (
-	sayModel    = "eleven_flash_v2_5"
-	listenModel = "scribe_v2"
+	sayModel    = "eleven_v4"
+	listenModel = "scribe_v3"
 	// SayMax is the most one reading asks ElevenLabs to read: the pages send a longer text in
 	// parts, so the first part plays sooner.
 	SayMax = 5000
@@ -310,6 +311,9 @@ func elevenListen(ctx context.Context, key string, audio io.Reader, name, conten
 		err := mw.WriteField("model_id", listenModel)
 		if err == nil {
 			err = mw.WriteField("tag_audio_events", "false") // the words, not (laughs)
+		}
+		if err == nil {
+			err = mw.WriteField("no_verbatim", "true") // what was meant: no um, no false starts
 		}
 		if err == nil {
 			h := make(map[string][]string)

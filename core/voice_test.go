@@ -21,6 +21,7 @@ type fakeEleven struct {
 	sayN, listenN   atomic.Int32
 	voice, model    string
 	file, fileModel string
+	verbatim        string
 }
 
 func (f *fakeEleven) serve(t *testing.T) {
@@ -61,7 +62,7 @@ func (f *fakeEleven) serve(t *testing.T) {
 				return
 			}
 			b, _ := io.ReadAll(file)
-			f.file, f.fileModel = string(b), r.FormValue("model_id")
+			f.file, f.fileModel, f.verbatim = string(b), r.FormValue("model_id"), r.FormValue("no_verbatim")
 			json.NewEncoder(w).Encode(map[string]any{"text": " Merge the five pull requests. ", "language_code": "en"})
 		default:
 			http.NotFound(w, r)
@@ -133,7 +134,7 @@ func TestTheVoiceIsElevenLabsForWhatItsKeyMay(t *testing.T) {
 		t.Fatalf("another key is asked about at once, and shows its end: %+v", v)
 	}
 	text, err := team.Transcribe(ctx, strings.NewReader("webm audio"), "speech.webm", "audio/webm")
-	if err != nil || text != "Merge the five pull requests." || f.file != "webm audio" || f.fileModel != listenModel {
+	if err != nil || text != "Merge the five pull requests." || f.file != "webm audio" || f.fileModel != listenModel || f.verbatim != "true" {
 		t.Fatalf("written down: %q %v (%q %q)", text, err, f.file, f.fileModel)
 	}
 
