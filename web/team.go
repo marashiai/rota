@@ -455,6 +455,14 @@ func (s *site) teamAct(t *core.Team, action, arg, text, about string) (said stri
 			}
 		}
 		said, err = "Saved. Its next run has it.", t.SetAgent(arg, set)
+	case "voice-key": // text: the ElevenLabs key; "" removes it
+		if err := t.SetVoiceKey(text); err != nil {
+			return "", true, err
+		}
+		said = "ElevenLabs key removed: the browser's own voice and dictation are used"
+		if strings.TrimSpace(text) != "" {
+			said = "ElevenLabs key saved on this machine"
+		}
 	case "team-set": // text: the team's settings as JSON, key to value, "" for the default
 		var set map[string]string
 		if err := json.Unmarshal([]byte(text), &set); err != nil || len(set) == 0 {

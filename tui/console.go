@@ -433,13 +433,14 @@ func (c *console) drawBottom(f *frame) {
 			keys, room = "", c.w-x-width(prompt)-margin
 		}
 		start := 0 // scroll so the cursor stays in view
-		for width(string(in.text[start:in.pos])) > room-1 {
+		text := in.shown()
+		for width(string(text[start:in.pos])) > room-1 {
 			start++
 		}
 		f.put(x, y, prompt, -1)
-		f.put(x+width(prompt), y, string(in.text[start:]), room)
+		f.put(x+width(prompt), y, string(text[start:]), room)
 		f.put(c.w-width(keys)-margin, y, keys, -1)
-		f.cx, f.cy = x+width(prompt)+width(string(in.text[start:in.pos])), y
+		f.cx, f.cy = x+width(prompt)+width(string(text[start:in.pos])), y
 		return
 	case c.confirm != nil:
 		f.put(x, y, sty(join(p.Warn(), bold), "▲ "+c.confirm.text)+"   "+key("y", "yes")+"   "+key("n", "no"), c.w-2*margin)
@@ -547,6 +548,15 @@ type lineInput struct {
 	text   []rune
 	pos    int
 	done   func(string)
+	secret bool // a key: drawn as dots
+}
+
+// shown is the text as the line draws it.
+func (in *lineInput) shown() []rune {
+	if !in.secret {
+		return in.text
+	}
+	return []rune(strings.Repeat("•", len(in.text)))
 }
 
 type picker struct {

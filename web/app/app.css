@@ -510,6 +510,11 @@ button.row{width:100%;text-align:left}
 .grp .nm{font-size:12px;color:var(--ink3);margin-left:2px}
 .grp .av{margin-top:18px}
 .grp .bub{max-width:94%}
+.brow{display:flex;align-items:flex-end;gap:2px;max-width:100%;min-width:0} /* an answer and its speaker */
+.grp .brow .bub{max-width:none;min-width:0;flex:0 1 auto}
+.vsay{flex:none;width:32px;height:32px;opacity:.6}.vsay svg{width:17px;height:17px}.vsay:hover,.vsay.on{opacity:1}.vsay.on{color:#d93025}
+.mh .vsay{width:36px;height:36px}
+.vkey{display:flex;gap:8px;margin-top:8px}.vkey input{flex:1;min-width:0;font-size:16px;padding:6px 10px;border:1px solid var(--line);border-radius:9px;background:var(--bg);color:var(--ink)}.vkey input:focus{border-color:var(--accent)}
 .grp .chg{align-self:stretch}
 .avsp{width:26px;flex:none}
 .here{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}

@@ -186,7 +186,7 @@ func Handler(root, conf string, port int) http.Handler {
 				return
 			}
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			layout.Execute(w, map[string]any{"Title": title, "Live": live, "Body": body})
+			layout.Execute(w, map[string]any{"Title": title, "Live": live, "Body": body, "Voice": s.voiceTag()})
 		})
 	}
 	reports := func(t *core.Team, name string) (string, bool, template.HTML) { // live while it shows today's
@@ -256,6 +256,9 @@ func Handler(root, conf string, port int) http.Handler {
 	mux.HandleFunc("/api/settings", s.settingsJSON)
 	mux.HandleFunc("/api/chat", s.chatJSON)
 	mux.HandleFunc("/api/shares", s.sharesJSON)
+	mux.HandleFunc("/api/voice", s.voiceJSON)
+	mux.HandleFunc("/api/voice/say", s.voiceSay)
+	mux.HandleFunc("/api/voice/listen", s.voiceListen)
 	mux.Handle("/review/", http.StripPrefix("/review", s.reviewPages()))
 	doc("/reports/", reports)
 	doc("/evidence/", s.evidence)
@@ -388,7 +391,7 @@ img{max-width:100%;height:auto}p,li,blockquote,summary,h1,h2,h3{overflow-wrap:an
   events.onopen = update; // what changed since the page was made, or while the organizer restarted
   setInterval(function () { if (due) update(); }, 2000); // what waited for you to finish
   document.addEventListener("visibilitychange", function () { if (!document.hidden && due) update(); });
-})();</script>{{end}}</body></html>`))
+})();</script>{{end}}{{.Voice}}</body></html>`))
 
 // events tells a live page each time the team folder changes (core's Stamp), as server-sent
 // events: the page then fetches itself and updates in place.
@@ -631,7 +634,7 @@ func (s *site) reviewPages() http.Handler {
 				http.Error(w, err.Error(), http.StatusServiceUnavailable)
 				return
 			}
-			h = glossweb.New(c, glossweb.Options{Title: "rota", OnSend: func(ctx context.Context, rv *review.Review, sent int) error {
+			h = glossweb.New(c, glossweb.Options{Title: "rota", Foot: s.voiceTag(), OnSend: func(ctx context.Context, rv *review.Review, sent int) error {
 				t, err := core.Open(s.root, s.conf)
 				if err != nil {
 					return err
@@ -750,13 +753,18 @@ func (s *site) control(t *core.Team, action, agent, qid, about, text string) (st
 // sameOrigin refuses a post that did not come from these pages, so a page visited elsewhere
 // cannot change the team; local has already refused other hosts.
 func (s *site) sameOrigin(r *http.Request) bool {
+	return fromHere(r) && r.FormValue("token") == s.token
+}
+
+// fromHere says a request names no other site as where it came from.
+func fromHere(r *http.Request) bool {
 	host := r.Host
 	for _, h := range []string{r.Header.Get("Origin"), r.Header.Get("Referer")} {
 		if h != "" && h != "http://"+host && !strings.HasPrefix(h, "http://"+host+"/") && h != "https://"+host && !strings.HasPrefix(h, "https://"+host+"/") {
 			return false
 		}
 	}
-	return r.FormValue("token") == s.token
+	return true
 }
 
 // questionsJSON are the open questions, for the service worker that shows a push.

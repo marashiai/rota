@@ -514,9 +514,20 @@ alike. It is where you use rota:
   Message, Run now or Stop, Pause or Resume; its Messages; its Runs, each with its report and its
   transcript (following a running one), and the reports it keeps for you; its Role, edited in place; and
   its Settings: on or off, when it runs, Importance, model, and Advanced with every setting.
-- **Settings**: how the inbox behaves, notifications (Chat and Messages, and each device), the team's
-  budget, the team's repositories, which you add and remove there (see "Repositories"), Open on my
-  phone, and Advanced with every `rota.conf` setting.
+- **Settings**: how the inbox behaves, notifications (Chat and Messages, and each device), the voice
+  (below), the team's budget, the team's repositories, which you add and remove there (see
+  "Repositories"), Open on my phone, and Advanced with every `rota.conf` setting.
+- **Voice**: every field you write in, in the app and in gloss's review pages, shows a microphone while
+  you write in it: tap it, speak, and tap it again, and what you said is written where the cursor is,
+  for you to edit; nothing is sent. Each message an agent or the Team writes you has a speaker that
+  reads it aloud, and anything you select, anywhere in the pages, gets a Read aloud button beside it;
+  Stop reading ends it. With an ElevenLabs key (Settings, Voice; or the console's Settings tab), ElevenLabs
+  reads aloud and writes down what you said, in whatever language, for what the key may do: a key can be
+  limited to some of its uses, and rota asks ElevenLabs once a day what yours may, at the cost of one word
+  read and half a second of silence written down. Without a key, or for what it may not, the browser's
+  own voice and dictation do it. The key stays on the team machine, in `secrets/elevenlabs.key`: the pages
+  send rota the text or the recording, and rota asks ElevenLabs. `voice` in `rota.conf` is the
+  ElevenLabs voice that reads (its id, from elevenlabs.io).
 
 In the pages, a switch or a choice outside Advanced applies as you tap it. What you change under
 Advanced, in a role or in the shares waits for Save (Apply, for the shares): a bar at the bottom of the

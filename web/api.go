@@ -52,7 +52,7 @@ type asset struct {
 var appPage = template.Must(template.New("app").Parse(string(assets["index.html"].body)))
 
 // appCSP lets the app run only its own script: whatever an agent writes is only ever text.
-const appCSP = "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; " +
+const appCSP = "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; media-src 'self' blob:; " +
 	"frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
 
 // app serves the app at / and its files; anything else under / is not found.
@@ -66,7 +66,7 @@ func (s *site) app(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Security-Policy", strings.Replace(appCSP, "frame-ancestors 'none'", "frame-ancestors 'self'", 1))
 			w.Header().Set("X-Frame-Options", "SAMEORIGIN")
 		}
-		appPage.Execute(w, map[string]string{"Token": s.token, "JS": assets["app.js"].hash, "CSS": assets["app.css"].hash})
+		appPage.Execute(w, map[string]string{"Token": s.token, "JS": assets["app.js"].hash, "CSS": assets["app.css"].hash, "Voice": assets["voice.js"].hash})
 		return
 	}
 	a, ok := assets[name]

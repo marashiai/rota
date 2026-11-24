@@ -403,7 +403,16 @@ func (sp *settingsPage) rows(c *console) []row {
 		help: "auto follows the terminal's background, light or dark; mono uses no color. Kept in this team folder (.theme); ROTA_THEME overrides it, and NO_COLOR asks for mono."}}
 	set := c.t.Settings()
 	for i := range core.ConfigFields {
-		if f := &core.ConfigFields[i]; strings.Contains(f.Key, strings.ToLower(sp.filter)) {
+		f := &core.ConfigFields[i]
+		if f.Key == "voice" && strings.Contains(voiceKeyRow, strings.ToLower(sp.filter)) { // the key, with the voice it reads in
+			key := "none: the pages read aloud and take dictation with the browser's own"
+			if c.t.VoiceKey() != "" {
+				key = "set, in secrets/elevenlabs.key"
+			}
+			rows = append(rows, row{section: f.Section, key: voiceKeyRow, label: voiceKeyRow, value: key, set: c.t.VoiceKey() != "",
+				help: "With an ElevenLabs key, the pages read aloud and take dictation with ElevenLabs, for what the key may do; else with the browser's own. ⏎ pastes a key; an empty one removes it."})
+		}
+		if strings.Contains(f.Key, strings.ToLower(sp.filter)) {
 			rows = append(rows, fieldRow(f, c.t.Config, set, ""))
 		}
 	}
@@ -467,12 +476,39 @@ func (c *console) setSetting(r row, v string) {
 		})
 		return
 	}
+	if r.key == voiceKeyRow {
+		c.input = &lineInput{prompt: "ElevenLabs key (empty removes it): ", secret: true, done: func(key string) {
+			save := func() {
+				if c.sayErr(c.t.SetVoiceKey(key)) {
+					return
+				}
+				c.reread()
+				if strings.TrimSpace(key) == "" {
+					c.say("ElevenLabs key removed: the pages use the browser's own voice and dictation", false)
+				} else {
+					c.say("ElevenLabs key saved: the pages use it for what it may do", false)
+				}
+			}
+			if strings.TrimSpace(key) == "" {
+				if c.t.VoiceKey() != "" {
+					c.ask("Remove the ElevenLabs key?", save)
+				}
+				return
+			}
+			save()
+		}}
+		return
+	}
 	if c.sayErr(c.t.SetSetting(r.key, v)) {
 		return
 	}
 	c.reread()
 	c.say(r.key+" = "+or(v, "the default")+" · it applies within seconds", false)
 }
+
+// voiceKeyRow is the ElevenLabs key on the Settings tab: kept in the team's secrets, not in the
+// config file.
+const voiceKeyRow = "elevenlabs_key"
 
 // ---- the theme ----
 //

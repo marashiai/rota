@@ -873,7 +873,9 @@ func TestReviewsAreOnlyTheTeamsRepositories(t *testing.T) {
 	if !strings.Contains(get(t, srv, "/review/app.js"), "function") {
 		t.Fatal("gloss's script is served")
 	}
-	get(t, srv, "/review/o/app/1/") // the team's: gloss's page, which loads the pull request itself
+	if page := get(t, srv, "/review/o/app/1/"); !strings.Contains(page, `<script src="/voice.js?v=`) || !strings.Contains(page, ` data-token="`) { // the team's: gloss's page, which loads the pull request itself
+		t.Fatalf("a review page reads aloud and takes dictation as the app does:\n%s", page)
+	}
 	get(t, srv, "/review/O/App/1/")
 	for _, path := range []string{"/review/other/secret/1/", "/review/other/secret/1/api/review", "/review/o/", "/review/o/apps/1/"} {
 		resp, err := http.Get(srv.URL + path)

@@ -146,7 +146,9 @@ and edit what you wrote until it's answered.
 ### On your phone
 
 The same inbox works on your phone, with notifications: at once for what an agent or the Team says you
-in the chat, and for your mail as you choose ([how](#manage-it-remotely-with-tailscale)).
+in the chat, and for your mail as you choose ([how](#manage-it-remotely-with-tailscale)). Every field
+takes dictation, and every message, or anything you select, can be read aloud: with
+[ElevenLabs](https://elevenlabs.io) when you give rota a key, else with the browser's own voice.
 
 <p align="center"><img src="docs/demos/phone.gif" width="300" alt="The inbox on a phone"></p>
 

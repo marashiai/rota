@@ -181,8 +181,12 @@ func TestThePageShowsTheAppsChat(t *testing.T) {
 	}
 	asked := ""
 	body := page(Options{Chat: func(ref review.Ref) string { asked = ref.String(); return "/?embed=chat&agent=alpha" }})
-	if asked != "o/r#12" || !strings.Contains(body, `<button id="chatbtn"`) || !strings.Contains(body, `<iframe id="chatframe" src="/?embed=chat&amp;agent=alpha" title="Chat">`) {
+	if asked != "o/r#12" || !strings.Contains(body, `<button id="chatbtn"`) || !strings.Contains(body, `<iframe id="chatframe" src="/?embed=chat&amp;agent=alpha" title="Chat" allow="microphone">`) {
 		t.Fatalf("the app's chat, for this pull request: %q\n%s", asked, body)
+	}
+	if body := page(Options{Foot: `<script src="/voice.js"></script>`}); !strings.Contains(body, `<script src="app.js"></script>
+<script src="/voice.js"></script>`) {
+		t.Fatalf("the app adds its own script at the foot of the page:\n%s", body)
 	}
 	if js, _ := assets.ReadFile("app.js"); !strings.Contains(string(js), "type: 'rota-context'") || !strings.Contains(string(js), "e.origin !== location.origin") {
 		t.Fatal("the page tells the chat what the reviewer looks at, and hears only its own")

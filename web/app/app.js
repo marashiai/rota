@@ -19,6 +19,7 @@ const I = {
   clock: P('<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>'),
   star: P('<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>'),
   mail: P('<path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/>'),
+  speaker: P('<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M19 5a10 10 0 0 1 0 14"/>'),
   more: P('<circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/>'),
   pen: P('<path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>'),
   inbox: P('<polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>'),
@@ -484,7 +485,7 @@ function threadPane(id) {
     const who = m.from === 'you' ? 'You' : m.from === 'team' ? 'Team' : m.from;
     if (!open) { h += `<div class="msg c" data-expand="${esc(t.id)}"><div class="mh">${av(m.from, 36)}<div class="who"><b>${esc(who)}</b><span>${esc(m.plain)}</span></div><span class="at">${when(m.at)}</span></div></div>`; return; }
     const mm = member(m.from), sub = [m.from === 'you' ? `to ${m.to || peer(t)}` : '', mm && i === n - 1 ? STATE[mm.state] : ''].filter(Boolean).join(' · ');
-    h += `<div class="msg"><div class="mh">${av(m.from, 40, true)}<div class="who"><b>${esc(who)}</b>${sub ? `<span>${esc(sub)}</span>` : ''}</div><span class="at">${when(m.at)}</span></div><div class="mb">${m.html}`;
+    h += `<div class="msg"><div class="mh">${av(m.from, 40, true)}<div class="who"><b>${esc(who)}</b>${sub ? `<span>${esc(sub)}</span>` : ''}</div>${m.from !== 'you' ? sayBtn() : ''}<span class="at">${when(m.at)}</span></div><div class="mb">${m.html}`;
     if (m.quotes) h += `<div class="quotes">${m.quotes.map(q => `<div class="quote">${q.where ? `<span class="at2">${esc(q.where)}</span>` : ''}${q.answer ? `<div class="mine">${q.note}</div><div class="an">${I.check}<div>${q.answer}</div></div>` : q.note}</div>`).join('')}</div>`;
     if (m.steps) h += `<div class="steps">${m.steps.map((s, k) => { const on = (t.ticks || []).includes(k);
       return `<button class="step" data-tick="${esc(t.id)}" data-k="${k}"${t.qid ? '' : ' disabled'}><span class="box${on ? ' on' : ''}">${on ? I.check : ''}</span><span>${s}</span></button>`; }).join('')}</div>`;
@@ -528,6 +529,7 @@ function settingsPage() {
     <div class="fld"><span>Chat<span class="small fsub">What an agent or the Team says you there, at once, unless you saw it</span></span><span class="mini">${[['all', 'All'], ['off', 'None']].map(([v, l]) => `<button class="${(p.chat || 'all') === v ? 'on' : ''}" data-pref="chat" data-v="${v}">${l}</button>`).join('')}</span></div>
     <div class="fld"><span>Messages<span class="small fsub">Your mail, which you read when you choose</span></span><span class="mini">${[['focused', 'Focused'], ['all', 'All'], ['off', 'None']].map(([v, l]) => `<button class="${p.notify === v ? 'on' : ''}" data-pref="notify" data-v="${v}">${l}</button>`).join('')}</span></div>
     <div class="fld" style="display:block"><div>This device</div><div class="small">${pushText()}</div>${pushButtons()}</div></div>
+  ${voiceSettings()}
   ${teamSettings()}
   <div class="gh2">More</div><div class="card">
     <button class="fld" data-view="keys"><span>Keyboard shortcuts</span><span class="v">?</span></button>
@@ -535,6 +537,28 @@ function settingsPage() {
   ${S.adv !== null && TEAM.settings ? advancedForm(TEAM.settings.fields) : ''}
   ${TEAM.settings ? `<p class="small" style="text-align:center;margin-top:16px">rota ${esc(TEAM.settings.version)}</p>` : ''}</div>`;
 }
+// voiceSettings: who reads aloud and who takes dictation, and the ElevenLabs key that decides it
+function voiceSettings() {
+  const v = window.rotaVoice;
+  if (!v) return '';
+  const V = v.info, by = (with_, why, none) => with_ === 'ElevenLabs' ? 'ElevenLabs' : with_ ? `The browser's own${V.key && why ? ': ' + why : ''}` : none;
+  return `<div class="gh2">Voice</div><div class="card">
+    <div class="fld"><span>Read aloud<span class="small fsub">${esc(by(v.readsWith(), V.sayWhy, 'This browser cannot read aloud'))}</span></span></div>
+    <div class="fld"><span>Dictation<span class="small fsub">${esc(by(v.listensWith(), V.listenWhy, 'This browser has none'))}</span></span></div>
+    <div class="fld" style="display:block"><div>ElevenLabs key</div><div class="small">${V.key ? 'Set. It stays on this Mac, in the team folder’s secrets; ElevenLabs reads and listens for what the key may do.' : 'None. With a key from elevenlabs.io, ElevenLabs reads aloud and takes dictation, for what the key may do.'}</div>
+      <div class="vkey"><input id="vkey" type="password" autocomplete="off" spellcheck="false" placeholder="${V.key ? 'Paste another key' : 'Paste your key'}" aria-label="ElevenLabs key"><button class="btn" data-vkey>Save</button>${V.key ? '<button class="btn" data-vkeyrm>Remove</button>' : ''}</div></div></div>`;
+}
+async function voiceKey(remove) {
+  const i = document.getElementById('vkey'), key = remove ? '' : (i && i.value.trim()) || '';
+  if (!remove && !key) { toast('Paste the key first'); return; }
+  const said = await post({action: 'voice-key', text: key});
+  if (said === null || said === undefined) return;
+  if (said) toast(cap(said));
+  if (i) i.value = '';
+  await rotaVoice.refresh();
+  render();
+}
+document.addEventListener('rotavoice', () => { if (S.view === 'settings' && !typing()) render(); });
 // ---------- the team, each agent, each run ----------
 // Each reads its own endpoint when shown, and again when the team folder changes; the mail's
 // threads with an agent come from the mail.
@@ -543,7 +567,9 @@ const teamView = () => S.view === 'team' || S.view === 'shares' || S.view.starts
 const pageView = () => teamView() || S.view === 'settings'; // read from its own endpoint, and kept in the address
 const editing = () => S.roleDraft !== null || Object.keys(S.edits).length > 0 || Object.keys(S.weights).length > 0;
 // typing: the human writes a message, a reply, a role or a setting; the page is not drawn again under them
-const typing = () => { const a = document.activeElement; return !!(a && ['rtext', 'ctext', 'cabout', 'repoin'].includes(a.id) && a.value) || editing(); };
+const typing = () => { const a = document.activeElement; return !!(a && ['rtext', 'ctext', 'cabout', 'repoin', 'vkey'].includes(a.id) && a.value) || editing(); };
+// sayBtn reads aloud the message it is on (voice.js): with ElevenLabs, or the browser's voice
+const sayBtn = () => window.rotaVoice ? `<button class="ib vsay" data-say title="Listen" aria-label="Listen">${I.speaker}</button>` : '';
 const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
 async function loadPage(force) { // force: drawn even while the human edits, after they tapped something
   const v = S.view;
@@ -986,7 +1012,7 @@ function chatBody() {
       continue;
     }
     const first = prev !== m.from; prev = m.from;
-    h += `<div class="grp${first ? '' : ' cont'}">${first ? av(m.from, 26) : '<span class="avsp"></span>'}<div class="col">${first ? `<div class="nm">${m.from === 'team' ? 'Team' : esc(m.from)} · ${esc(when(m.at))}</div>` : ''}${m.html ? `<div class="bub mb">${m.html}</div>` : ''}${m.change ? changeCard(m) : ''}</div></div>`;
+    h += `<div class="grp${first ? '' : ' cont'}">${first ? av(m.from, 26) : '<span class="avsp"></span>'}<div class="col">${first ? `<div class="nm">${m.from === 'team' ? 'Team' : esc(m.from)} · ${esc(when(m.at))}</div>` : ''}${m.html ? `<div class="brow"><div class="bub mb">${m.html}</div>${sayBtn()}</div>` : ''}${m.change ? changeCard(m) : ''}</div></div>`;
   }
   if (busy) h += `<div class="grp">${av(CHAT.with, 26)}<div class="col"><div class="nm">${a ? esc(a.name) : 'Team'}</div><div class="typing"><i></i><i></i><i></i></div></div></div>`; // it answers: the Team, or the agent at work
   return h;
@@ -1825,6 +1851,8 @@ document.addEventListener('click', e => {
   if (d.pick) { e.stopPropagation(); S.sel.has(d.pick) ? S.sel.delete(d.pick) : S.sel.add(d.pick); render(); return; }
   if (d.star) { e.stopPropagation(); const t = find(d.star); t.star = !t.star; post({action: t.star ? 'star' : 'unstar', id: t.id}); render(); if (t.star) toast('Starred: it stays in Focused'); return; }
   if (d.open) { S.drawer = false; openIt(d.open); const o = document.getElementById('over'); if (o) o.scrollTop = 0; return; }
+  if (d.say !== undefined) { e.stopPropagation(); const box = b.closest('.brow, .msg'), mb = box && box.querySelector('.mb'); if (mb) rotaVoice.say(mb.innerText, b); return; }
+  if (d.vkey !== undefined || d.vkeyrm !== undefined) { voiceKey(d.vkeyrm !== undefined); return; }
   if (d.view) { if (leaveOK()) goView(d.view); return; }
   if (d.atab) { if (!leaveOK()) return; S.aTab = d.atab; S.roleDraft = null; S.adv = null; S.edits = {}; render(); return; }
   if (d.teamact) {

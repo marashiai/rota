@@ -54,6 +54,8 @@ type Config struct {
 	Web     string `key:"web" default:"local" choices:"local|tailscale|off" section:"Web pages" help:"where rota start serves the pages: local (this machine only), tailscale (also at this machine's Tailscale address, for your phone and other devices; there is no login, so anyone on your tailnet can use them), or off; rota web serves them while it is off"`
 	WebPort int    `key:"web_port" default:"7900"`
 
+	VoiceID string `key:"voice" default:"JBFqnCBsd6RMkjVDRZzb" section:"Voice" help:"the ElevenLabs voice that reads aloud, by its id (elevenlabs.io, under Voices). The pages read aloud and take dictation with ElevenLabs when its key, kept in secrets/elevenlabs.key and set in Settings in the pages or the console, may; else with the browser's own voice and dictation"`
+
 	TrayAutostart bool `key:"tray_autostart_organizer" default:"false" section:"Menu bar (macOS)" help:"opening the app also starts the organizer"`
 
 	SyncRepos bool   `key:"sync_repos" default:"true" section:"Repositories and git" help:"clone or fast-forward each agent's repositories before its shift"`

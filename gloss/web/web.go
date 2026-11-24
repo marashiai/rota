@@ -47,6 +47,9 @@ type Options struct {
 	// with a button that opens it; the page tells it what the reviewer looks at. The app gloss is
 	// part of sets it (rota: its team chat); gloss alone has none.
 	Chat func(ref review.Ref) string
+	// Foot is what the app gloss is part of adds at the end of every review page, such as a script
+	// of its own (rota: reading aloud and dictation); gloss alone adds nothing.
+	Foot template.HTML
 }
 
 // Handler serves review pages.
@@ -128,7 +131,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if h.opts.Chat != nil {
 			chat = h.opts.Chat(ref)
 		}
-		page.Execute(w, map[string]any{"PR": ref.String(), "Title": h.opts.Title, "Chat": chat})
+		page.Execute(w, map[string]any{"PR": ref.String(), "Title": h.opts.Title, "Chat": chat, "Foot": h.opts.Foot})
 	case rest == "/app.js" || rest == "/app.css":
 		h.asset(w, rest[1:])
 	case strings.HasPrefix(rest, "/api/"):

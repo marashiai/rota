@@ -60,7 +60,8 @@
 </div>
 <div id="modal" hidden><div role="dialog" aria-modal="true" aria-labelledby="modaltext"><p id="modaltext"></p><p class="btns"><button id="no">Cancel</button><button id="also" hidden></button><button id="yes" class="primary">Yes</button></p><p class="hint keys"><kbd>Enter</kbd> the green button · <kbd>Esc</kbd> cancel</p></div></div>
 {{if .Chat}}<button id="chatbtn" aria-label="Chat" aria-expanded="false" aria-controls="chatbox" title="Chat: ask about what you look at here"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span class="dot" hidden></span></button>
-<div id="chatbox" hidden><iframe id="chatframe" src="{{.Chat}}" title="Chat"></iframe></div>{{end}}
+<div id="chatbox" hidden><iframe id="chatframe" src="{{.Chat}}" title="Chat" allow="microphone"></iframe></div>{{end}}
 <script src="app.js"></script>
+{{.Foot}}
 </body>
 </html>
