@@ -7,7 +7,25 @@
   'use strict';
   if (window.rotaVoice) return;
   const me = document.currentScript;
-  const token = () => (me && me.dataset.token) || (document.body && document.body.dataset.token) || '';
+  let tok = (me && me.dataset.token) || '';
+  const token = () => tok || (document.body && document.body.dataset.token) || '';
+  // ask posts to rota with the pages' token. rota makes a new one each time it restarts, as it does
+  // when a new one is installed, and a page open since then fetches it and asks again.
+  async function ask(path, body, signal) {
+    const go = () => fetch(path, {method: 'POST', headers: {'X-Rota-Token': token()}, body, signal});
+    let r = await go();
+    if (r.status === 403) {
+      const m = /data-token="([0-9a-f]+)"/.exec(await (await fetch('/', {cache: 'no-store'})).text());
+      if (m) { tok = m[1]; r = await go(); }
+    }
+    return r;
+  }
+  // fell says why the browser's own voice or dictation was used where ElevenLabs could be, on the
+  // page and in rota's log: a phone shows no console.
+  function fell(why) {
+    note(why);
+    ask('/api/voice/fell', new URLSearchParams({why})).catch(() => {});
+  }
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   const canRecord = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder);
   const canSpeak = 'speechSynthesis' in window;
@@ -81,21 +99,22 @@
   if (document.body) mount(); else document.addEventListener('DOMContentLoaded', mount);
 
   // ---- reading aloud ----
-  const audio = new Audio();
-  let silentURL = '';
-  function unlock() { // in the tap itself: a phone then lets this player play what comes later
-    if (!silentURL) {
-      const n = 800, b = new Uint8Array(44 + n), d = new DataView(b.buffer);
-      'RIFF'.split('').forEach((c, i) => { b[i] = c.charCodeAt(0); });
-      d.setUint32(4, 36 + n, true);
-      'WAVEfmt '.split('').forEach((c, i) => { b[8 + i] = c.charCodeAt(0); });
-      d.setUint32(16, 16, true); d.setUint16(20, 1, true); d.setUint16(22, 1, true);
-      d.setUint32(24, 8000, true); d.setUint32(28, 8000, true); d.setUint16(32, 1, true); d.setUint16(34, 8, true);
-      'data'.split('').forEach((c, i) => { b[36 + i] = c.charCodeAt(0); });
-      d.setUint32(40, n, true); b.fill(128, 44);
-      silentURL = URL.createObjectURL(new Blob([b], {type: 'audio/wav'}));
-    }
-    try { audio.src = silentURL; const p = audio.play(); if (p) p.catch(() => {}); } catch (e) { /* it plays the reading or the browser reads it */ }
+  // ElevenLabs' audio plays through Web Audio, opened in the tap: a phone keeps a context it let
+  // play in a tap playing, where it may refuse a player that starts once the audio has come.
+  let actx = null;
+  function opened() {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return null;
+    try {
+      if (navigator.audioSession) navigator.audioSession.type = 'playback'; // an iPhone plays it with its ringer off
+      if (!actx) actx = new AC();
+      if (actx.state !== 'running') actx.resume().catch(() => {});
+      const s = actx.createBufferSource(); // a moment of silence in the tap: an older iPhone opens it only for a sound
+      s.buffer = actx.createBuffer(1, 1, 22050);
+      s.connect(actx.destination);
+      s.start(0);
+    } catch (e) { return null; }
+    return actx;
   }
 
   // parts cuts text where a reader pauses: the first part short, so it starts soon.
@@ -133,13 +152,12 @@
     reading = run;
     if (btn) btn.classList.add('on');
     stopper.classList.add('show');
-    if (elevenSays()) {
-      unlock();
-      // in the tap too: a phone lets the browser's voice speak later only when it spoke in a tap,
-      // and it reads what ElevenLabs could not
-      if (canSpeak) try { speechSynthesis.speak(new SpeechSynthesisUtterance('')); } catch (e) { /* it reads with ElevenLabs */ }
-      readEleven(run, parts(text, 280, Math.min(1500, V.max || 1500)));
-    } else readBrowser(run, text);
+    if (elevenSays() && opened()) readEleven(run, parts(text, 280, Math.min(1500, V.max || 1500)));
+    else {
+      if (V.key && (V.say || !V.known)) fell(V.known ? 'This browser cannot play the audio ElevenLabs reads: the browser reads it' : 'rota had not said yet whether ElevenLabs reads: the browser reads it');
+      else if (V.key && V.sayWhy) note(V.sayWhy + ': the browser reads it');
+      readBrowser(run, text);
+    }
   }
   function stop() {
     const run = reading;
@@ -156,10 +174,10 @@
     stopper.classList.remove('show');
   }
   function fetchPart(text, run) {
-    const p = fetch('/api/voice/say', {method: 'POST', headers: {'X-Rota-Token': token()}, body: new URLSearchParams({text}), signal: run.ctl ? run.ctl.signal : undefined}).then(async r => {
-      if (r.ok) return r.blob();
+    const p = ask('/api/voice/say', new URLSearchParams({text}), run.ctl ? run.ctl.signal : undefined).then(async r => {
+      if (r.ok) return r.arrayBuffer();
       const j = await r.json().catch(() => ({}));
-      throw new Error(r.status === 403 ? 'rota restarted: reload the page to use ElevenLabs again' : j.error || 'ElevenLabs did not read it');
+      throw new Error(r.status === 403 ? 'rota refused the page: reload it' : j.error || 'ElevenLabs did not read it');
     });
     p.catch(() => {}); // a part fetched ahead and not played, as the reading stopped
     return p;
@@ -167,32 +185,38 @@
   async function readEleven(run, ps) {
     let next = fetchPart(ps[0], run);
     for (let i = 0; i < ps.length; i++) {
-      let blob;
-      try { blob = await next; } catch (e) {
+      let bytes;
+      try { bytes = await next; } catch (e) {
         if (run.stopped) return;
-        note(e.message + (canSpeak ? '. The browser reads it.' : ''));
+        fell(e.message + (canSpeak ? ': the browser reads it' : ''));
         look();
         readBrowser(run, ps.slice(i).join('\n'));
         return;
       }
       if (run.stopped) return;
       if (i + 1 < ps.length) next = fetchPart(ps[i + 1], run);
-      const url = URL.createObjectURL(blob);
-      const played = await play(url, run);
-      URL.revokeObjectURL(url);
+      const why = await play(bytes, run);
       if (run.stopped) return;
-      if (!played) { if (canSpeak) readBrowser(run, ps.slice(i).join('\n')); else done(run); return; }
+      if (why) { fell(why + (canSpeak ? ': the browser reads it' : '')); if (canSpeak) readBrowser(run, ps.slice(i).join('\n')); else done(run); return; }
     }
     done(run);
   }
-  function play(url, run) {
+  // play plays one part, and says why not when it cannot ('' when it played).
+  async function play(bytes, run) {
+    let buffer;
+    try { buffer = await new Promise((res, rej) => actx.decodeAudioData(bytes, res, rej)); } catch (e) {
+      return 'This browser could not open the audio ElevenLabs read';
+    }
+    if (run.stopped) return '';
+    if (actx.state !== 'running') try { await actx.resume(); } catch (e) { /* said below */ }
+    if (actx.state !== 'running') return 'This browser did not let the page play sound (' + actx.state + ')';
     return new Promise(res => {
-      audio.onended = () => res(true);
-      audio.onerror = () => res(false);
-      run.cancel = () => { audio.pause(); res(true); };
-      audio.src = url;
-      const p = audio.play();
-      if (p) p.catch(() => res(false));
+      const src = actx.createBufferSource();
+      src.buffer = buffer;
+      src.connect(actx.destination);
+      src.onended = () => res('');
+      run.cancel = () => { try { src.stop(); } catch (e) { /* ended */ } res(''); };
+      src.start();
     });
   }
   function readBrowser(run, text) {
@@ -325,13 +349,13 @@
       const body = new FormData();
       body.append('audio', blob, 'speech.' + ext);
       try {
-        const r = await fetch('/api/voice/listen', {method: 'POST', headers: {'X-Rota-Token': token()}, body});
+        const r = await ask('/api/voice/listen', body);
         const j = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(r.status === 403 ? 'rota restarted: reload the page' : j.error || 'ElevenLabs did not write it down');
         if (j.text) put(at, j.text); else note('Nothing was heard');
       } catch (e) {
         await look();
-        note(e.message + (!elevenListens() && SR ? '. Tap the microphone again: the browser listens now.' : ''));
+        fell(e.message + (!elevenListens() && SR ? '. Tap the microphone again: the browser listens now.' : ''));
       }
       busy = false; setMic('');
     };

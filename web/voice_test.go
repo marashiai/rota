@@ -54,11 +54,7 @@ func TestThePagesSpeakAndListenThroughRota(t *testing.T) {
 	if js := get(t, srv, "/voice.js"); !strings.Contains(js, "window.rotaVoice") || !strings.Contains(js, "speechSynthesis") || !strings.Contains(js, "SpeechRecognition") {
 		t.Fatal("voice.js falls back to the browser's own voice and dictation")
 	}
-	resp, _ := http.Get(srv.URL + "/")
-	resp.Body.Close()
-	if csp := resp.Header.Get("Content-Security-Policy"); !strings.Contains(csp, "media-src 'self' blob:") {
-		t.Fatalf("the app plays what ElevenLabs read: %s", csp)
-	}
+	var resp *http.Response
 	token := regexp.MustCompile(`data-token="([0-9a-f]+)"`).FindStringSubmatch(app)[1]
 	act := func(form url.Values) {
 		t.Helper()
@@ -140,5 +136,17 @@ func TestThePagesSpeakAndListenThroughRota(t *testing.T) {
 	act(url.Values{"action": {"voice-key"}, "text": {""}})
 	if v := voice(); v.Key || v.Say {
 		t.Fatalf("the key removed: %+v", v)
+	}
+}
+
+func TestTheLogNamesTheDevice(t *testing.T) {
+	for ua, want := range map[string]string{
+		"Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Mobile/15E148 Safari/604.1": "Safari on iPhone",
+		"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/158.0.0.0 Safari/537.36":                   "Chrome on a Mac",
+		"curl/8": "a computer",
+	} {
+		if got := device(ua); got != want {
+			t.Errorf("%q: %q, want %q", ua, got, want)
+		}
 	}
 }

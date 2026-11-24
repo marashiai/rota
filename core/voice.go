@@ -50,6 +50,16 @@ func (c *Config) VoiceKey() string {
 	return strings.TrimSpace(string(b))
 }
 
+// FellBack notes in the organizer's log that a page read aloud or took dictation with the
+// browser's own where ElevenLabs could have, and why, as the page says: a phone has no console.
+func FellBack(why, device string) {
+	why = strings.Join(strings.Fields(why), " ")
+	if r := []rune(why); len(r) > 300 {
+		why = string(r[:300]) + "…"
+	}
+	logf("voice: a page on %s used the browser's own: %s", or(device, "a device"), why)
+}
+
 // KeyEnd is the last four characters of a key, which tell keys apart without giving one away;
 // none of a key so short that four would be most of it.
 func KeyEnd(key string) string {

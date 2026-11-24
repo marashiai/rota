@@ -104,6 +104,34 @@ func (s *site) voiceListen(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, r, map[string]string{"text": text})
 }
 
+// voiceFell hears from a page that it used the browser's own voice or dictation, and why.
+func (s *site) voiceFell(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost || !s.voiceAllowed(r) {
+		voiceError(w, http.StatusForbidden, "refused")
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 4<<10)
+	core.FellBack(r.FormValue("why"), device(r.UserAgent()))
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// device names what a browser runs on, as far as the log needs it.
+func device(ua string) string {
+	on := "a computer"
+	for _, d := range []string{"iPhone", "iPad", "Android", "Macintosh", "Windows", "Linux"} {
+		if strings.Contains(ua, d) {
+			on = strings.Replace(d, "Macintosh", "a Mac", 1)
+			break
+		}
+	}
+	for _, b := range [][2]string{{"CriOS", "Chrome"}, {"FxiOS", "Firefox"}, {"Edg/", "Edge"}, {"Chrome/", "Chrome"}, {"Firefox/", "Firefox"}, {"Safari/", "Safari"}} {
+		if strings.Contains(ua, b[0]) {
+			return b[1] + " on " + on
+		}
+	}
+	return on
+}
+
 // voiceAllowed takes only what these pages ask, with their token in a header: it is checked
 // before anything is read.
 func (s *site) voiceAllowed(r *http.Request) bool {
