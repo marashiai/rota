@@ -401,6 +401,7 @@
 
   // ---- dictation ----
   let field = null, rec = null, busy = false;
+  let writing = null; // while what was said is written down: the field it was said for, as rec has it
   const writable = x => isField(x) && !x.disabled && !x.readOnly && x.type !== 'password' && !x.hasAttribute('data-nomic'); // data-nomic: a number, say
   // drawn is the field the page shows for f: f, or the one it drew in its place, which has its id,
   // while the page shows the same place; another thread's reply box has the same id.
@@ -416,7 +417,8 @@
     host = null;
   }
   function placeMic() {
-    const f = rec ? (rec.field = drawn(rec.field, rec.href)) : field;
+    const t = rec || writing; // recording or writing down, it stays with the field it was for
+    const f = t ? (t.field = drawn(t.field, t.href)) : field;
     const on = !!f && f.isConnected && !!f.parentElement && f.offsetWidth > 0 && f.offsetHeight > 0;
     const show = canListen() && (rec || busy || on && document.activeElement === f);
     document.querySelectorAll('.vmic-pad').forEach(x => { if (x !== f || !show) x.classList.remove('vmic-pad'); });
@@ -507,7 +509,7 @@
       stream.getTracks().forEach(t => t.stop());
       audioMode('auto');
       clearTimeout(rec && rec.limit);
-      rec = null; busy = true; setMic('busy');
+      rec = null; busy = true; writing = at; setMic('busy');
       const blob = new Blob(chunks, {type: mr.mimeType || type || 'audio/webm'});
       const ext = /mp4|aac|m4a/.test(blob.type) ? 'm4a' : /ogg/.test(blob.type) ? 'ogg' : 'webm';
       const body = new FormData();
@@ -521,7 +523,7 @@
         await look();
         fell(e.message + (!elevenListens() && SR ? '. Tap the microphone again: the browser listens now.' : ''));
       }
-      busy = false; setMic('');
+      busy = false; writing = null; setMic('');
     };
     mr.start(1000);
     rec = {field: f, href: at.href, stop: () => { if (mr.state !== 'inactive') mr.stop(); }, limit: setTimeout(() => { if (mr.state !== 'inactive') mr.stop(); }, 5 * 60e3)};
