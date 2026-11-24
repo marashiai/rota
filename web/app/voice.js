@@ -279,15 +279,25 @@
   // ---- dictation ----
   let field = null, rec = null, busy = false;
   const writable = x => isField(x) && !x.disabled && !x.readOnly && x.type !== 'password';
+  // drawn is the field the page shows for f: f, or the one it drew in its place, which has its id,
+  // while the page shows the same place; another thread's reply box has the same id.
+  const drawn = (f, href) => f && !f.isConnected && f.id && location.href === href ? document.getElementById(f.id) || f : f;
+  // placeMic puts the microphone in the field written in. While it records or writes down, it
+  // stays on the screen whatever the page draws, so a tap always stops it.
   function placeMic() {
-    const f = rec ? rec.field : field;
-    const show = !!f && f.isConnected && (rec || busy || document.activeElement === f) && canListen();
+    const f = rec ? (rec.field = drawn(rec.field, rec.href)) : field;
+    const on = !!f && f.isConnected;
+    const show = canListen() && (rec || busy || on && document.activeElement === f);
     document.querySelectorAll('.vmic-pad').forEach(x => { if (x !== f || !show) x.classList.remove('vmic-pad'); });
     if (!show) { mic.classList.remove('show'); return; }
-    f.classList.add('vmic-pad');
-    const r = f.getBoundingClientRect();
-    if (!r.width || !r.height || r.bottom < 0 || r.top > innerHeight) { mic.classList.remove('show'); return; }
+    let r = on ? f.getBoundingClientRect() : null;
+    if (!r || !r.width || !r.height || r.bottom < 0 || r.top > innerHeight) {
+      if (!rec && !busy) { mic.classList.remove('show'); return; }
+      r = null; // the field is gone or out of view: the microphone waits at the corner
+    }
     mic.classList.add('show');
+    if (!r) { mic.style.left = (innerWidth - 44) + 'px'; mic.style.top = (innerHeight - 120) + 'px'; return; }
+    f.classList.add('vmic-pad');
     const tall = f.tagName === 'TEXTAREA' && r.height > 44;
     mic.style.left = (r.right - 32) + 'px';
     mic.style.top = (tall ? r.bottom - 32 : r.top + (r.height - 28) / 2) + 'px';
@@ -300,6 +310,7 @@
   addEventListener('scroll', soon, true);
   addEventListener('resize', soon);
   if (window.visualViewport) { visualViewport.addEventListener('resize', soon); visualViewport.addEventListener('scroll', soon); }
+  setInterval(() => { if (rec || busy) soon(); }, 400); // while it records, the page may draw the field again
 
   function setMic(state) {
     mic.classList.toggle('rec', state === 'rec');
@@ -322,7 +333,7 @@
   }
   async function record(f) {
     const at = {field: f, href: location.href}; // where what is said goes
-    const session = {field: f, stop() { this.cancelled = true; rec = null; busy = false; setMic(''); }};
+    const session = {field: f, href: at.href, stop() { this.cancelled = true; rec = null; busy = false; setMic(''); }};
     rec = session; busy = true; setMic('busy'); // a second tap while the microphone opens stops it
     let stream;
     try { stream = await navigator.mediaDevices.getUserMedia({audio: true}); } catch (e) {
@@ -362,7 +373,7 @@
       busy = false; setMic('');
     };
     mr.start(1000);
-    rec = {field: f, stop: () => { if (mr.state !== 'inactive') mr.stop(); }, limit: setTimeout(() => { if (mr.state !== 'inactive') mr.stop(); }, 5 * 60e3)};
+    rec = {field: f, href: at.href, stop: () => { if (mr.state !== 'inactive') mr.stop(); }, limit: setTimeout(() => { if (mr.state !== 'inactive') mr.stop(); }, 5 * 60e3)};
     setMic('rec');
   }
   function recognize(f) {
@@ -377,7 +388,7 @@
     r.onerror = e => { if (e.error !== 'no-speech' && e.error !== 'aborted') note('Dictation stopped: ' + (e.error === 'not-allowed' ? 'the browser was not allowed to use the microphone' : e.error)); };
     r.onend = () => { clearTimeout(limit); if (rec && rec.r === r) { rec = null; setMic(''); } };
     try { r.start(); } catch (e) { note('Dictation: ' + e.message); return; }
-    rec = {field: f, r, stop: () => r.stop()};
+    rec = {field: f, href: at.href, r, stop: () => r.stop()};
     limit = setTimeout(() => { try { r.abort(); } catch (e) { /* ended */ } if (rec && rec.r === r) { rec = null; setMic(''); } }, 5 * 60e3); // a browser that stops telling
     setMic('rec');
   }
@@ -387,8 +398,7 @@
   // box has the same id.
   function put(at, text) {
     if (!text) return;
-    let f = at.field;
-    if (!f.isConnected && f.id && location.href === at.href) f = document.getElementById(f.id) || f;
+    const f = drawn(at.field, at.href);
     if (!f.isConnected || f.disabled || f.readOnly) {
       if (navigator.clipboard) navigator.clipboard.writeText(text).catch(() => {});
       note('The field is gone; what you said is copied: ' + text);
