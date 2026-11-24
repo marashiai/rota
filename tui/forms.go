@@ -404,7 +404,7 @@ func (sp *settingsPage) rows(c *console) []row {
 	set := c.t.Settings()
 	for i := range core.ConfigFields {
 		f := &core.ConfigFields[i]
-		if f.Key == "voice" && strings.Contains(voiceKeyRow, strings.ToLower(sp.filter)) { // the key, with the voice it reads in
+		if f.Key == "voice_speed" && strings.Contains(voiceKeyRow, strings.ToLower(sp.filter)) { // the key, with the voice it reads in
 			key := "none: the pages read aloud and take dictation with the browser's own"
 			if k := c.t.VoiceKey(); k != "" {
 				key = "set, in secrets/elevenlabs.key"

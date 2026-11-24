@@ -514,6 +514,7 @@ button.row{width:100%;text-align:left}
 .grp .brow .bub{max-width:none;min-width:0;flex:0 1 auto}
 .vsay{flex:none;width:32px;height:32px;opacity:.6}.vsay svg{width:17px;height:17px}.vsay:hover,.vsay.on{opacity:1}.vsay.on{color:#d93025}
 .mh .vsay{width:36px;height:36px}
+.vrow{display:flex;gap:8px;align-items:center;margin:8px 0 4px}.vrow select{flex:1;min-width:0;font-size:16px;padding:7px 10px;border:1px solid var(--line);border-radius:9px;background:var(--bg);color:var(--ink)}.vrow input[type=range]{flex:1;accent-color:var(--accent)}.vrow .btn svg{width:16px;height:16px;margin-right:4px}
 .vkey{display:flex;gap:8px;margin-top:8px}.vkey input{flex:1;min-width:0;font-size:16px;padding:6px 10px;border:1px solid var(--line);border-radius:9px;background:var(--bg);color:var(--ink)}.vkey input:focus{border-color:var(--accent)}
 .grp .chg{align-self:stretch}
 .avsp{width:26px;flex:none}

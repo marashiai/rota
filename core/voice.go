@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -30,7 +31,9 @@ const voiceKeyFile = "secrets/elevenlabs.key"
 // three times faster than it speaks, so the pages read in parts that grow), and its most
 // accurate writing down of a recording, in whatever language.
 const (
-	sayModel    = "eleven_v4"
+	sayModel = "eleven_v4"
+	// speedModel reads at another speed than 1: v4 reads every text at one speed.
+	speedModel  = "eleven_multilingual_v2"
 	listenModel = "scribe_v3"
 	// SayMax is the most one reading asks ElevenLabs to read: the pages send a longer text in
 	// parts, so the first part plays sooner.
@@ -156,7 +159,7 @@ func (c *Config) Voice(ctx context.Context) VoiceUse {
 	}
 	now := time.Now()
 	if !now.Before(voiceFound.sayAgain) {
-		err := elevenSay(ctx, key, c.voice(), "Hi", io.Discard)
+		err := elevenSay(ctx, key, c.voice(), c.speed(), "Hi", io.Discard)
 		voiceFound.say, voiceFound.sayWhy, voiceFound.sayAgain = err == nil, whyNot(err), now.Add(again(err))
 	}
 	if !now.Before(voiceFound.listenAgain) {
@@ -164,6 +167,108 @@ func (c *Config) Voice(ctx context.Context) VoiceUse {
 		voiceFound.listen, voiceFound.listenWhy, voiceFound.listenAgain = err == nil, whyNot(err), now.Add(again(err))
 	}
 	return VoiceUse{Key: true, KeyEnd: KeyEnd(key), Say: voiceFound.say, Listen: voiceFound.listen, SayWhy: voiceFound.sayWhy, ListenWhy: voiceFound.listenWhy}
+}
+
+// VoiceChoice is an ElevenLabs voice the human can choose in Settings.
+type VoiceChoice struct {
+	ID    string `json:"id"`
+	Name  string `json:"name"`
+	About string `json:"about,omitempty"`
+	Own   bool   `json:"own,omitempty"` // one of the account's own: made, cloned or added from the Voice Library
+}
+
+// infinityVoices are the voices ElevenLabs keeps for good, as it says in "What are Default
+// voices?", where they replace the default voices it stops at the end of 2026.
+var infinityVoices = []VoiceChoice{
+	{"BFd5oBc2DDna33pSi4Gf", "Alicia", "Polished Global Anchor", false},
+	{"jSuBIjxMKhqIfb0wCK1F", "Baxter", "Dry Calm Aussie", false},
+	{"AaOhDHYJ1XLZk74lXhdE", "Caleb", "Trusted Guide", false},
+	{"fs2OqxduwXgp9foh2xjK", "Callum", "Husky Trickster", false},
+	{"gOupLcAkjEnguROwi4oS", "Darian", "Warm Grounded Storyteller", false},
+	{"l7kNoIfnJKPg7779LI2t", "Eddie", "Natural and Helpful", false},
+	{"WQP7cQUF5aAS6Axh5yaa", "Elara", "Crisp Pro Narrator", false},
+	{"6WwXjDDEMyNmFG95zycZ", "Eldrin", "Crisp British Baritone", false},
+	{"dvbL7qkNGZY1IqPGZAjM", "Elowen", "Upbeat Modern Narrator", false},
+	{"fnYMz3F5gMEDGMWcH1ex", "Finley", "Articulate Anchor", false},
+	{"22N9cF8z0o7y23njdyaY", "Florence", "Atmospheric Storyteller", false},
+	{"g7LVvkPWALzPxOQbF6OE", "Jade", "Upbeat and Natural", false},
+	{"10NkTYmU7tSz3Kkl3Lex", "Kaelen", "Amateur Warrior", false},
+	{"ktkP7Nsj67dw2zcplQYt", "Lawrence", "Bright and Informative", false},
+	{"QtY3JBOUKEB5xzrRfOKc", "Maisie", "Friendly Casual Neighbor", false},
+	{"8dEUmyPMdDdK91vboYih", "Sawyer", "Midnight Storyteller", false},
+	{"OZ0L6eISlOejga3XjDFt", "Talia", "Warm Soft Guide", false},
+	{"7QN34D2r3hCNwbOYIeK0", "Warren", "Effortless and Cool", false},
+	{"FrS6cKLB1wg4WYgPa9GW", "Wyatt", "Seasoned Mentor", false},
+}
+
+// Voices are the ElevenLabs voices to choose from: the account's own first, when the key may
+// list them (its "Voices: read" permission), then those ElevenLabs keeps for good. why says why
+// the account's own are not listed; "" when they are.
+func (c *Config) Voices(ctx context.Context) (list []VoiceChoice, why string) {
+	key := c.VoiceKey()
+	if key == "" {
+		return infinityVoices, "no ElevenLabs key"
+	}
+	own, err := elevenVoices(ctx, key)
+	if err != nil {
+		return infinityVoices, err.Error()
+	}
+	for _, v := range own {
+		if !slices.ContainsFunc(infinityVoices, func(x VoiceChoice) bool { return x.ID == v.ID }) {
+			list = append(list, v)
+		}
+	}
+	return append(list, infinityVoices...), ""
+}
+
+// elevenVoices lists the account's own voices: not the default ones, which ElevenLabs stops at
+// the end of 2026.
+func elevenVoices(ctx context.Context, key string) ([]VoiceChoice, error) {
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, ElevenAPI+"/v2/voices?page_size=100", nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("xi-api-key", key)
+	resp, err := elevenClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("ElevenLabs did not answer: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, elevenError(resp)
+	}
+	var out struct {
+		Voices []struct {
+			ID          string            `json:"voice_id"`
+			Name        string            `json:"name"`
+			Category    string            `json:"category"`
+			Description string            `json:"description"`
+			Labels      map[string]string `json:"labels"`
+		} `json:"voices"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 8<<20)).Decode(&out); err != nil {
+		return nil, fmt.Errorf("ElevenLabs answered what rota cannot read: %w", err)
+	}
+	var list []VoiceChoice
+	for _, v := range out.Voices {
+		if v.Category == "premade" || v.ID == "" {
+			continue
+		}
+		about := v.Description
+		if about == "" {
+			var l []string
+			for _, k := range []string{"gender", "age", "accent", "descriptive", "use_case"} {
+				if x := v.Labels[k]; x != "" {
+					l = append(l, x)
+				}
+			}
+			about = strings.Join(l, ", ")
+		}
+		list = append(list, VoiceChoice{ID: v.ID, Name: v.Name, About: FirstLine(about, 80), Own: true})
+	}
+	return list, nil
 }
 
 // voice is the ElevenLabs voice that reads aloud. Jade is one of ElevenLabs' Infinity voices, which
@@ -227,7 +332,7 @@ func (c *Config) ReadAloud(ctx context.Context, text string, w io.Writer) error 
 	if text = strings.TrimSpace(text); text == "" || len([]rune(text)) > SayMax {
 		return fmt.Errorf("a text to read is 1 to %d characters", SayMax)
 	}
-	err := elevenSay(ctx, key, voice, text, w)
+	err := elevenSay(ctx, key, voice, c.speed(), text, w)
 	noteRefused(key, voice, true, err)
 	return err
 }
@@ -282,8 +387,20 @@ func elevenError(resp *http.Response) error {
 	return e
 }
 
-func elevenSay(ctx context.Context, key, voice, text string, w io.Writer) error {
-	body, _ := json.Marshal(map[string]string{"text": text, "model_id": sayModel})
+// speed is how fast ElevenLabs reads: voice_speed, within the 0.7 to 1.2 ElevenLabs reads at.
+func (c *Config) speed() float64 {
+	if c.VoiceSpeed <= 0 {
+		return 1
+	}
+	return min(max(c.VoiceSpeed, 0.7), 1.2)
+}
+
+func elevenSay(ctx context.Context, key, voice string, speed float64, text string, w io.Writer) error {
+	ask := map[string]any{"text": text, "model_id": sayModel}
+	if speed != 1 {
+		ask["model_id"], ask["voice_settings"] = speedModel, map[string]float64{"speed": speed}
+	}
+	body, _ := json.Marshal(ask)
 	u := ElevenAPI + "/v1/text-to-speech/" + url.PathEscape(voice) + "/stream?output_format=mp3_44100_128"
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, bytes.NewReader(body))
 	if err != nil {

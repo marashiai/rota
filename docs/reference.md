@@ -526,8 +526,12 @@ alike. It is where you use rota:
   limited to some of its uses, and rota asks ElevenLabs once a day what yours may, at the cost of one word
   read and half a second of silence written down. Without a key, or for what it may not, the browser's
   own voice and dictation do it. The key stays on the team machine, in `secrets/elevenlabs.key`: the pages
-  send rota the text or the recording, and rota asks ElevenLabs. `voice` in `rota.conf` is the
-  ElevenLabs voice that reads (its id, from elevenlabs.io).
+  send rota the text or the recording, and rota asks ElevenLabs. Settings, Voice, lists the voices to
+  choose from, each with a Sample to hear it: the ElevenLabs voices it keeps for good, and your own
+  once the key may list them (its "Voices: read" permission), for every device (`voice` in
+  `rota.conf`); and this device's own voices, for this device. Speed is for both (`voice_speed`; ElevenLabs
+  reads 0.7× to 1.2×, and at any speed but 1× with Multilingual v2, as v4 reads at one speed); the
+  volume is this device's.
 
 In the pages, a switch or a choice outside Advanced applies as you tap it. What you change under
 Advanced, in a role or in the shares waits for Save (Apply, for the shares): a bar at the bottom of the

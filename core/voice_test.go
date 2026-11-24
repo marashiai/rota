@@ -22,6 +22,8 @@ type fakeEleven struct {
 	voice, model    string
 	file, fileModel string
 	verbatim        string
+	speed           float64
+	list            map[string]bool // the keys that may list the account's voices
 }
 
 func (f *fakeEleven) serve(t *testing.T) {
@@ -40,16 +42,27 @@ func (f *fakeEleven) serve(t *testing.T) {
 				refuse("text_to_speech")
 				return
 			}
-			var body map[string]string
+			var body map[string]any
 			json.NewDecoder(r.Body).Decode(&body)
 			if body["text"] == "too many" {
 				w.WriteHeader(http.StatusTooManyRequests)
 				io.WriteString(w, `{"detail":{"status":"too_many_concurrent_requests","message":"Too many concurrent requests"}}`)
 				return
 			}
-			f.voice, f.model = strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/v1/text-to-speech/"), "/stream"), body["model_id"]
+			f.voice, f.model, f.speed = strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/v1/text-to-speech/"), "/stream"), body["model_id"].(string), 0
+			if vs, ok := body["voice_settings"].(map[string]any); ok {
+				f.speed, _ = vs["speed"].(float64)
+			}
 			w.Header().Set("Content-Type", "audio/mpeg")
-			io.WriteString(w, "ID3 mp3 of: "+body["text"])
+			io.WriteString(w, "ID3 mp3 of: "+body["text"].(string))
+		case r.URL.Path == "/v2/voices":
+			if !f.list[key] {
+				refuse("voices_read")
+				return
+			}
+			io.WriteString(w, `{"voices": [{"voice_id": "GEORGE", "name": "George", "category": "premade"},
+				{"voice_id": "MINE", "name": "My clone", "category": "cloned", "labels": {"gender": "female", "accent": "american"}},
+				{"voice_id": "QtY3JBOUKEB5xzrRfOKc", "name": "Maisie", "category": "professional"}]}`)
 		case r.URL.Path == "/v1/speech-to-text":
 			f.listenN.Add(1)
 			if !f.listen[key] {
@@ -162,5 +175,36 @@ func TestSilenceIsAWavFile(t *testing.T) {
 	b := silence()
 	if len(b) != 44+16000 || string(b[:4]) != "RIFF" || string(b[8:16]) != "WAVEfmt " || string(b[36:40]) != "data" {
 		t.Fatalf("not a WAV file: %d %q", len(b), b[:44])
+	}
+}
+
+// The voice reads at the speed chosen: v4 reads at one speed, so another speed reads with
+// Multilingual v2, within the 0.7 to 1.2 ElevenLabs reads at. The voices to choose from are those
+// ElevenLabs keeps for good, and the account's own when the key may list them.
+func TestTheVoiceReadsAtItsSpeedAndListsItsChoices(t *testing.T) {
+	_, team := mailTeam(t)
+	f := &fakeEleven{say: map[string]bool{"sk_long_key_both": true}, listen: map[string]bool{}, list: map[string]bool{}}
+	f.serve(t)
+	ctx := context.Background()
+	if err := team.SetVoiceKey("sk_long_key_both"); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		speed, want float64
+		model       string
+	}{{1, 0, sayModel}, {1.1, 1.1, speedModel}, {3, 1.2, speedModel}, {0.2, 0.7, speedModel}} {
+		team.VoiceSpeed = c.speed
+		if err := team.ReadAloud(ctx, "Hello", io.Discard); err != nil || f.model != c.model || f.speed != c.want {
+			t.Errorf("speed %v: %s at %v, want %s at %v (%v)", c.speed, f.model, f.speed, c.model, c.want, err)
+		}
+	}
+	list, why := team.Voices(ctx)
+	if len(list) != len(infinityVoices) || !strings.Contains(why, "voices_read") {
+		t.Fatalf("a key that may not list: ElevenLabs's own, and why: %d %q", len(list), why)
+	}
+	f.list["sk_long_key_both"] = true
+	list, why = team.Voices(ctx)
+	if why != "" || len(list) != len(infinityVoices)+1 || list[0].ID != "MINE" || !list[0].Own || list[0].About != "female, american" {
+		t.Fatalf("the account's own first, no default voice, no voice twice: %q %+v", why, list[:2])
 	}
 }

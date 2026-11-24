@@ -537,17 +537,63 @@ function settingsPage() {
   ${S.adv !== null && TEAM.settings ? advancedForm(TEAM.settings.fields) : ''}
   ${TEAM.settings ? `<p class="small" style="text-align:center;margin-top:16px">rota ${esc(TEAM.settings.version)}</p>` : ''}</div>`;
 }
-// voiceSettings: who reads aloud and who takes dictation, and the ElevenLabs key that decides it
+// voiceSettings: who reads aloud and who takes dictation, the ElevenLabs key that decides it, the
+// voices to choose and hear, how fast it reads and, on this device, how loud
+let VOICES = null; // the ElevenLabs voices to choose from, as rota lists them
+const SPEEDS = [0.8, 0.9, 1, 1.1, 1.2];
 function voiceSettings() {
   const v = window.rotaVoice;
   if (!v) return '';
-  const V = v.info, by = (with_, why, none) => with_ === 'ElevenLabs' ? 'ElevenLabs' : with_ ? `The browser's own${V.key && why ? ': ' + why : ''}` : none;
-  return `<div class="gh2">Voice</div><div class="card">
+  const V = v.info, D = v.device, by = (with_, why, none) => with_ === 'ElevenLabs' ? 'ElevenLabs' : with_ ? `The browser's own${V.key && why ? ': ' + why : ''}` : none;
+  if (V.key && !VOICES) v.voiceList().then(j => { VOICES = j; if (S.view === 'settings' && !typing()) render(); });
+  let h = `<div class="gh2">Voice</div><div class="card">
     <div class="fld"><span>Read aloud<span class="small fsub">${esc(by(v.readsWith(), V.sayWhy, 'This browser cannot read aloud'))}</span></span></div>
-    <div class="fld"><span>Dictation<span class="small fsub">${esc(by(v.listensWith(), V.listenWhy, 'This browser has none'))}</span></span></div>
-    <div class="fld" style="display:block"><div>ElevenLabs key</div><div class="small">${V.key ? (V.keyEnd ? `<b>••••${esc(V.keyEnd)}</b> is set. ` : 'Set. ') + 'It stays on this Mac, in the team folder’s secrets; ElevenLabs reads and listens for what the key may do.' : 'None. With a key from elevenlabs.io, ElevenLabs reads aloud and takes dictation, for what the key may do.'}</div>
+    <div class="fld"><span>Dictation<span class="small fsub">${esc(by(v.listensWith(), V.listenWhy, 'This browser has none'))}</span></span></div>`;
+  if (V.key) { // the ElevenLabs voice, for every device
+    const list = (VOICES && VOICES.voices) || [], opt = x => `<option value="${esc(x.id)}"${x.id === V.voice ? ' selected' : ''}>${esc(x.name)}${x.about ? ' · ' + esc(x.about) : ''}</option>`;
+    const own = list.filter(x => x.own), theirs = list.filter(x => !x.own);
+    const known = list.some(x => x.id === V.voice);
+    h += `<div class="fld" style="display:block"><div>ElevenLabs voice</div><div class="vrow"><select id="vvoice" aria-label="ElevenLabs voice">${known ? '' : `<option value="${esc(V.voice)}" selected>${esc(list.length ? 'Your own: ' + V.voice : 'Loading the voices…')}</option>`}${own.length ? `<optgroup label="Your voices">${own.map(opt).join('')}</optgroup><optgroup label="ElevenLabs">${theirs.map(opt).join('')}</optgroup>` : theirs.map(opt).join('')}</select><button class="btn" data-vsample="eleven">${I.speaker}Sample</button></div>
+      <div class="small">${V.say ? 'For every device.' : 'Not used: ' + esc(V.sayWhy || 'ElevenLabs may not read with this key') + '.'}${VOICES && VOICES.ownWhy && VOICES.ownWhy !== 'no ElevenLabs key' ? ' Your own ElevenLabs voices show here once the key may list them (its “Voices: read” permission).' : ''}</div></div>`;
+  }
+  const bv = v.browserVoices(), langs = (navigator.languages || [navigator.language || 'en']).map(l => l.slice(0, 2).toLowerCase());
+  if (bv.length) { // this device's own voices: its languages first
+    const mine = bv.filter(x => langs.includes(x.lang.slice(0, 2).toLowerCase())), rest = bv.filter(x => !mine.includes(x));
+    const opt = x => `<option value="${esc(x.uri)}"${x.uri === D.voice ? ' selected' : ''}>${esc(x.name)} · ${esc(x.lang)}</option>`;
+    h += `<div class="fld" style="display:block"><div>This device’s voice</div><div class="vrow"><select id="vbrowser" aria-label="This device’s voice"><option value=""${D.voice ? '' : ' selected'}>Its default</option><optgroup label="Your languages">${mine.map(opt).join('')}</optgroup><optgroup label="Other languages">${rest.map(opt).join('')}</optgroup></select><button class="btn" data-vsample="browser">${I.speaker}Sample</button></div>
+      <div class="small">${V.say ? 'Reads when ElevenLabs cannot.' : 'Reads aloud on this device.'} Each device has its own.</div></div>`;
+  }
+  const sp = V.speed || 1;
+  h += `<div class="fld"><span>Speed${V.say && sp !== 1 ? '<span class="small fsub">ElevenLabs reads other speeds than 1× with Multilingual v2, as v4 reads at one speed</span>' : ''}</span><span class="mini">${SPEEDS.map(x => `<button class="${Math.abs(x - sp) < 0.01 ? 'on' : ''}" data-vspeed="${x}">${x}×</button>`).join('')}</span></div>
+    <div class="fld" style="display:block"><div>Volume on this device <span class="small" id="vvoltext">${Math.round(D.volume * 100)}%</span></div><div class="vrow"><input id="vvol" type="range" min="0" max="100" step="5" value="${Math.round(D.volume * 100)}" aria-label="Volume on this device"></div></div>`;
+  return h + `<div class="fld" style="display:block"><div>ElevenLabs key</div><div class="small">${V.key ? (V.keyEnd ? `<b>••••${esc(V.keyEnd)}</b> is set. ` : 'Set. ') + 'It stays on this Mac, in the team folder’s secrets; ElevenLabs reads and listens for what the key may do.' : 'None. With a key from elevenlabs.io, ElevenLabs reads aloud and takes dictation, for what the key may do.'}</div>
       <div class="vkey"><input id="vkey" type="password" autocomplete="off" spellcheck="false" placeholder="${V.key ? 'Paste another key' : 'Paste your key'}" aria-label="ElevenLabs key"><button class="btn" data-vkey>Save</button>${V.key ? '<button class="btn" data-vkeyrm>Remove</button>' : ''}</div></div></div>`;
 }
+// voiceSample reads a sample: with ElevenLabs's voice, or with this device's own
+function voiceSample(kind, btn) {
+  const v = window.rotaVoice;
+  if (kind === 'eleven') {
+    const x = ((VOICES && VOICES.voices) || []).find(x => x.id === v.info.voice);
+    v.say(`Hi, I'm ${x ? x.name : 'your ElevenLabs voice'}. This is how I read your messages in rota.`, btn);
+  } else {
+    const x = v.browserVoices().find(x => x.uri === v.device.voice);
+    v.say(`Hi, I'm ${x ? x.name : 'this device’s voice'}. This is how I read your messages in rota.`, btn, true);
+  }
+}
+async function voiceSet(set, kind) { // a team setting of the voice, then how it sounds
+  const said = await post({action: 'team-set', text: JSON.stringify(set)});
+  if (said === null || said === undefined) return;
+  await rotaVoice.refresh();
+  render();
+  voiceSample(kind || (rotaVoice.info.say ? 'eleven' : 'browser'));
+}
+document.addEventListener('change', e => {
+  const x = e.target;
+  if (x.id === 'vvoice') voiceSet({voice: x.value}, 'eleven');
+  else if (x.id === 'vbrowser') { rotaVoice.setDevice({voice: x.value}); voiceSample('browser'); }
+  else if (x.id === 'vvol') { rotaVoice.setDevice({volume: x.value / 100}); voiceSample(rotaVoice.info.say ? 'eleven' : 'browser'); }
+});
+document.addEventListener('input', e => { if (e.target.id === 'vvol') { const t = document.getElementById('vvoltext'); if (t) t.textContent = e.target.value + '%'; } });
 async function voiceKey(remove) {
   const i = document.getElementById('vkey'), key = remove ? '' : (i && i.value.trim()) || '';
   if (!remove && !key) { toast('Paste the key first'); return; }
@@ -555,6 +601,7 @@ async function voiceKey(remove) {
   if (said === null || said === undefined) return;
   if (said) toast(cap(said));
   if (i) i.value = '';
+  VOICES = null;
   await rotaVoice.refresh();
   render();
 }
@@ -567,7 +614,7 @@ const teamView = () => S.view === 'team' || S.view === 'shares' || S.view.starts
 const pageView = () => teamView() || S.view === 'settings'; // read from its own endpoint, and kept in the address
 const editing = () => S.roleDraft !== null || Object.keys(S.edits).length > 0 || Object.keys(S.weights).length > 0;
 // typing: the human writes a message, a reply, a role or a setting; the page is not drawn again under them
-const typing = () => { const a = document.activeElement; return !!(a && ['rtext', 'ctext', 'cabout', 'repoin', 'vkey'].includes(a.id) && a.value) || editing(); };
+const typing = () => { const a = document.activeElement; return !!(a && ['rtext', 'ctext', 'cabout', 'repoin', 'vkey', 'vvoice', 'vbrowser', 'vvol'].includes(a.id) && a.value) || editing(); };
 // sayBtn reads aloud the message it is on (voice.js): with ElevenLabs, or the browser's voice
 const sayBtn = () => window.rotaVoice ? `<button class="ib vsay" data-say title="Listen" aria-label="Listen">${I.speaker}</button>` : '';
 const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
@@ -1853,6 +1900,8 @@ document.addEventListener('click', e => {
   if (d.open) { S.drawer = false; openIt(d.open); const o = document.getElementById('over'); if (o) o.scrollTop = 0; return; }
   if (d.say !== undefined) { e.stopPropagation(); const box = b.closest('.brow, .msg'), mb = box && box.querySelector('.mb'); if (mb) rotaVoice.say(mb.innerText, b); return; }
   if (d.vkey !== undefined || d.vkeyrm !== undefined) { voiceKey(d.vkeyrm !== undefined); return; }
+  if (d.vsample) { voiceSample(d.vsample, b); return; }
+  if (d.vspeed) { voiceSet({voice_speed: d.vspeed}); return; }
   if (d.view) { if (leaveOK()) goView(d.view); return; }
   if (d.atab) { if (!leaveOK()) return; S.aTab = d.atab; S.roleDraft = null; S.adv = null; S.edits = {}; render(); return; }
   if (d.teamact) {

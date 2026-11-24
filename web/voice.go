@@ -28,8 +28,24 @@ func (s *site) voiceJSON(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, r, struct {
 		core.VoiceUse
-		Max int `json:"max"`
-	}{t.Voice(r.Context()), core.SayMax})
+		Max   int     `json:"max"`
+		Voice string  `json:"voice"` // the ElevenLabs voice that reads
+		Speed float64 `json:"speed"` // voice_speed, for the browser's voice too
+	}{t.Voice(r.Context()), core.SayMax, t.VoiceID, t.VoiceSpeed})
+}
+
+// voicesJSON lists the ElevenLabs voices to choose from in Settings.
+func (s *site) voicesJSON(w http.ResponseWriter, r *http.Request) {
+	t, err := core.Open(s.root, s.conf)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	list, why := t.Voices(r.Context())
+	writeJSON(w, r, struct {
+		Voices []core.VoiceChoice `json:"voices"`
+		OwnWhy string             `json:"ownWhy,omitempty"` // why the account's own voices are not listed
+	}{list, why})
 }
 
 // voiceSay reads a text aloud with ElevenLabs, as MP3; when ElevenLabs refuses, the page reads it

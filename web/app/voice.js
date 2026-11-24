@@ -30,7 +30,31 @@
   const canRecord = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder);
   const canSpeak = 'speechSynthesis' in window;
   const MOST = 20000; // the most one reading reads: a whole page selected is not read to the end
-  const V = {known: false, key: false, say: false, listen: false, sayWhy: '', listenWhy: '', max: 5000};
+  const V = {known: false, key: false, say: false, listen: false, sayWhy: '', listenWhy: '', max: 5000, voice: '', speed: 1};
+  // DEV is what this device keeps for itself: the browser's voice it reads with (its voiceURI; ''
+  // its default), as each device has its own, and how loud it reads, 0 to 1.
+  const DEV = {voice: '', volume: 1};
+  try { Object.assign(DEV, JSON.parse(localStorage.getItem('rota.voice') || '{}')); } catch (e) { /* a private window: the defaults */ }
+  function setDevice(patch) {
+    Object.assign(DEV, patch);
+    DEV.volume = Math.min(1, Math.max(0, Number(DEV.volume) || 0));
+    try { localStorage.setItem('rota.voice', JSON.stringify(DEV)); } catch (e) { /* kept until the page closes */ }
+    changed();
+  }
+  // browserVoices are this device's own voices, its default first; they come a moment after the
+  // page opens.
+  function browserVoices() {
+    if (!canSpeakNow()) return [];
+    return speechSynthesis.getVoices().map(v => ({uri: v.voiceURI, name: v.name, lang: v.lang, isDefault: v.default}));
+  }
+  function canSpeakNow() { return 'speechSynthesis' in window; }
+  if (canSpeakNow()) try { speechSynthesis.addEventListener('voiceschanged', () => changed()); } catch (e) { /* an older browser: the list as it is */ }
+  // voiceList is the ElevenLabs voices to choose from, as rota lists them, asked once.
+  let voicesAsked = null;
+  function voiceList(again) {
+    if (!voicesAsked || again) voicesAsked = fetch('/api/voice/voices', {cache: 'no-store'}).then(r => r.ok ? r.json() : {voices: []}).catch(() => ({voices: []}));
+    return voicesAsked;
+  }
 
   // ---- what rota found the key may do ----
   let asking = null;
@@ -151,7 +175,9 @@
   }
 
   let reading = null; // {stopped, btn, cancel}
-  function say(text, btn) {
+  // say reads text aloud: with ElevenLabs when it may, else with this device's voice; with
+  // browser true, with this device's voice whatever ElevenLabs may (its sample in Settings).
+  function say(text, btn, browser) {
     if (reading && btn && reading.btn === btn) { stop(); return; } // its button again: stop
     stop();
     text = clean(text);
@@ -162,9 +188,9 @@
     if (btn) btn.classList.add('on');
     pill.classList.remove('show');
     stopper.classList.add('show');
-    if (elevenSays() && opened()) readEleven(run, parts(text, [160, 400, Math.min(1200, V.max || 1200)])); // ElevenLabs makes speech about three times faster than it is spoken
+    if (!browser && elevenSays() && opened()) readEleven(run, parts(text, [160, 400, Math.min(1200, V.max || 1200)])); // ElevenLabs makes speech about three times faster than it is spoken
     else {
-      if (V.key && (V.say || !V.known)) fell(V.known ? 'This browser cannot play the audio ElevenLabs reads: the browser reads it' : 'rota had not said yet whether ElevenLabs reads: the browser reads it');
+      if (browser) { /* asked for */ } else if (V.key && (V.say || !V.known)) fell(V.known ? 'This browser cannot play the audio ElevenLabs reads: the browser reads it' : 'rota had not said yet whether ElevenLabs reads: the browser reads it');
       else if (V.key && V.sayWhy) note(V.sayWhy + ': the browser reads it');
       readBrowser(run, text);
     }
@@ -225,7 +251,10 @@
     return new Promise(res => {
       const src = actx.createBufferSource();
       src.buffer = buffer;
-      src.connect(actx.destination);
+      const loud = actx.createGain(); // this device's volume
+      loud.gain.value = DEV.volume;
+      src.connect(loud);
+      loud.connect(actx.destination);
       src.onended = () => res('');
       run.cancel = () => { try { src.stop(); } catch (e) { /* ended */ } res(''); };
       src.start();
@@ -239,6 +268,10 @@
       if (run.stopped || reading !== run) return;
       if (i >= ps.length) { done(run); return; }
       const u = new SpeechSynthesisUtterance(ps[i++]);
+      const mine = DEV.voice && speechSynthesis.getVoices().find(v => v.voiceURI === DEV.voice);
+      if (mine) { u.voice = mine; u.lang = mine.lang; }
+      u.rate = Math.min(2, Math.max(0.5, V.speed || 1));
+      u.volume = DEV.volume;
       u.onstart = () => { started = true; };
       u.onend = next;
       u.onerror = e => { if (e.error === 'interrupted' || e.error === 'canceled') return; next(); };
@@ -440,6 +473,10 @@
     reading: () => !!reading,
     readsWith: () => elevenSays() ? 'ElevenLabs' : canSpeak ? 'browser' : '',
     listensWith: () => elevenListens() ? 'ElevenLabs' : SR ? 'browser' : '',
+    device: DEV,
+    setDevice,
+    browserVoices,
+    voiceList,
   };
   look();
 })();

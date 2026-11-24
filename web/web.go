@@ -260,6 +260,7 @@ func Handler(root, conf string, port int) http.Handler {
 	mux.HandleFunc("/api/voice/say", s.voiceSay)
 	mux.HandleFunc("/api/voice/listen", s.voiceListen)
 	mux.HandleFunc("/api/voice/fell", s.voiceFell)
+	mux.HandleFunc("/api/voice/voices", s.voicesJSON)
 	mux.Handle("/review/", http.StripPrefix("/review", s.reviewPages()))
 	doc("/reports/", reports)
 	doc("/evidence/", s.evidence)

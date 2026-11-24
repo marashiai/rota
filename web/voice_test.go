@@ -85,6 +85,12 @@ func TestThePagesSpeakAndListenThroughRota(t *testing.T) {
 	if v := voice(); !v.Say || !v.Listen {
 		t.Fatalf("a key that may do both: %+v", v)
 	}
+	if body := get(t, srv, "/api/voice"); !strings.Contains(body, `"voice":"g7LVvkPWALzPxOQbF6OE"`) || !strings.Contains(body, `"speed":1`) {
+		t.Fatalf("the voice and its speed: %s", body)
+	}
+	if body := get(t, srv, "/api/voice/voices"); !strings.Contains(body, `"name":"Maisie"`) || !strings.Contains(body, `"ownWhy"`) {
+		t.Fatalf("the voices to choose from: %s", body)
+	}
 
 	say := func(text, token string) (*http.Response, string) {
 		req, _ := http.NewRequest("POST", srv.URL+"/api/voice/say", strings.NewReader(url.Values{"text": {text}}.Encode()))
