@@ -26,6 +26,7 @@ type schedule struct {
 	now        time.Time
 	usage      *Usage // what Claude reports now; without it the pool cannot be enforced
 	week       time.Time
+	from       time.Time // when the week's count began: week, or when Claude reset its count since (countFrom)
 	hosts      map[string]HostState
 	asked      map[string]bool // asked to run now
 	askedAt    map[string]time.Time
@@ -70,6 +71,7 @@ func (t *Team) schedule(now time.Time, u *Usage, hosts []HostState) *schedule {
 		s.hosts[h.Name] = h
 	}
 	s.week = weekStart(t.Config, s.now, u)
+	s.from = countFrom(s.week, t.Runs, u)
 	s.pool, s.period = t.TeamPct/7, "today"
 	if t.Pacing == "weekly" {
 		s.pool, s.period = t.TeamPct, "this week"
@@ -110,6 +112,34 @@ func (t *Team) schedule(now time.Time, u *Usage, hosts []HostState) *schedule {
 	return s
 }
 
+// resetDrop is how far Claude's weekly figure must fall from one reading to the next to be a
+// reset: it only falls when Claude starts counting the week again.
+const resetDrop = 5.0
+
+// countFrom is when the week's count began: when the week began, or later, when Claude reset its
+// weekly count before the week ended, as it sometimes does: then what the agents used before no
+// longer counts against the pool, as it no longer counts against the account, and the week still
+// ends when Claude says. The shift whose reading fell is the first counted; when the reading
+// fell after the last shift, as the usage read since says, none before counts.
+func countFrom(week time.Time, runs []Run, u *Usage) time.Time {
+	from := week
+	var last float64
+	var lastAt time.Time
+	for _, r := range sortRunsByTime(runs) {
+		if !r.HasPct {
+			continue
+		}
+		if !lastAt.IsZero() && r.PctAfter < last-resetDrop && r.Time.After(from) {
+			from = r.Time
+		}
+		last, lastAt = r.PctAfter, r.Time
+	}
+	if u != nil && !lastAt.IsZero() && u.Read.After(lastAt) && u.Weekly < last-resetDrop && !lastAt.Before(from) {
+		from = lastAt.Add(time.Nanosecond)
+	}
+	return from
+}
+
 // weekStart is when the budget week began: Claude's rolling window when week_start is
 // claude and usage data says where it is, else the configured weekday (Monday by default).
 func weekStart(c *Config, now time.Time, u *Usage) time.Time {
@@ -127,7 +157,7 @@ func weekStart(c *Config, now time.Time, u *Usage) time.Time {
 
 func (s *schedule) periodStart() time.Time {
 	if s.Pacing == "weekly" {
-		return s.week
+		return s.from
 	}
 	return time.Date(s.now.Year(), s.now.Month(), s.now.Day(), 0, 0, 0, 0, s.Zone.Location)
 }
@@ -154,7 +184,7 @@ func (s *schedule) stat(a *Agent) Stats {
 		if r.Agent != a.Name {
 			continue
 		}
-		if !r.Time.Before(s.week) {
+		if !r.Time.Before(s.from) {
 			st.Pct += r.PctUsed
 		}
 		if !r.Time.Before(from) {

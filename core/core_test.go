@@ -4433,3 +4433,43 @@ func TestADryRunShowsTheRoleFilledIn(t *testing.T) {
 		t.Fatalf("the system prompt is the role as the shift gets it:\n%s", out)
 	}
 }
+
+// Claude sometimes resets its weekly count before the week ends. The pool counts from the reset
+// then, as the account does, and the week still ends when Claude says.
+func TestThePoolCountsFromClaudesReset(t *testing.T) {
+	_, team := mailTeam(t)
+	team.Pacing, team.TeamPct, team.Week = "weekly", 100, Week{Claude: true}
+	ends := time.Date(2026, 11, 27, 8, 0, 0, 0, time.UTC)
+	week := ends.AddDate(0, 0, -7)
+	reading := func(at time.Time, agent string, used, after float64) Run {
+		return Run{Time: at, Agent: agent, Status: "ok", HasPct: true, PctUsed: used, PctAfter: after}
+	}
+	team.Runs = []Run{
+		reading(week.Add(-time.Hour), "developer", 9, 90),               // last week: never counted
+		reading(week.Add(time.Hour), "developer", 1, 1),                 // the week's own reset
+		reading(week.Add(50*time.Hour), "developer", 40, 41),            // before Claude's early reset
+		reading(week.Add(60*time.Hour), "triage", 15, 56),               //
+		reading(week.Add(70*time.Hour), "developer", 0, 0),              // Claude counts from 0 again
+		reading(week.Add(80*time.Hour), "developer", 10, 10),            //
+		reading(week.Add(90*time.Hour), "triage", 7, 17),                //
+		{Time: week.Add(91 * time.Hour), Agent: "triage", Status: "ok"}, // no reading: no reset
+	}
+	now := week.Add(95 * time.Hour)
+	s := team.schedule(now, &Usage{Weekly: 17, ResetsAt: ends, Read: now}, nil)
+	if s.used != 17 || s.usedBy["developer"] != 10 || s.stat(team.Agent("developer")).Pct != 10 || s.stat(team.Agent("triage")).Pct != 7 {
+		t.Fatalf("counted from the reset: pool %v, developer %v/%v, triage %v", s.used, s.usedBy["developer"], s.stat(team.Agent("developer")).Pct, s.stat(team.Agent("triage")).Pct)
+	}
+	if !s.periodEnd().Equal(ends) || !team.status(s).WeekSince.Equal(week.Add(70*time.Hour)) {
+		t.Fatalf("the week ends when Claude says (%v), counted since the reset (%v)", s.periodEnd(), team.status(s).WeekSince)
+	}
+	// a reset since the last shift: only the reading says so, and nothing before it counts
+	s = team.schedule(now, &Usage{Weekly: 2, ResetsAt: ends, Read: now}, nil)
+	if s.used != 0 {
+		t.Fatalf("a reset after the last shift: %v counted", s.used)
+	}
+	// no early reset: the whole week counts, from the reading the week's own reset shows in
+	team.Runs = team.Runs[:4]
+	if s = team.schedule(now, &Usage{Weekly: 58, ResetsAt: ends, Read: now}, nil); s.used != 56 || !s.from.Equal(week.Add(time.Hour)) {
+		t.Fatalf("no reset this week: %v counted from %v", s.used, s.from)
+	}
+}

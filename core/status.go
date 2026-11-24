@@ -304,7 +304,7 @@ func (t *Team) hoursOf(name string) string {
 }
 
 func (t *Team) status(s *schedule) Status {
-	st := Status{Time: time.Now(), Paused: t.Paused(), WeekSince: s.week, Usage: s.usage,
+	st := Status{Time: time.Now(), Paused: t.Paused(), WeekSince: s.from, Usage: s.usage,
 		Pool: Pool{Used: s.used, Quota: s.pool, Period: s.period, Enforced: s.usage != nil, TeamPct: t.TeamPct, Pacing: t.Pacing, Free: s.free, Fills: s.periodEnd()}}
 	for name, h := range s.hosts {
 		h.Name = name
