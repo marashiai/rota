@@ -88,12 +88,14 @@
 .vmic.rec{background:#d93025;color:#fff;animation:vpulse 1.2s ease-in-out infinite}
 .vmic.busy{cursor:progress}.vmic.busy svg{animation:vspin 1s linear infinite}
 .vmic-pad{padding-right:34px!important}
-.vpill,.vplay button,.vnote{position:fixed;z-index:2147483001;display:none;align-items:center;gap:6px;border:0;margin:0;border-radius:999px;padding:8px 13px;font:600 13px/1.2 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#1b1b1f;color:#fff;box-shadow:0 4px 16px rgba(0,0,0,.28);cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:manipulation;white-space:nowrap}
-.vpill.show,.vnote.show{display:flex}.vplay button{position:static;display:flex}
-.vplay{position:fixed;z-index:2147483001;display:none;gap:8px}.vplay.show{display:flex}
+.vpill,.vplay,.vnote{position:fixed;z-index:2147483001;display:none;align-items:center;gap:6px;border:0;margin:0;border-radius:999px;padding:8px 13px;font:600 13px/1.2 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#1b1b1f;color:#fff;box-shadow:0 4px 16px rgba(0,0,0,.28);cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:manipulation;white-space:nowrap}
+.vpill.show,.vplay.show,.vnote.show{display:flex}
+.vplay{padding:0;gap:0;cursor:default} /* one pill: pause or play, then stop */
+.vplay button{display:flex;align-items:center;gap:6px;border:0;margin:0;padding:8px 13px;background:none;color:inherit;font:inherit;cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+.vplay button+button{border-left:1px solid rgba(127,127,140,.45)}
 .vpill,.vplay{left:50%;transform:translateX(-50%);bottom:calc(env(safe-area-inset-bottom,0px) + 92px)} /* one place, away from the menu a phone or tablet shows by the selection */
 .vnote{left:50%;transform:translateX(-50%);top:calc(env(safe-area-inset-top,0px) + 12px);cursor:default;font-weight:500;white-space:normal;max-width:min(92vw,520px);border-radius:12px}
-@media (prefers-color-scheme:dark){.vpill,.vplay button,.vnote{background:#ececf1;color:#121216}.vmic{color:#a3a3ae}}
+@media (prefers-color-scheme:dark){.vpill,.vplay,.vnote{background:#ececf1;color:#121216}.vmic{color:#a3a3ae}}
 @keyframes vpulse{0%,100%{box-shadow:0 0 0 0 rgba(217,48,37,.5)}50%{box-shadow:0 0 0 7px rgba(217,48,37,0)}}
 @keyframes vspin{to{transform:rotate(360deg)}}
 .vsay.on{color:#d93025}`;
