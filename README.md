@@ -221,4 +221,7 @@ Keep the team machine on and awake: the inbox, the notifications and the shifts 
 
 ## License
 
-MIT: see [LICENSE](LICENSE).
+MIT: see [LICENSE](LICENSE). One file is someone else's, under its own license:
+[`web/app/soundtouch.js`](web/app/soundtouch.js) is SoundTouch JS 0.3.0, which changes how fast the
+pages read aloud while keeping the voice's pitch, under the LGPL 2.1
+([its license](web/soundtouch-LICENSE)); it is kept as published, and you may replace it.

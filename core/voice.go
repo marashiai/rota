@@ -31,9 +31,7 @@ const voiceKeyFile = "secrets/elevenlabs.key"
 // three times faster than it speaks, so the pages read in parts that grow), and its most
 // accurate writing down of a recording, in whatever language.
 const (
-	sayModel = "eleven_v4"
-	// speedModel reads at another speed than 1: v4 reads every text at one speed.
-	speedModel  = "eleven_multilingual_v2"
+	sayModel    = "eleven_v4"
 	listenModel = "scribe_v3"
 	// SayMax is the most one reading asks ElevenLabs to read: the pages send a longer text in
 	// parts, so the first part plays sooner.
@@ -159,7 +157,7 @@ func (c *Config) Voice(ctx context.Context) VoiceUse {
 	}
 	now := time.Now()
 	if !now.Before(voiceFound.sayAgain) {
-		err := elevenSay(ctx, key, c.voice(), c.speed(), "Hi", io.Discard)
+		err := elevenSay(ctx, key, c.voice(), "Hi", io.Discard)
 		voiceFound.say, voiceFound.sayWhy, voiceFound.sayAgain = err == nil, whyNot(err), now.Add(again(err))
 	}
 	if !now.Before(voiceFound.listenAgain) {
@@ -332,7 +330,7 @@ func (c *Config) ReadAloud(ctx context.Context, text string, w io.Writer) error 
 	if text = strings.TrimSpace(text); text == "" || len([]rune(text)) > SayMax {
 		return fmt.Errorf("a text to read is 1 to %d characters", SayMax)
 	}
-	err := elevenSay(ctx, key, voice, c.speed(), text, w)
+	err := elevenSay(ctx, key, voice, text, w)
 	noteRefused(key, voice, true, err)
 	return err
 }
@@ -387,20 +385,10 @@ func elevenError(resp *http.Response) error {
 	return e
 }
 
-// speed is how fast ElevenLabs reads: voice_speed, within the 0.7 to 1.2 ElevenLabs reads at.
-func (c *Config) speed() float64 {
-	if c.VoiceSpeed <= 0 {
-		return 1
-	}
-	return min(max(c.VoiceSpeed, 0.7), 1.2)
-}
-
-func elevenSay(ctx context.Context, key, voice string, speed float64, text string, w io.Writer) error {
-	ask := map[string]any{"text": text, "model_id": sayModel}
-	if speed != 1 {
-		ask["model_id"], ask["voice_settings"] = speedModel, map[string]float64{"speed": speed}
-	}
-	body, _ := json.Marshal(ask)
+// elevenSay has ElevenLabs read text with v4 at its own speed: v4 reads every text at one speed,
+// and the pages change it, keeping the voice's pitch (voice_speed).
+func elevenSay(ctx context.Context, key, voice, text string, w io.Writer) error {
+	body, _ := json.Marshal(map[string]string{"text": text, "model_id": sayModel})
 	u := ElevenAPI + "/v1/text-to-speech/" + url.PathEscape(voice) + "/stream?output_format=mp3_44100_128"
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, bytes.NewReader(body))
 	if err != nil {

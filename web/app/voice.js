@@ -188,7 +188,7 @@
     if (btn) btn.classList.add('on');
     pill.classList.remove('show');
     stopper.classList.add('show');
-    if (!browser && elevenSays() && opened()) readEleven(run, parts(text, [160, 400, Math.min(1200, V.max || 1200)])); // ElevenLabs makes speech about three times faster than it is spoken
+    if (!browser && elevenSays() && opened()) readEleven(run, parts(text, sizes()));
     else {
       if (browser) { /* asked for */ } else if (V.key && (V.say || !V.known)) fell(V.known ? 'This browser cannot play the audio ElevenLabs reads: the browser reads it' : 'rota had not said yet whether ElevenLabs reads: the browser reads it');
       else if (V.key && V.sayWhy) note(V.sayWhy + ': the browser reads it');
@@ -239,12 +239,53 @@
     }
     done(run);
   }
+  // speed is how fast the voice reads, 0.5 to 2 (voice_speed).
+  const speed = () => Math.min(2, Math.max(0.5, Number(V.speed) || 1));
+  // sizes are how long the parts of an ElevenLabs reading are: the first short, so it starts soon,
+  // each next one made while the one before plays. ElevenLabs makes speech about 2.8 times faster
+  // than it is spoken at 1x; read faster, the parts grow less.
+  function sizes() {
+    const grow = 2.5 / Math.max(1, speed()), out = [160];
+    while (out.length < 12 && out[out.length - 1] < 1200) out.push(Math.min(1200, Math.round(out[out.length - 1] * grow)));
+    return out.map(x => Math.min(x, V.max || 1200));
+  }
+  // stretched is the audio at the speed chosen, its pitch kept: SoundTouch's time stretch
+  // (soundtouch.js, LGPL), loaded the first time it is needed.
+  let soundTouch = null;
+  async function stretched(buffer) {
+    const sp = speed();
+    if (Math.abs(sp - 1) < 0.01) return buffer;
+    const ST = await (soundTouch = soundTouch || import('/soundtouch.js'));
+    const st = new ST.SoundTouch();
+    st.tempo = sp;
+    const chans = [...Array(Math.min(2, buffer.numberOfChannels)).keys()].map(c => buffer.getChannelData(c));
+    const L = chans[0], R = chans[1] || L, rate = buffer.sampleRate;
+    // silence after it: SoundTouch keeps back the last 16,384 frames it was given
+    const total = L.length + 16384 + Math.round(rate * 0.25);
+    const source = {extract(t, n, pos) {
+      let i = 0;
+      for (; i < n && pos + i < total; i++) { const k = pos + i; t[2 * i] = k < L.length ? L[k] : 0; t[2 * i + 1] = k < R.length ? R[k] : 0; }
+      return i;
+    }};
+    const filter = new ST.SimpleFilter(source, st), chunk = new Float32Array(8192 * 2), got = [];
+    let n, frames = 0;
+    while ((n = filter.extract(chunk, 8192)) > 0) { got.push(chunk.slice(0, n * 2)); frames += n; }
+    const want = Math.min(frames, Math.ceil(L.length / sp) + Math.round(rate * 0.05)); // without the silence
+    const out = actx.createBuffer(chans.length, want, rate), left = out.getChannelData(0), right = chans.length > 1 ? out.getChannelData(1) : null;
+    let at = 0;
+    for (const c of got) {
+      for (let i = 0; i < c.length / 2 && at < want; i++, at++) { left[at] = c[2 * i]; if (right) right[at] = c[2 * i + 1]; }
+    }
+    return out;
+  }
   // play plays one part, and says why not when it cannot ('' when it played).
   async function play(bytes, run) {
     let buffer;
     try { buffer = await new Promise((res, rej) => actx.decodeAudioData(bytes, res, rej)); } catch (e) {
       return 'This browser could not open the audio ElevenLabs read';
     }
+    if (run.stopped) return '';
+    try { buffer = await stretched(buffer); } catch (e) { /* at its own speed */ }
     if (run.stopped) return '';
     if (actx.state !== 'running') try { await actx.resume(); } catch (e) { /* said below */ }
     if (actx.state !== 'running') return 'This browser did not let the page play sound (' + actx.state + ')';
@@ -270,7 +311,7 @@
       const u = new SpeechSynthesisUtterance(ps[i++]);
       const mine = DEV.voice && speechSynthesis.getVoices().find(v => v.voiceURI === DEV.voice);
       if (mine) { u.voice = mine; u.lang = mine.lang; }
-      u.rate = Math.min(2, Math.max(0.5, V.speed || 1));
+      u.rate = speed();
       u.volume = DEV.volume;
       u.onstart = () => { started = true; };
       u.onend = next;
@@ -317,7 +358,7 @@
 
   // ---- dictation ----
   let field = null, rec = null, busy = false;
-  const writable = x => isField(x) && !x.disabled && !x.readOnly && x.type !== 'password';
+  const writable = x => isField(x) && !x.disabled && !x.readOnly && x.type !== 'password' && !x.hasAttribute('data-nomic'); // data-nomic: a number, say
   // drawn is the field the page shows for f: f, or the one it drew in its place, which has its id,
   // while the page shows the same place; another thread's reply box has the same id.
   const drawn = (f, href) => f && !f.isConnected && f.id && location.href === href ? document.getElementById(f.id) || f : f;

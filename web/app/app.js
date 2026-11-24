@@ -540,7 +540,6 @@ function settingsPage() {
 // voiceSettings: who reads aloud and who takes dictation, the ElevenLabs key that decides it, the
 // voices to choose and hear, how fast it reads and, on this device, how loud
 let VOICES = null; // the ElevenLabs voices to choose from, as rota lists them
-const SPEEDS = [0.8, 0.9, 1, 1.1, 1.2];
 function voiceSettings() {
   const v = window.rotaVoice;
   if (!v) return '';
@@ -563,8 +562,9 @@ function voiceSettings() {
     h += `<div class="fld" style="display:block"><div>This device’s voice</div><div class="vrow"><select id="vbrowser" aria-label="This device’s voice"><option value=""${D.voice ? '' : ' selected'}>Its default</option><optgroup label="Your languages">${mine.map(opt).join('')}</optgroup><optgroup label="Other languages">${rest.map(opt).join('')}</optgroup></select><button class="btn" data-vsample="browser">${I.speaker}Sample</button></div>
       <div class="small">${V.say ? 'Reads when ElevenLabs cannot.' : 'Reads aloud on this device.'} Each device has its own.</div></div>`;
   }
-  const sp = V.speed || 1;
-  h += `<div class="fld"><span>Speed${V.say && sp !== 1 ? '<span class="small fsub">ElevenLabs reads other speeds than 1× with Multilingual v2, as v4 reads at one speed</span>' : ''}</span><span class="mini">${SPEEDS.map(x => `<button class="${Math.abs(x - sp) < 0.01 ? 'on' : ''}" data-vspeed="${x}">${x}×</button>`).join('')}</span></div>
+  const sp = Math.min(2, Math.max(0.5, Number(V.speed) || 1));
+  h += `<div class="fld" style="display:block"><div>Speed</div><div class="vrow"><input id="vspeed" type="range" min="0.5" max="2" step="0.05" value="${sp}" aria-label="Speed"><input id="vspeedn" type="text" inputmode="decimal" data-nomic autocomplete="off" value="${sp.toFixed(2)}" aria-label="Speed, exactly"><span>×</span><button class="btn" data-vspeed="1"${Math.abs(sp - 1) < 0.001 ? ' disabled' : ''}>1×</button></div>
+      <div class="small">From 0.5× to 2×, for every device and both voices: the voice keeps its pitch.</div></div>
     <div class="fld" style="display:block"><div>Volume on this device <span class="small" id="vvoltext">${Math.round(D.volume * 100)}%</span></div><div class="vrow"><input id="vvol" type="range" min="0" max="100" step="5" value="${Math.round(D.volume * 100)}" aria-label="Volume on this device"></div></div>`;
   return h + `<div class="fld" style="display:block"><div>ElevenLabs key</div><div class="small">${V.key ? (V.keyEnd ? `<b>••••${esc(V.keyEnd)}</b> is set. ` : 'Set. ') + 'It stays on this Mac, in the team folder’s secrets; ElevenLabs reads and listens for what the key may do.' : 'None. With a key from elevenlabs.io, ElevenLabs reads aloud and takes dictation, for what the key may do.'}</div>
       <div class="vkey"><input id="vkey" type="password" autocomplete="off" spellcheck="false" placeholder="${V.key ? 'Paste another key' : 'Paste your key'}" aria-label="ElevenLabs key"><button class="btn" data-vkey>Save</button>${V.key ? '<button class="btn" data-vkeyrm>Remove</button>' : ''}</div></div></div>`;
@@ -591,9 +591,17 @@ document.addEventListener('change', e => {
   const x = e.target;
   if (x.id === 'vvoice') voiceSet({voice: x.value}, 'eleven');
   else if (x.id === 'vbrowser') { rotaVoice.setDevice({voice: x.value}); voiceSample('browser'); }
+  else if (x.id === 'vspeed' || x.id === 'vspeedn') { // 0.85 or 0,85; out of 0.5 to 2, its nearest
+    const n = parseFloat(String(x.value).trim().replace(',', '.'));
+    if (!isFinite(n)) { toast('Type a speed from 0.5 to 2, such as 1.25'); render(); return; }
+    voiceSet({voice_speed: String(Math.round(Math.min(2, Math.max(0.5, n)) * 100) / 100)});
+  }
   else if (x.id === 'vvol') { rotaVoice.setDevice({volume: x.value / 100}); voiceSample(rotaVoice.info.say ? 'eleven' : 'browser'); }
 });
-document.addEventListener('input', e => { if (e.target.id === 'vvol') { const t = document.getElementById('vvoltext'); if (t) t.textContent = e.target.value + '%'; } });
+document.addEventListener('input', e => {
+  if (e.target.id === 'vvol') { const t = document.getElementById('vvoltext'); if (t) t.textContent = e.target.value + '%'; }
+  if (e.target.id === 'vspeed') { const n = document.getElementById('vspeedn'); if (n) n.value = Number(e.target.value).toFixed(2); }
+});
 async function voiceKey(remove) {
   const i = document.getElementById('vkey'), key = remove ? '' : (i && i.value.trim()) || '';
   if (!remove && !key) { toast('Paste the key first'); return; }
@@ -614,7 +622,7 @@ const teamView = () => S.view === 'team' || S.view === 'shares' || S.view.starts
 const pageView = () => teamView() || S.view === 'settings'; // read from its own endpoint, and kept in the address
 const editing = () => S.roleDraft !== null || Object.keys(S.edits).length > 0 || Object.keys(S.weights).length > 0;
 // typing: the human writes a message, a reply, a role or a setting; the page is not drawn again under them
-const typing = () => { const a = document.activeElement; return !!(a && ['rtext', 'ctext', 'cabout', 'repoin', 'vkey', 'vvoice', 'vbrowser', 'vvol'].includes(a.id) && a.value) || editing(); };
+const typing = () => { const a = document.activeElement; return !!(a && ['rtext', 'ctext', 'cabout', 'repoin', 'vkey', 'vvoice', 'vbrowser', 'vvol', 'vspeed', 'vspeedn'].includes(a.id) && a.value) || editing(); };
 // sayBtn reads aloud the message it is on (voice.js): with ElevenLabs, or the browser's voice
 const sayBtn = () => window.rotaVoice ? `<button class="ib vsay" data-say title="Listen" aria-label="Listen">${I.speaker}</button>` : '';
 const cap = s => s.charAt(0).toUpperCase() + s.slice(1);

@@ -178,9 +178,9 @@ func TestSilenceIsAWavFile(t *testing.T) {
 	}
 }
 
-// The voice reads at the speed chosen: v4 reads at one speed, so another speed reads with
-// Multilingual v2, within the 0.7 to 1.2 ElevenLabs reads at. The voices to choose from are those
-// ElevenLabs keeps for good, and the account's own when the key may list them.
+// ElevenLabs reads with v4 at its own speed, whatever the speed chosen: the pages change it. The
+// voices to choose from are those ElevenLabs keeps for good, and the account's own when the key
+// may list them.
 func TestTheVoiceReadsAtItsSpeedAndListsItsChoices(t *testing.T) {
 	_, team := mailTeam(t)
 	f := &fakeEleven{say: map[string]bool{"sk_long_key_both": true}, listen: map[string]bool{}, list: map[string]bool{}}
@@ -189,13 +189,10 @@ func TestTheVoiceReadsAtItsSpeedAndListsItsChoices(t *testing.T) {
 	if err := team.SetVoiceKey("sk_long_key_both"); err != nil {
 		t.Fatal(err)
 	}
-	for _, c := range []struct {
-		speed, want float64
-		model       string
-	}{{1, 0, sayModel}, {1.1, 1.1, speedModel}, {3, 1.2, speedModel}, {0.2, 0.7, speedModel}} {
-		team.VoiceSpeed = c.speed
-		if err := team.ReadAloud(ctx, "Hello", io.Discard); err != nil || f.model != c.model || f.speed != c.want {
-			t.Errorf("speed %v: %s at %v, want %s at %v (%v)", c.speed, f.model, f.speed, c.model, c.want, err)
+	for _, speed := range []float64{1, 1.35, 0.6} {
+		team.VoiceSpeed = speed
+		if err := team.ReadAloud(ctx, "Hello", io.Discard); err != nil || f.model != sayModel || f.speed != 0 {
+			t.Errorf("speed %v: %s at %v, want %s at its own speed (%v)", speed, f.model, f.speed, sayModel, err)
 		}
 	}
 	list, why := team.Voices(ctx)
