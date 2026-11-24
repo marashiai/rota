@@ -54,7 +54,7 @@ type Config struct {
 	Web     string `key:"web" default:"local" choices:"local|tailscale|off" section:"Web pages" help:"where rota start serves the pages: local (this machine only), tailscale (also at this machine's Tailscale address, for your phone and other devices; there is no login, so anyone on your tailnet can use them), or off; rota web serves them while it is off"`
 	WebPort int    `key:"web_port" default:"7900"`
 
-	VoiceSpeed float64 `key:"voice_speed" default:"1" check:">0" section:"Voice" help:"how fast the pages read aloud, from 0.5 to 2, 1 for normal: they speed up or slow down ElevenLabs's voice keeping its pitch, and the browser's voice reads at it"`
+	VoiceSpeed float64 `key:"voice_speed" default:"1" check:">0" section:"Voice" help:"how fast the pages read aloud, from 1 (normal) to 3: they speed up ElevenLabs's voice keeping its pitch, and the browser's voice reads at it"`
 	VoiceID    string  `key:"voice" default:"g7LVvkPWALzPxOQbF6OE" section:"Voice" help:"the ElevenLabs voice that reads aloud, by its id (elevenlabs.io, under Voices): by default Jade, an upbeat young American woman, one of the voices ElevenLabs keeps for good. The pages read aloud and take dictation with ElevenLabs when its key, kept in secrets/elevenlabs.key and set in Settings in the pages or the console, may; else with the browser's own voice and dictation"`
 
 	TrayAutostart bool `key:"tray_autostart_organizer" default:"false" section:"Menu bar (macOS)" help:"opening the app also starts the organizer"`

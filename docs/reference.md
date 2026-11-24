@@ -529,10 +529,10 @@ alike. It is where you use rota:
   send rota the text or the recording, and rota asks ElevenLabs. Settings, Voice, lists the voices to
   choose from, each with a Sample to hear it: the ElevenLabs voices it keeps for good, and your own
   once the key may list them (its "Voices: read" permission), for every device (`voice` in
-  `rota.conf`); and this device's own voices, for this device. Speed, from 0.5× to 2× on a slider or as a
-  number, is for both (`voice_speed`): ElevenLabs's v4 reads at one speed, so the pages speed it up or
-  slow it down themselves, keeping its pitch (SoundTouch's time stretch); the volume is this
-  device's.
+  `rota.conf`); and this device's own voices, for this device. Speed, from 1× to 3× on a slider or as a
+  number, is for both (`voice_speed`): ElevenLabs's v4 reads at one speed, so the pages speed it up
+  themselves, keeping its pitch (SoundTouch's time stretch), and ask for the next part of a long
+  reading while one plays, two at a time; the volume is this device's.
 
 In the pages, a switch or a choice outside Advanced applies as you tap it. What you change under
 Advanced, in a role or in the shares waits for Save (Apply, for the shares): a bar at the bottom of the

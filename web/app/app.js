@@ -562,9 +562,9 @@ function voiceSettings() {
     h += `<div class="fld" style="display:block"><div>This device’s voice</div><div class="vrow"><select id="vbrowser" aria-label="This device’s voice"><option value=""${D.voice ? '' : ' selected'}>Its default</option><optgroup label="Your languages">${mine.map(opt).join('')}</optgroup><optgroup label="Other languages">${rest.map(opt).join('')}</optgroup></select><button class="btn" data-vsample="browser">${I.speaker}Sample</button></div>
       <div class="small">${V.say ? 'Reads when ElevenLabs cannot.' : 'Reads aloud on this device.'} Each device has its own.</div></div>`;
   }
-  const sp = Math.min(2, Math.max(0.5, Number(V.speed) || 1));
-  h += `<div class="fld" style="display:block"><div>Speed</div><div class="vrow"><input id="vspeed" type="range" min="0.5" max="2" step="0.05" value="${sp}" aria-label="Speed"><input id="vspeedn" type="text" inputmode="decimal" data-nomic autocomplete="off" value="${sp.toFixed(2)}" aria-label="Speed, exactly"><span>×</span><button class="btn" data-vspeed="1"${Math.abs(sp - 1) < 0.001 ? ' disabled' : ''}>1×</button></div>
-      <div class="small">From 0.5× to 2×, for every device and both voices: the voice keeps its pitch.</div></div>
+  const sp = Math.min(3, Math.max(1, Number(V.speed) || 1));
+  h += `<div class="fld" style="display:block"><div>Speed</div><div class="vrow"><input id="vspeed" type="range" min="1" max="3" step="0.05" value="${sp}" aria-label="Speed"><input id="vspeedn" type="text" inputmode="decimal" data-nomic autocomplete="off" value="${sp.toFixed(2)}" aria-label="Speed, exactly"><span>×</span><button class="btn" data-vspeed="1"${Math.abs(sp - 1) < 0.001 ? ' disabled' : ''}>1×</button></div>
+      <div class="small">From 1× to 3×, for every device and both voices: the voice keeps its pitch.</div></div>
     <div class="fld" style="display:block"><div>Volume on this device <span class="small" id="vvoltext">${Math.round(D.volume * 100)}%</span></div><div class="vrow"><input id="vvol" type="range" min="0" max="100" step="5" value="${Math.round(D.volume * 100)}" aria-label="Volume on this device"></div></div>`;
   return h + `<div class="fld" style="display:block"><div>ElevenLabs key</div><div class="small">${V.key ? (V.keyEnd ? `<b>••••${esc(V.keyEnd)}</b> is set. ` : 'Set. ') + 'It stays on this Mac, in the team folder’s secrets; ElevenLabs reads and listens for what the key may do.' : 'None. With a key from elevenlabs.io, ElevenLabs reads aloud and takes dictation, for what the key may do.'}</div>
       <div class="vkey"><input id="vkey" type="password" autocomplete="off" spellcheck="false" placeholder="${V.key ? 'Paste another key' : 'Paste your key'}" aria-label="ElevenLabs key"><button class="btn" data-vkey>Save</button>${V.key ? '<button class="btn" data-vkeyrm>Remove</button>' : ''}</div></div></div>`;
@@ -591,10 +591,10 @@ document.addEventListener('change', e => {
   const x = e.target;
   if (x.id === 'vvoice') voiceSet({voice: x.value}, 'eleven');
   else if (x.id === 'vbrowser') { rotaVoice.setDevice({voice: x.value}); voiceSample('browser'); }
-  else if (x.id === 'vspeed' || x.id === 'vspeedn') { // 0.85 or 0,85; out of 0.5 to 2, its nearest
+  else if (x.id === 'vspeed' || x.id === 'vspeedn') { // 1.85 or 1,85; out of 1 to 3, its nearest
     const n = parseFloat(String(x.value).trim().replace(',', '.'));
-    if (!isFinite(n)) { toast('Type a speed from 0.5 to 2, such as 1.25'); render(); return; }
-    voiceSet({voice_speed: String(Math.round(Math.min(2, Math.max(0.5, n)) * 100) / 100)});
+    if (!isFinite(n)) { toast('Type a speed from 1 to 3, such as 1.75'); render(); return; }
+    voiceSet({voice_speed: String(Math.round(Math.min(3, Math.max(1, n)) * 100) / 100)});
   }
   else if (x.id === 'vvol') { rotaVoice.setDevice({volume: x.value / 100}); voiceSample(rotaVoice.info.say ? 'eleven' : 'browser'); }
 });

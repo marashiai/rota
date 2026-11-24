@@ -221,10 +221,15 @@
     return p;
   }
   async function readEleven(run, ps) {
-    let next = fetchPart(ps[0], run);
+    // the parts asked for ahead, two at a time: read fast, a part plays quicker than ElevenLabs
+    // makes the next one
+    const ahead = [];
+    let asked = 0;
+    const more = () => { while (ahead.length < 2 && asked < ps.length) ahead.push(fetchPart(ps[asked++], run)); };
+    more();
     for (let i = 0; i < ps.length; i++) {
       let bytes;
-      try { bytes = await next; } catch (e) {
+      try { bytes = await ahead.shift(); } catch (e) {
         if (run.stopped) return;
         fell(e.message + (canSpeak ? ': the browser reads it' : ''));
         look();
@@ -232,20 +237,20 @@
         return;
       }
       if (run.stopped) return;
-      if (i + 1 < ps.length) next = fetchPart(ps[i + 1], run);
+      more();
       const why = await play(bytes, run);
       if (run.stopped) return;
       if (why) { fell(why + (canSpeak ? ': the browser reads it' : '')); if (canSpeak) readBrowser(run, ps.slice(i).join('\n')); else done(run); return; }
     }
     done(run);
   }
-  // speed is how fast the voice reads, 0.5 to 2 (voice_speed).
-  const speed = () => Math.min(2, Math.max(0.5, Number(V.speed) || 1));
+  // speed is how fast the voice reads, 1 to 3 (voice_speed).
+  const speed = () => Math.min(3, Math.max(1, Number(V.speed) || 1));
   // sizes are how long the parts of an ElevenLabs reading are: the first short, so it starts soon,
-  // each next one made while the one before plays. ElevenLabs makes speech about 2.8 times faster
+  // the next ones made while those before play. ElevenLabs makes speech about 2.8 times faster
   // than it is spoken at 1x; read faster, the parts grow less.
   function sizes() {
-    const grow = 2.5 / Math.max(1, speed()), out = [160];
+    const grow = Math.max(1.25, 2.5 / speed()), out = [160];
     while (out.length < 12 && out[out.length - 1] < 1200) out.push(Math.min(1200, Math.round(out[out.length - 1] * grow)));
     return out.map(x => Math.min(x, V.max || 1200));
   }
