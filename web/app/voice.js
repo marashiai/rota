@@ -98,6 +98,13 @@
   }
   if (document.body) mount(); else document.addEventListener('DOMContentLoaded', mount);
 
+  // audioMode tells an iPhone or iPad what the page does with sound (Safari's Audio Session):
+  // playback plays with the ringer off, but takes the microphone away, so dictation asks for
+  // play-and-record, and each gives it back to auto when it is done.
+  function audioMode(type) {
+    try { if (navigator.audioSession && navigator.audioSession.type !== type) navigator.audioSession.type = type; } catch (e) { /* not this browser's */ }
+  }
+
   // ---- reading aloud ----
   // ElevenLabs' audio plays through Web Audio, opened in the tap: a phone keeps a context it let
   // play in a tap playing, where it may refuse a player that starts once the audio has come.
@@ -106,7 +113,7 @@
     const AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return null;
     try {
-      if (navigator.audioSession) navigator.audioSession.type = 'playback'; // an iPhone plays it with its ringer off
+      if (!rec) audioMode('playback'); // an iPhone or iPad plays it with its ringer off
       if (!actx) actx = new AC();
       if (actx.state !== 'running') actx.resume().catch(() => {});
       const s = actx.createBufferSource(); // a moment of silence in the tap: an older iPhone opens it only for a sound
@@ -172,6 +179,7 @@
   function done(run) {
     if (reading !== run) return;
     reading = null;
+    if (!rec && !busy) audioMode('auto');
     if (run.btn) run.btn.classList.remove('on');
     stopper.classList.remove('show');
   }
@@ -335,18 +343,22 @@
     const at = {field: f, href: location.href}; // where what is said goes
     const session = {field: f, href: at.href, stop() { this.cancelled = true; rec = null; busy = false; setMic(''); }};
     rec = session; busy = true; setMic('busy'); // a second tap while the microphone opens stops it
+    if (reading) stop(); // it would hear itself
+    audioMode('play-and-record');
     let stream;
     try { stream = await navigator.mediaDevices.getUserMedia({audio: true}); } catch (e) {
       if (rec === session) { rec = null; busy = false; setMic(''); }
+      audioMode('auto');
       note('No microphone: ' + (e.name === 'NotAllowedError' ? 'the browser was not allowed to use it' : e.message || e.name));
       return;
     }
-    if (session.cancelled || rec !== session) { stream.getTracks().forEach(t => t.stop()); return; }
+    if (session.cancelled || rec !== session) { stream.getTracks().forEach(t => t.stop()); audioMode('auto'); return; }
     busy = false;
     const type = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus'].find(t => MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(t)) || '';
     let mr;
     try { mr = new MediaRecorder(stream, type ? {mimeType: type} : undefined); } catch (e) {
       stream.getTracks().forEach(t => t.stop());
+      audioMode('auto');
       rec = null; setMic('');
       note('This browser cannot record: ' + e.message);
       return;
@@ -355,6 +367,7 @@
     mr.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
     mr.onstop = async () => {
       stream.getTracks().forEach(t => t.stop());
+      audioMode('auto');
       clearTimeout(rec && rec.limit);
       rec = null; busy = true; setMic('busy');
       const blob = new Blob(chunks, {type: mr.mimeType || type || 'audio/webm'});
@@ -386,8 +399,10 @@
       for (let i = e.resultIndex; i < e.results.length; i++) if (e.results[i].isFinal) put(at, e.results[i][0].transcript.trim());
     };
     r.onerror = e => { if (e.error !== 'no-speech' && e.error !== 'aborted') note('Dictation stopped: ' + (e.error === 'not-allowed' ? 'the browser was not allowed to use the microphone' : e.error)); };
-    r.onend = () => { clearTimeout(limit); if (rec && rec.r === r) { rec = null; setMic(''); } };
-    try { r.start(); } catch (e) { note('Dictation: ' + e.message); return; }
+    r.onend = () => { clearTimeout(limit); audioMode('auto'); if (rec && rec.r === r) { rec = null; setMic(''); } };
+    if (reading) stop();
+    audioMode('play-and-record');
+    try { r.start(); } catch (e) { audioMode('auto'); note('Dictation: ' + e.message); return; }
     rec = {field: f, href: at.href, r, stop: () => r.stop()};
     limit = setTimeout(() => { try { r.abort(); } catch (e) { /* ended */ } if (rec && rec.r === r) { rec = null; setMic(''); } }, 5 * 60e3); // a browser that stops telling
     setMic('rec');
