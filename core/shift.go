@@ -146,13 +146,13 @@ func (t *Team) brief(a *Agent, s *schedule) (Job, map[string]string, []Note, err
 		"{root}": t.Root, "{work}": work, "{repos}": orNone(strings.Join(repos, ", ")), "{host}": where,
 		"{journal}": journalForPrompt(t.Config, s.now, remote), "{inbox}": orNone(inbox),
 		"{agents}": orNone(strings.Join(others, ", ")), "{weekly}": s.shareText(a),
-		"{model}": orNone(a.Model), "{run_minutes}": strconv.Itoa(minutes), "{questions}": t.questionsFor(a.Name),
+		"{model}": orNone(a.Model), "{run_minutes}": strconv.Itoa(minutes), "{questions}": t.questionsFor(a.Name), "{shift}": shiftText(a, minutes),
 		"{pages}": t.PagesURL(""), "{labels}": t.labelsText(), "{disk}": t.diskText(a), "{plan}": t.planText(),
 	}
 	role := *a // the role links to the pages with {pages}
 	role.Role = expand(a.Role, vars)
 	job := Job{ID: randHex(8), Agent: a.Name, Repos: a.Repos, Args: claudeArgs(t.Config, &role),
-		Prompt: expand(tmpl, vars), RunMinutes: minutes, GhUser: a.GhUser, LiveLog: t.LiveLog}
+		Prompt: expand(tmpl, vars), RunMinutes: minutes, GhUser: a.GhUser, LiveLog: t.LiveLog, Extend: a.Extend}
 	if !remote {
 		job.WorkDir, job.EnvFile = a.WorkDir, a.EnvFile
 	}
@@ -360,6 +360,9 @@ func (t *Team) outcome(ctx, sctx context.Context, a *Agent, res Result, s *sched
 		r.Status, text = "stopped", fmt.Sprintf("Stopped by the operator after %d minutes. Partial output:\n\n%s", mins, partial)
 	case res.Status == "timeout":
 		r.Status, text = "timeout", fmt.Sprintf("Killed after %d minutes. Partial output:\n\n%s", a.RunMinutes, partial)
+		if res.Checked != "" {
+			text = fmt.Sprintf("Ended after %d minutes, as rota's check found it no longer worked: %s. Partial output:\n\n%s", mins, res.Checked, partial)
+		}
 	case res.Status == "lost" || res.Status == "busy" || res.Status == "failed":
 		r.Status, text = res.Status, res.Output
 	case !haveResult:
@@ -663,4 +666,13 @@ func (t *Team) leftOver(a *Agent) []string {
 		}
 	}
 	return out
+}
+
+// shiftText says how long a shift lasts, for the brief ({shift}): at most its run_minutes, or,
+// with extend, as long as it makes real progress, checked every run_minutes.
+func shiftText(a *Agent, minutes int) string {
+	if a.Extend {
+		return fmt.Sprintf("Your shift goes on as long as you make real progress: every %d minutes rota checks what you did, and ends it when you are stuck, loop or wait on nothing", minutes)
+	}
+	return fmt.Sprintf("Your shift lasts at most %d minutes", minutes)
 }

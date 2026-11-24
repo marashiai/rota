@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 )
@@ -36,13 +37,15 @@ type Job struct {
 	GhUser     string    `json:"gh_user,omitempty"`  // GH_TOKEN comes from this account's gh login on the executor
 	LiveLog    string    `json:"live_log,omitempty"` // off | tools | all: what the executor reports live
 	Began      time.Time `json:"began,omitzero"`     // a resumed shift: when the shift it resumes began
+	Extend     bool      `json:"extend,omitempty"`   // at run_minutes, checked: real progress goes on (check.go)
 }
 
 // Result is what comes back: claude's raw stdout plus how the shift ended.
 type Result struct {
 	ID      string `json:"id"`
 	Output  string `json:"output"`
-	Status  string `json:"status"` // done | failed | stopped | timeout | lost | busy
+	Status  string `json:"status"`            // done | failed | stopped | timeout | lost | busy
+	Checked string `json:"checked,omitempty"` // a timeout: why rota's check ended it (extend)
 	Seconds int    `json:"seconds"`
 	Started bool   `json:"started"`        // claude was actually launched (so some of the pool may have been used)
 	Disk    *int64 `json:"disk,omitempty"` // the work folder's size in bytes once claude ended; nil: not measured
@@ -116,8 +119,44 @@ func execShift(ctx context.Context, c *Config, job Job, onLine func(string), not
 	}
 	settings, _ := json.Marshal(map[string]string{"autoMemoryDirectory": memory})
 	args := append([]string{"--settings", string(settings)}, job.Args...) // first: the flags at the end take every word after them
-	cctx, cancel := context.WithTimeout(ctx, time.Duration(job.RunMinutes)*time.Minute)
+	cctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	// The time limit: at run_minutes the shift ends, or, with extend, rota checks it, and one that
+	// makes real progress goes on for another run_minutes, checked again.
+	var timedOut atomic.Bool
+	var checked string
+	done := &activity{}
+	go func() {
+		limit, from, worked := time.Duration(job.RunMinutes)*runMinute, time.Now(), 0
+		timer := time.NewTimer(limit)
+		defer timer.Stop()
+		for {
+			select {
+			case <-cctx.Done():
+				return
+			case <-timer.C:
+			}
+			worked += job.RunMinutes
+			if job.Extend {
+				now := time.Now()
+				goOn, why := checkShift(cctx, c, job.Agent, worked, done.since(from, now))
+				if cctx.Err() != nil {
+					return
+				}
+				if goOn {
+					logf("%s's shift checked after %s: it goes on, %s", job.Agent, minutesText(float64(worked)), why)
+					from = now
+					timer.Reset(limit)
+					continue
+				}
+				logf("%s's shift checked after %s: it ends, %s", job.Agent, minutesText(float64(worked)), why)
+				checked = why
+			}
+			timedOut.Store(true)
+			cancel()
+			return
+		}
+	}()
 	cmd := command(cctx, c, work, env, c.ClaudeBin, args...)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -154,6 +193,7 @@ func execShift(ctx context.Context, c *Config, job Job, onLine func(string), not
 	}()
 	var out bytes.Buffer
 	lw := newLineWriter(&out, func(line string) {
+		done.see(line, time.Now())
 		in.see(line) // once claude has finished, its input closes, and it exits
 		if onLine != nil {
 			onLine(line)
@@ -170,8 +210,8 @@ func execShift(ctx context.Context, c *Config, job Job, onLine func(string), not
 	switch {
 	case ctx.Err() != nil:
 		res.Status = "stopped"
-	case cctx.Err() == context.DeadlineExceeded:
-		res.Status = "timeout"
+	case timedOut.Load():
+		res.Status, res.Checked = "timeout", checked
 	default:
 		res.Status = "done"
 		if runErr != nil && out.Len() == 0 {

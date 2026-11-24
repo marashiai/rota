@@ -18,7 +18,8 @@ var templates embed.FS
 // DefaultBrief is the shift brief, the prompt of every shift, for a team folder without a
 // brief.md of its own. Placeholders: {agent} {date} {time} {root} {work} {repos} {host}
 // {journal} {inbox} {agents} {weekly} (the agent's fair share of the team pool) {model}
-// {run_minutes} {questions} (its questions to the human that are still open) {pages} (the
+// {run_minutes} {shift} (how long its shift lasts: at most run_minutes, or with extend while it
+// makes real progress) {questions} (its questions to the human that are still open) {pages} (the
 // pages' address) {labels} (the team's own labels, from the labels setting) {disk} (what its
 // work folder held after its last shift, and its disk cap) {plan} (the open issues in the order
 // an agent gave last with rota work-order, each with why). A role takes them too.
