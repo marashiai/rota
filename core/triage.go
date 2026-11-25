@@ -101,7 +101,7 @@ func triagePrompt(c *Config, a *Agent, r Run, res Result, attempt int) string {
 	fmt.Fprintf(&b, "What it did, as far as it got (the last part):\n%s\n\n", shiftTail(res, 6000))
 	b.WriteString("Decide whether running the same shift again after a pause is likely to succeed, or whether it would repeat the failure and waste the team's share of Claude. " +
 		"Retrying makes sense when the failure looks transient: an interruption, a crash, a network or provider problem, a host that went away. " +
-		"Retrying is pointless when the agent ran out of time or turns on work that would take as long again, was going in circles, " +
+		"Retrying is pointless when the agent was going in circles, " +
 		"or was blocked by something only the human can change (a login, a permission, a missing repository, a decision).\n\n" +
 		"Answer with one JSON object and nothing else:\n" +
 		`{"retry": true or false, "reason": "one sentence for the human", "note": "one sentence of advice for the agent's next shift, or an empty string"}` + "\n")

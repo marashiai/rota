@@ -15,8 +15,8 @@ import (
 // its first event until it ends, and kept on when the organizer's stop ended it: the agent's
 // next shift, asked for at once (and again when the organizer starts), resumes that session
 // where it stopped, on the same machine, in the checkouts as they were, instead of starting
-// over. It stays until the resumed shift has started claude. A shift the operator stops, or
-// that runs out of time or pool, or ends any other way, is not resumed.
+// over. It stays until the resumed shift has started claude. A shift the operator stops, that
+// its check ends, that runs out of pool or hours, or ends any other way, is not resumed.
 
 // resumable is an interrupted shift waiting to be resumed.
 type resumable struct {
