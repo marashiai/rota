@@ -597,11 +597,12 @@ async function voiceSet(set, kind) { // a team setting of the voice, then how it
 }
 document.addEventListener('change', e => {
   const x = e.target;
-  if (x.id === 'vvoice') voiceSet({voice: x.value}, 'eleven');
+  if (x.id === 'vvoice') { rotaVoice.prime(true); voiceSet({voice: x.value}, 'eleven'); } // its sample plays once rota has the voice
   else if (x.id === 'vbrowser') { rotaVoice.setDevice({voice: x.value}); voiceSample('browser'); }
   else if (x.id === 'vspeed' || x.id === 'vspeedn') { // 1.85 or 1,85; out of 1 to 3, its nearest
     const n = parseFloat(String(x.value).trim().replace(',', '.'));
     if (!isFinite(n)) { toast('Type a speed from 1 to 3, such as 1.75'); render(); return; }
+    rotaVoice.prime();
     voiceSet({voice_speed: String(Math.round(Math.min(3, Math.max(1, n)) * 100) / 100)});
   }
   else if (x.id === 'vvol') { rotaVoice.setDevice({volume: x.value / 100}); voiceSample(rotaVoice.readsWith() === 'ElevenLabs' ? 'eleven' : 'browser'); }

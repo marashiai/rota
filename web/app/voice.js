@@ -46,11 +46,19 @@
   // browserVoices are this device's own voices, its default first; they come a moment after the
   // page opens.
   function browserVoices() {
-    if (!canSpeakNow()) return [];
-    return speechSynthesis.getVoices().map(v => ({uri: v.voiceURI, name: v.name, lang: v.lang, isDefault: v.default}));
+    return voicesNow().map(v => ({uri: v.voiceURI, name: v.name, lang: v.lang, isDefault: v.default}));
   }
   function canSpeakNow() { return 'speechSynthesis' in window; }
-  if (canSpeakNow()) try { speechSynthesis.addEventListener('voiceschanged', () => changed()); } catch (e) { /* an older browser: the list as it is */ }
+  // voicesNow are this device's voices, as it last listed them: an iPhone or iPad may list none
+  // for a moment, and its voice chosen would then not be found.
+  let voicesSeen = [];
+  function voicesNow() {
+    if (!canSpeakNow()) return [];
+    const v = speechSynthesis.getVoices();
+    if (v.length) voicesSeen = v;
+    return voicesSeen;
+  }
+  if (canSpeakNow()) try { speechSynthesis.addEventListener('voiceschanged', () => { voicesNow(); changed(); }); } catch (e) { /* an older browser: the list as it is */ }
   // voiceList is the ElevenLabs voices to choose from, as rota lists them, asked once.
   let voicesAsked = null;
   function voiceList(again) {
@@ -143,15 +151,19 @@
   }
 
   // ---- reading aloud ----
-  // ElevenLabs' audio plays through Web Audio, opened in the tap: a phone keeps a context it let
-  // play in a tap playing, where it may refuse a player that starts once the audio has come.
-  let actx = null;
+  // ElevenLabs' audio plays through Web Audio, in a context each reading opens in its tap and
+  // closes when it ends: a phone keeps a context it let play in a tap playing, where it may refuse
+  // a player that starts once the audio has come. None is kept from one reading to the next: an
+  // iPhone or iPad can keep a context running in silence once it outlived what it was opened for,
+  // as the page told it the sound was over (audioMode auto), the page was away, or the sound went
+  // to other speakers; it read nothing, and said nothing was wrong.
+  let actx = null; // the reading's, or one opened for the next (prime)
   function opened() {
     const AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return null;
     try {
       if (!rec) audioMode('playback'); // an iPhone or iPad plays it with its ringer off
-      if (!actx) actx = new AC();
+      if (!actx || actx.state === 'closed') actx = new AC();
       if (actx.state !== 'running') actx.resume().catch(() => {});
       const s = actx.createBufferSource(); // a moment of silence in the tap: an older iPhone opens it only for a sound
       s.buffer = actx.createBuffer(1, 1, 22050);
@@ -203,7 +215,7 @@
     pill.classList.remove('show');
     showPaused(false);
     player.classList.add('show');
-    if (!browser && V.say && opened()) readEleven(run, parts(text, sizes()));
+    if (!browser && V.say && (run.ctx = opened())) readEleven(run, parts(text, sizes()));
     else {
       if (use || DEV.say === 'device') { /* asked for */ } else if (V.key && (V.say || !V.known)) fell(V.known ? 'This browser cannot play the audio ElevenLabs reads: the browser reads it' : 'rota had not said yet whether ElevenLabs reads: the browser reads it');
       else if (V.key && V.sayWhy) note(V.sayWhy + ': the browser reads it');
@@ -217,7 +229,7 @@
     if (!run) return;
     run.paused = !run.paused;
     if (run.kind === 'browser') { if (run.paused) speechSynthesis.pause(); else speechSynthesis.resume(); }
-    else if (actx) { if (run.paused) actx.suspend().catch(() => {}); else actx.resume().catch(() => {}); }
+    else if (run.ctx) { if (run.paused) run.ctx.suspend().catch(() => {}); else run.ctx.resume().catch(() => {}); }
     if (!run.paused && run.wake) run.wake();
     showPaused(run.paused);
   }
@@ -229,7 +241,7 @@
     const run = reading;
     if (!run) return;
     if (run.paused) { // what was paused plays no more, and whatever reads next is not paused
-      if (run.kind === 'browser') speechSynthesis.resume(); else if (actx) actx.resume().catch(() => {});
+      if (run.kind === 'browser') speechSynthesis.resume(); else if (run.ctx) run.ctx.resume().catch(() => {});
     }
     run.stopped = true;
     if (run.wake) run.wake();
@@ -240,6 +252,10 @@
   function done(run) {
     if (reading !== run) return;
     reading = null;
+    if (run.ctx) { // its sound is over: the next reading opens its own
+      if (actx === run.ctx) actx = null;
+      run.ctx.close().catch(() => {});
+    }
     if (!rec && !busy) audioMode('auto');
     if (run.btn) run.btn.classList.remove('on');
     player.classList.remove('show');
@@ -292,7 +308,7 @@
   // stretched is the audio at the speed chosen, its pitch kept: SoundTouch's time stretch
   // (soundtouch.js, LGPL), loaded the first time it is needed.
   let soundTouch = null;
-  async function stretched(buffer) {
+  async function stretched(buffer, ctx) {
     const sp = speed();
     if (Math.abs(sp - 1) < 0.01) return buffer;
     const ST = await (soundTouch = soundTouch || import('/soundtouch.js'));
@@ -311,7 +327,7 @@
     let n, frames = 0;
     while ((n = filter.extract(chunk, 8192)) > 0) { got.push(chunk.slice(0, n * 2)); frames += n; }
     const want = Math.min(frames, Math.ceil(L.length / sp) + Math.round(rate * 0.05)); // without the silence
-    const out = actx.createBuffer(chans.length, want, rate), left = out.getChannelData(0), right = chans.length > 1 ? out.getChannelData(1) : null;
+    const out = ctx.createBuffer(chans.length, want, rate), left = out.getChannelData(0), right = chans.length > 1 ? out.getChannelData(1) : null;
     let at = 0;
     for (const c of got) {
       for (let i = 0; i < c.length / 2 && at < want; i++, at++) { left[at] = c[2 * i]; if (right) right[at] = c[2 * i + 1]; }
@@ -320,52 +336,64 @@
   }
   // play plays one part, and says why not when it cannot ('' when it played).
   async function play(bytes, run) {
+    const ctx = run.ctx;
     let buffer;
-    try { buffer = await new Promise((res, rej) => actx.decodeAudioData(bytes, res, rej)); } catch (e) {
-      return 'This browser could not open the audio ElevenLabs read';
+    try { buffer = await new Promise((res, rej) => ctx.decodeAudioData(bytes, res, rej)); } catch (e) {
+      return run.stopped ? '' : 'This browser could not open the audio ElevenLabs read';
     }
     if (run.stopped) return '';
-    try { buffer = await stretched(buffer); } catch (e) { /* at its own speed */ }
+    try { buffer = await stretched(buffer, ctx); } catch (e) { /* at its own speed */ }
     await unpaused(run);
     if (run.stopped) return '';
-    if (actx.state !== 'running') try { await actx.resume(); } catch (e) { /* said below */ }
-    if (actx.state !== 'running') return 'This browser did not let the page play sound (' + actx.state + ')';
+    if (ctx.state !== 'running') try { await ctx.resume(); } catch (e) { /* said below */ }
+    if (ctx.state !== 'running') return 'This browser did not let the page play sound (' + ctx.state + ')';
     return new Promise(res => {
-      const src = actx.createBufferSource();
+      const src = ctx.createBufferSource();
       src.buffer = buffer;
-      const loud = actx.createGain(); // this device's volume
+      const loud = ctx.createGain(); // this device's volume
       loud.gain.value = DEV.volume;
       src.connect(loud);
-      loud.connect(actx.destination);
+      loud.connect(ctx.destination);
       src.onended = () => res('');
       run.cancel = () => { try { src.stop(); } catch (e) { /* ended */ } res(''); };
       src.start();
     });
   }
+  // readBrowser reads with this device's own voice. It gives the browser every part at once, in
+  // the tap, and the browser reads them one after another: an iPhone or iPad speaks what a tap gave
+  // it, and need not say when a part ended, so a reading that waited for that to give the next part
+  // stopped after its first sentence. The parts are kept until read, as a browser may forget one no
+  // one holds; and the reading ends once the browser reads nothing more, said or not.
   function readBrowser(run, text) {
     run.kind = 'browser';
     if (!canSpeak) { note('This browser cannot read aloud'); done(run); return; }
-    const ps = parts(text, [200]); // a browser stops a long utterance midway
-    let i = 0, started = false;
-    const next = () => {
-      if (run.stopped || reading !== run) return;
-      if (i >= ps.length) { done(run); return; }
-      const u = new SpeechSynthesisUtterance(ps[i++]);
-      const mine = DEV.voice && speechSynthesis.getVoices().find(v => v.voiceURI === DEV.voice);
+    const mine = DEV.voice && voicesNow().find(v => v.voiceURI === DEV.voice);
+    let left = 0, started = false;
+    const ended = () => { if (--left <= 0 && reading === run && !run.stopped) done(run); };
+    run.parts = parts(text, [200]).map(p => { // a browser stops a long utterance midway
+      const u = new SpeechSynthesisUtterance(p);
       if (mine) { u.voice = mine; u.lang = mine.lang; }
       u.rate = speed();
       u.volume = DEV.volume;
       u.onstart = () => { started = true; };
-      u.onend = next;
-      u.onerror = e => { if (e.error === 'interrupted' || e.error === 'canceled') return; next(); };
-      speechSynthesis.speak(u);
-    };
+      u.onend = ended;
+      u.onerror = ended;
+      return u;
+    });
+    left = run.parts.length;
     run.cancel = () => speechSynthesis.cancel();
-    speechSynthesis.cancel();
-    next();
-    setTimeout(() => { // a phone may drop it without a word: Stop reading does not stay
-      if (!started && reading === run && !run.paused && !speechSynthesis.speaking) { done(run); note('The browser did not read it: tap again to read it'); }
-    }, 3000);
+    if (speechSynthesis.speaking || speechSynthesis.pending) speechSynthesis.cancel();
+    for (const u of run.parts) speechSynthesis.speak(u);
+    const from = Date.now();
+    const watch = setInterval(() => {
+      if (reading !== run || run.stopped) { clearInterval(watch); return; }
+      if (run.paused || speechSynthesis.speaking || speechSynthesis.pending) return;
+      if (started) { clearInterval(watch); done(run); return; } // read to the end, unsaid
+      if (Date.now() - from < 3000) return;
+      clearInterval(watch); // a phone may drop it without a word: Stop reading does not stay
+      done(run);
+      note('The browser did not read it: tap again to read it');
+    }, 500);
   }
   stopper.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); stop(); });
   pauser.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); pause(); });
@@ -582,6 +610,9 @@
     reading: () => !!reading,
     pause,
     paused: () => !!(reading && reading.paused),
+    // prime opens what ElevenLabs's audio plays in, in a tap whose reading comes later, once rota
+    // answered (a sample of a voice chosen): eleven, for ElevenLabs whatever this device chose
+    prime: eleven => { if (eleven ? V.say : elevenSays()) opened(); },
     readsWith: () => elevenSays() ? 'ElevenLabs' : canSpeak ? 'browser' : '',
     listensWith: () => elevenListens() ? 'ElevenLabs' : SR ? 'browser' : '',
     // can says what could read and listen here, whatever this device chose
