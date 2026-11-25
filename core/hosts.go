@@ -418,7 +418,7 @@ func (h *hub) dispatch(ctx context.Context, host string, job Job, onLine func(st
 	select {
 	case r := <-ch:
 		return r
-	case <-time.After(hostWait(job)):
+	case <-time.After(hostWait):
 		w.send(msg{Type: "cancel", Job: &Job{ID: job.ID}})
 		return Result{ID: job.ID, Status: "lost", Output: "host " + w.name + " did not finish the shift in time"}
 	case <-ctx.Done():
@@ -862,11 +862,6 @@ func ServeTailscaleHTTPS(ctx context.Context, port int) error {
 	return nil
 }
 
-// hostWait is how long the organizer waits for a host's shift: its run_minutes and what comes
-// after them, or, as a shift checked at run_minutes goes on while it works, a day.
-func hostWait(job Job) time.Duration {
-	if job.Extend {
-		return 24 * time.Hour
-	}
-	return time.Duration(job.RunMinutes)*time.Minute + syncTimeout + diskTimeout + killGrace + time.Minute
-}
+// hostWait is how long the organizer waits for a host's shift: a day, as a shift goes on while it
+// works. The organizer stops it sooner when the team pool runs out or a window it owns ends.
+const hostWait = 24 * time.Hour

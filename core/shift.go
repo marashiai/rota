@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -136,28 +135,27 @@ func (t *Team) brief(a *Agent, s *schedule) (Job, map[string]string, []Note, err
 			others = append(others, "@"+b.Name)
 		}
 	}
-	minutes, window := a.RunMinutes, 0
+	var ends time.Time
 	if end, ok := s.ownedEnd(a); ok {
-		window = int(math.Ceil(end.Sub(s.now).Minutes()))
-		minutes = min(minutes, window)
+		ends = end
 	}
 	vars := map[string]string{
 		"{agent}": a.Name, "{date}": s.now.Format("2006-01-02"), "{time}": s.now.Format("15:04"),
 		"{root}": t.Root, "{work}": work, "{repos}": orNone(strings.Join(repos, ", ")), "{host}": where,
 		"{journal}": journalForPrompt(t.Config, s.now, remote), "{inbox}": orNone(inbox),
 		"{agents}": orNone(strings.Join(others, ", ")), "{weekly}": s.shareText(a),
-		"{model}": orNone(a.Model), "{run_minutes}": strconv.Itoa(minutes), "{questions}": t.questionsFor(a.Name), "{shift}": shiftText(a, minutes),
+		"{model}": orNone(a.Model), "{run_minutes}": strconv.Itoa(a.RunMinutes), "{questions}": t.questionsFor(a.Name), "{shift}": shiftText(a.RunMinutes, ends),
 		"{pages}": t.PagesURL(""), "{labels}": t.labelsText(), "{disk}": t.diskText(a), "{plan}": t.planText(),
 	}
 	role := *a // the role links to the pages with {pages}
 	role.Role = expand(a.Role, vars)
 	job := Job{ID: randHex(8), Agent: a.Name, Repos: a.Repos, Args: claudeArgs(t.Config, &role),
-		Prompt: expand(tmpl, vars), RunMinutes: minutes, GhUser: a.GhUser, LiveLog: t.LiveLog, Extend: a.Extend}
+		Prompt: expand(tmpl, vars), RunMinutes: a.RunMinutes, GhUser: a.GhUser, LiveLog: t.LiveLog}
 	if !remote {
 		job.WorkDir, job.EnvFile = a.WorkDir, a.EnvFile
 	}
 	if r, ok := t.toResume(a.Name); ok {
-		job = resumeJob(job, a, r, inbox, window)
+		job = resumeJob(job, r, inbox, ends)
 	}
 	return job, vars, notes, nil
 }
@@ -359,10 +357,7 @@ func (t *Team) outcome(ctx, sctx context.Context, a *Agent, res Result, s *sched
 	case res.Status == "stopped":
 		r.Status, text = "stopped", fmt.Sprintf("Stopped by the operator after %d minutes. Partial output:\n\n%s", mins, partial)
 	case res.Status == "timeout":
-		r.Status, text = "timeout", fmt.Sprintf("Killed after %d minutes. Partial output:\n\n%s", a.RunMinutes, partial)
-		if res.Checked != "" {
-			text = fmt.Sprintf("Ended after %d minutes, as rota's check found it no longer worked: %s. Partial output:\n\n%s", mins, res.Checked, partial)
-		}
+		r.Status, text = "timeout", fmt.Sprintf("Ended after %d minutes, as rota's check found it no longer worked: %s. Partial output:\n\n%s", mins, res.Checked, partial)
 	case res.Status == "limited": // as an update: it resumes where it left off, once the limit resets
 		why := "Claude's usage limit was reached (" + strings.TrimSuffix(res.Limit, ".") + ")"
 		r.Status, r.Session, text = "interrupted", sessionOf(res.Output), fmt.Sprintf("Interrupted after %d minutes because %s. Partial output:\n\n%s", mins, why, partial)
@@ -682,11 +677,12 @@ func (t *Team) leftOver(a *Agent) []string {
 	return out
 }
 
-// shiftText says how long a shift lasts, for the brief ({shift}): at most its run_minutes, or,
-// with extend, as long as it makes real progress, checked every run_minutes.
-func shiftText(a *Agent, minutes int) string {
-	if a.Extend {
-		return fmt.Sprintf("Your shift goes on as long as you make real progress: every %d minutes rota checks what you did, and ends it when you are stuck, loop or wait on nothing", minutes)
+// shiftText says how long a shift lasts, for the brief ({shift}): as long as it makes real
+// progress, checked every run_minutes, to the end of a window the agent owns, if any.
+func shiftText(minutes int, ends time.Time) string {
+	text := fmt.Sprintf("Your shift goes on as long as you make real progress: every %d minutes rota checks what you did, and ends it when you are stuck, loop or wait on nothing; talking with the human is work", minutes)
+	if !ends.IsZero() {
+		text += fmt.Sprintf(". It ends at %s all the same, when the hours you own end", ends.Local().Format("15:04"))
 	}
-	return fmt.Sprintf("Your shift lasts at most %d minutes", minutes)
+	return text
 }

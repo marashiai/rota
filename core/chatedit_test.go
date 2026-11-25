@@ -87,7 +87,7 @@ func TestTheHumanStopsAnAgentAndEditsWhatTheyWrote(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	h, err := team.Listen("qa", time.Second, time.Time{})
+	h, err := team.Listen("qa", time.Second)
 	if err != nil || len(h.Notes) != 1 || h.Notes[0].Text != "(edited: in place of their words «why 5 retries?») why 4 retries?" {
 		t.Fatalf("rota listen brings the new words, which say what they replace: %+v %v", h, err)
 	}
@@ -128,7 +128,7 @@ func TestEditingWhatAnAgentAnswersStopsItFirst(t *testing.T) {
 		t.Fatalf("it is told after its current step: %q", *sent)
 	}
 	s.taken(echo((*sent)[0]))
-	h, _ := team.Listen("qa", time.Second, time.Time{})
+	h, _ := team.Listen("qa", time.Second)
 	if len(h.Notes) != 1 || !strings.Contains(h.Notes[0].Text, "(edited: in place of their words «is the stack up?») is the staging stack up?") {
 		t.Fatalf("rota listen brings the new words: %+v", h)
 	}
@@ -140,7 +140,7 @@ func TestEditingWhatAnAgentAnswersStopsItFirst(t *testing.T) {
 	if len(*sent) != 4 || (*sent)[2] != stopTurn {
 		t.Fatalf("its turn is cut off: %q", *sent)
 	}
-	if h, _ := team.Listen("qa", time.Second, time.Time{}); len(h.Notes) != 1 || !strings.Contains(h.Notes[0].Text, "is the staging stack up yet?") {
+	if h, _ := team.Listen("qa", time.Second); len(h.Notes) != 1 || !strings.Contains(h.Notes[0].Text, "is the staging stack up yet?") {
 		t.Fatalf("rota listen brings the new words: %+v", h)
 	}
 }
@@ -286,7 +286,7 @@ func TestTheHumanDeletesWhatTheyWroteAnAgent(t *testing.T) {
 	if len(*sent) != 3 || (*sent)[1] != stopTurn || !strings.Contains((*sent)[2], "do not answer what they wrote you last, «is the stack up?»") {
 		t.Fatalf("its turn is cut off, and it is told not to answer them: %q", *sent)
 	}
-	h, err := team.Listen("qa", time.Second, time.Time{})
+	h, err := team.Listen("qa", time.Second)
 	if err != nil || len(h.Notes) != 1 || !strings.Contains(h.Notes[0].Text, "(taken back: they deleted their words «is the stack up?»") {
 		t.Fatalf("rota listen brings the note that they are taken back: %+v %v", h, err)
 	}

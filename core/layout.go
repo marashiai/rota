@@ -49,7 +49,6 @@ const (
 	usageRetries    = 3  // on HTTP 429 or 5xx: wait 5s, 15s, 45s
 	usageReuse      = 20 // seconds a usage reading is reused before a shift
 	holdMinutes     = 5  // how soon the organizer looks again while Claude's usage cannot be read
-	parkMinutes     = 10 // before its timeout, a shift stops waiting for an answer and puts its work away
 	usageTokenEnv   = "CLAUDE_CODE_OAUTH_TOKEN"
 	usageCredFile   = "~/.claude/.credentials.json"
 	usageKeychain   = "Claude Code-credentials" // macOS

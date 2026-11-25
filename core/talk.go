@@ -191,13 +191,12 @@ type Heard struct {
 	Quiet bool   // the talk ended: neither said anything for talk_minutes
 	Ended bool   // the talk had ended already, or there was none
 	More  bool   // nothing yet: listening longer can still bring something
-	Park  bool   // the shift must put its work away now
 }
 
-// Listen waits for the human's next words in the agent's talk, at most max and not past park,
-// when the shift must put its work away. It brings every word the human wrote since the agent last
-// listened: they are read, leave the inbox, and the journal quotes them.
-func (t *Team) Listen(agent string, max time.Duration, park time.Time) (Heard, error) {
+// Listen waits for the human's next words in the agent's talk, at most max. It brings every word
+// the human wrote since the agent last listened: they are read, leave the inbox, and the journal
+// quotes them.
+func (t *Team) Listen(agent string, max time.Duration) (Heard, error) {
 	if t.Agent(agent) == nil {
 		return Heard{}, fmt.Errorf("%s is not an agent", agent)
 	}
@@ -219,8 +218,6 @@ func (t *Team) Listen(agent string, max time.Duration, park time.Time) (Heard, e
 		case tk.quiet(now, t.talkQuiet()):
 			tk.end("quiet")
 			h.Quiet = true
-		case !park.IsZero() && now.After(park):
-			h.Park = true
 		case now.Sub(start) >= max:
 			h.More = true
 		}
@@ -234,7 +231,7 @@ func (t *Team) Listen(agent string, max time.Duration, park time.Time) (Heard, e
 		if h.Quiet {
 			t.sayQuiet(agent)
 		}
-		if h.Notes != nil || h.Quiet || h.Ended || h.Park || h.More {
+		if h.Notes != nil || h.Quiet || h.Ended || h.More {
 			return h, nil
 		}
 	}

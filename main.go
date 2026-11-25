@@ -417,8 +417,7 @@ func command(ctx context.Context, args []string, root, conf string, now time.Tim
 		if err != nil {
 			return err
 		}
-		end, _ := time.Parse(time.RFC3339, os.Getenv("ROTA_PARK_BY"))
-		answer, more, err := t.WaitAnswer(id, 8*time.Minute, end)
+		answer, more, err := t.WaitAnswer(id, 8*time.Minute)
 		switch {
 		case errors.Is(err, core.ErrDismissed):
 			fmt.Println("the human dismissed this question without an answer: go on without it, and do not ask it again unless something about it changes.")
@@ -463,8 +462,7 @@ func command(ctx context.Context, args []string, root, conf string, now time.Tim
 		if agent == "" {
 			return fmt.Errorf("rota listen is for an agent's shift on the organizer's machine; elsewhere there is no talk: answer the human with a line @human say: <answer> in your final message's last section")
 		}
-		park, _ := time.Parse(time.RFC3339, os.Getenv("ROTA_PARK_BY"))
-		h, err := t.Listen(agent, 90*time.Second, park) // within the Bash tool's default timeout
+		h, err := t.Listen(agent, 90*time.Second) // within the Bash tool's default timeout
 		switch {
 		case err != nil:
 			return err
@@ -475,8 +473,6 @@ func command(ctx context.Context, args []string, root, conf string, now time.Tim
 			fmt.Printf("neither of you said anything for %g minutes: the talk is over, and the chat says so. If you still need their answer, ask it in their mail with rota ask, and go on with other work; else go back to your work where you left it.\n", t.TalkMinutes)
 		case h.Ended:
 			fmt.Println("you are not talking with the human: go on with your work.")
-		case h.Park:
-			fmt.Println("your shift ends soon: tell the human with rota say --end, and put your work away.")
 		default:
 			fmt.Printf("the human has not written yet: rota listen again. The talk ends by itself once neither of you said anything for %g minutes.\n", t.TalkMinutes)
 		}

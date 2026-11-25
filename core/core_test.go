@@ -1334,8 +1334,8 @@ func TestAShiftTheOrganizerStopsResumesWhereItLeftOff(t *testing.T) {
 	if !strings.Contains(string(args), "--resume sess-9 --allowedTools Read") {
 		t.Fatalf("it resumes the session, before the variadic flags: %s", args)
 	}
-	if !strings.Contains(string(prompt), "stopped after 0 minutes") || !strings.Contains(string(prompt), "You have 60 minutes") || !strings.Contains(string(prompt), "the tests are flaky") {
-		t.Fatalf("the prompt says where it stopped, how long it has, and the notes since:\n%s", prompt)
+	if !strings.Contains(string(prompt), "stopped after 0 minutes") || !strings.Contains(string(prompt), "every 60 minutes rota checks what you did") || !strings.Contains(string(prompt), "the tests are flaky") {
+		t.Fatalf("the prompt says where it stopped, how its shift goes on, and the notes since:\n%s", prompt)
 	}
 	if rs := runs(t, root); len(rs) != 2 || rs[1].Status != "ok" {
 		t.Fatalf("the resumed shift finishes without a sync: %+v", rs)
@@ -1350,13 +1350,11 @@ func TestAShiftTheOrganizerStopsResumesWhereItLeftOff(t *testing.T) {
 	if !open(t, root).Asked()["alpha"] {
 		t.Fatal("the organizer's start asks for a shift that kept its session")
 	}
-	for spent, left := range map[int]int{40: 20, 50: resumeMinutes} {
-		if j := resumeJob(Job{Args: []string{"-p"}, Repos: []string{"x/r"}}, team.Agent("alpha"), resumable{Session: "s", Minutes: spent}, "", 0); j.RunMinutes != left || j.Repos != nil {
-			t.Fatalf("after %d of 60 minutes, %d are left, without a sync: %+v", spent, left, j)
-		}
+	if j := resumeJob(Job{Args: []string{"-p"}, Repos: []string{"x/r"}, RunMinutes: 60}, resumable{Session: "s", Minutes: 50}, "", time.Time{}); j.RunMinutes != 60 || j.Repos != nil || !strings.Contains(j.Prompt, "every 60 minutes rota checks") {
+		t.Fatalf("a resumed shift is checked as any shift, without a sync: %+v", j)
 	}
-	if j := resumeJob(Job{Args: []string{"-p"}}, team.Agent("alpha"), resumable{Session: "s", Minutes: 10}, "", 5); j.RunMinutes != 5 {
-		t.Fatalf("a window the agent owns ends its resumed shift too: %d minutes", j.RunMinutes)
+	if j := resumeJob(Job{Args: []string{"-p"}, RunMinutes: 60}, resumable{Session: "s", Minutes: 10}, "", time.Now().Add(5*time.Minute)); !strings.Contains(j.Prompt, "when the hours you own end") {
+		t.Fatalf("a window the agent owns ends its resumed shift too: %+v", j)
 	}
 }
 
@@ -1999,10 +1997,10 @@ func TestAnAgentThatOwnsItsHours(t *testing.T) {
 		t.Fatalf("no shift starts in its window's last quarter hour: %q", s)
 	}
 	team = open(t, root)
-	for now, want := range map[string]string{clock(4, 5, 0, 0): "180", clock(4, 7, 0, 30): "60"} {
+	for _, now := range []string{clock(4, 5, 0, 0), clock(4, 7, 0, 30)} {
 		job, vars, _, err := team.brief(team.Agent("pentester"), team.schedule(at(now), nil, nil))
-		if err != nil || strconv.Itoa(job.RunMinutes) != want || vars["{run_minutes}"] != want {
-			t.Fatalf("at %s its shift has %s minutes: %d, %q, %v", now, want, job.RunMinutes, vars["{run_minutes}"], err)
+		if err != nil || job.RunMinutes != 180 || !strings.Contains(vars["{shift}"], "It ends at 08:00 all the same, when the hours you own end") {
+			t.Fatalf("at %s its shift is checked every 180 minutes and told its window ends at 08:00: %d, %q, %v", now, job.RunMinutes, vars["{shift}"], err)
 		}
 	}
 	write(t, slow, "")
@@ -2812,7 +2810,7 @@ func TestAQuestionCanBeDismissedOrWithdrawn(t *testing.T) {
 	if b := inboxText(team, "alpha"); !strings.Contains(b, `from the human: dismissed your question "Keep the old banner?" without an answer`) || team.Asked()["alpha"] {
 		t.Fatalf("alpha's inbox says the question was dismissed, and nothing wakes it:\n%s", b)
 	}
-	if _, _, err := team.WaitAnswer(banner, time.Second, time.Time{}); !errors.Is(err, ErrDismissed) {
+	if _, _, err := team.WaitAnswer(banner, time.Second); !errors.Is(err, ErrDismissed) {
 		t.Fatalf("a waiting shift hears it was dismissed: %v", err)
 	}
 	if team.Answer(banner, "yes") == nil || team.Dismiss(banner) == nil {
@@ -2828,7 +2826,7 @@ func TestAQuestionCanBeDismissedOrWithdrawn(t *testing.T) {
 	if err := team.Withdraw("alpha", bucket); err != nil || len(team.Questions()) != 0 {
 		t.Fatalf("alpha withdraws its own: %v", err)
 	}
-	if _, _, err := team.WaitAnswer(bucket, time.Second, time.Time{}); err == nil || !strings.Contains(err.Error(), "withdrawn") {
+	if _, _, err := team.WaitAnswer(bucket, time.Second); err == nil || !strings.Contains(err.Error(), "withdrawn") {
 		t.Fatalf("waiting for a withdrawn question says so: %v", err)
 	}
 	sdk, _ := team.Ask("alpha", "Bump the SDK?")
@@ -2888,7 +2886,7 @@ func TestAQuestionClosesWithWhatItIsAbout(t *testing.T) {
 	if b := inboxText(team, "alpha"); !strings.Contains(b, `your question "Open an issue for the rest?" closed unanswered, as o/app#1 is no longer open`) {
 		t.Fatalf("its agent is told:\n%s", b)
 	}
-	if _, _, err := team.WaitAnswer(merged, time.Second, time.Time{}); err == nil || !strings.Contains(err.Error(), "closed unanswered: o/app#1 is no longer open") {
+	if _, _, err := team.WaitAnswer(merged, time.Second); err == nil || !strings.Contains(err.Error(), "closed unanswered: o/app#1 is no longer open") {
 		t.Fatalf("a shift waiting for it hears why: %v", err)
 	}
 	th := threadOf(t, team.Mail(time.Now()), "q:"+merged)
@@ -2918,28 +2916,23 @@ func TestAShiftAsksAndWaitsForTheAnswer(t *testing.T) {
 	if again, _ := team.Ask("dev", " Pin  cypress to 15.20.1? "); err != nil || again != id {
 		t.Fatalf("the same open question is asked once: %v %s %s", err, id, again)
 	}
-	if _, more, err := team.WaitAnswer(id, 100*time.Millisecond, time.Time{}); err != nil || !more {
+	if _, more, err := team.WaitAnswer(id, 100*time.Millisecond); err != nil || !more {
 		t.Fatalf("no answer yet: keep waiting: %v %v", more, err)
 	}
 	go func() { time.Sleep(300 * time.Millisecond); team.Answer(id, "yes, pin it") }()
-	if answer, _, err := team.WaitAnswer(id, time.Minute, time.Time{}); err != nil || answer != "yes, pin it" {
+	if answer, _, err := team.WaitAnswer(id, time.Minute); err != nil || answer != "yes, pin it" {
 		t.Fatalf("the answer reaches the waiting shift: %q %v", answer, err)
 	}
-	if answer, _, _ := team.WaitAnswer(id, time.Second, time.Time{}); answer != "yes, pin it" || len(team.Questions()) != 0 {
+	if answer, _, _ := team.WaitAnswer(id, time.Second); answer != "yes, pin it" || len(team.Questions()) != 0 {
 		t.Fatal("an answered question is kept with its answer, and no longer open")
 	}
 	team.AnswerMinutes = 0.001
 	late, _ := team.Ask("dev", "Rename the bucket?")
-	if answer, more, err := team.WaitAnswer(late, time.Minute, time.Time{}); answer != "" || more || err != nil {
+	if answer, more, err := team.WaitAnswer(late, time.Minute); answer != "" || more || err != nil {
 		t.Fatalf("after answer_minutes: set it aside: %q %v %v", answer, more, err)
 	}
-	if _, _, err := team.WaitAnswer("../x", time.Second, time.Time{}); err == nil {
+	if _, _, err := team.WaitAnswer("../x", time.Second); err == nil {
 		t.Fatal("only a question's id")
-	}
-	team.AnswerMinutes = 30
-	parked, _ := team.Ask("dev", "Drop the old table?")
-	if answer, more, _ := team.WaitAnswer(parked, time.Minute, time.Now().Add(-time.Second)); answer != "" || more {
-		t.Fatal("near the shift's end it stops waiting, to put the work away")
 	}
 }
 

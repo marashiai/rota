@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -39,34 +40,53 @@ printf '{"type":"result","subtype":"success","is_error":false,"result":"done","n
 	return p
 }
 
-// An agent with extend works past its run_minutes while rota's check finds it makes real
-// progress, and its shift ends at the check that finds it does not; without extend, run_minutes
-// end it as before.
+// A shift goes on past its run_minutes while rota's check finds it makes real progress, and ends
+// at the check that finds it does not; one that cannot be checked goes on.
 func TestAShiftThatWorksGoesOnAndOneThatDoesNotEnds(t *testing.T) {
 	root, team := mailTeam(t)
 	team.ClaudeBin, team.TriageModel = checkingClaude(t, root), "haiku"
 	was := runMinute
 	runMinute = 350 * time.Millisecond
 	defer func() { runMinute = was }()
-	run := func(extend bool, cmd string) (Result, time.Duration) {
+	run := func(cmd string) (Result, time.Duration) {
 		t.Helper()
 		t.Setenv("FAKE_CMD", cmd)
 		start := time.Now()
-		res := execShift(context.Background(), team.Config, Job{ID: "j", Agent: "developer", Prompt: "work", RunMinutes: 1, Extend: extend}, nil, nil)
+		res := execShift(context.Background(), team.Config, Job{ID: "j", Agent: "developer", Prompt: "work", RunMinutes: 1}, nil, nil)
 		return res, time.Since(start)
 	}
-	if res, took := run(true, "go test ./..."); res.Status != "done" || took < 1100*time.Millisecond {
+	if res, took := run("go test ./..."); res.Status != "done" || took < 1100*time.Millisecond {
 		t.Fatalf("a shift that works goes on past its run_minutes to its end: %s after %v (%s)", res.Status, took, tail(res.Output, 200))
 	}
-	if res, took := run(true, "go test ./... STUCK"); res.Status != "timeout" || res.Checked != "it repeats the same failing step" || took > time.Second {
+	if res, took := run("go test ./... STUCK"); res.Status != "timeout" || res.Checked != "it repeats the same failing step" || took > time.Second {
 		t.Fatalf("a shift that does not work ends at its check: %s %q after %v", res.Status, res.Checked, took)
 	}
-	if res, took := run(false, "go test ./..."); res.Status != "timeout" || res.Checked != "" || took > time.Second {
-		t.Fatalf("without extend, run_minutes end it: %s %q after %v", res.Status, res.Checked, took)
-	}
 	team.TriageModel = "off"
-	if res, _ := run(true, "go test ./... STUCK"); res.Status != "done" {
+	if res, _ := run("go test ./... STUCK"); res.Status != "done" {
 		t.Fatalf("a shift that cannot be checked goes on: %s", res.Status)
+	}
+}
+
+// A shift the human is talking with goes on unchecked: the talk is work, whatever the check would
+// find; and nothing tells it its shift ends.
+func TestAShiftTheHumanTalksWithGoesOn(t *testing.T) {
+	root, team := mailTeam(t)
+	team.ClaudeBin, team.TriageModel = checkingClaude(t, root), "haiku"
+	was := runMinute
+	runMinute = 350 * time.Millisecond
+	defer func() { runMinute = was }()
+	os.MkdirAll(filepath.Dir(team.steerFile("developer")), 0o755)
+	os.WriteFile(team.steerFile("developer"), []byte(strconv.Itoa(os.Getpid())), 0o644) // its shift runs, steered
+	if err := team.saveTalk("developer", chatTalk{Open: true}); err != nil || !team.Talking("developer") {
+		t.Fatalf("a talk: %v", err)
+	}
+	t.Setenv("FAKE_CMD", "go test ./... STUCK")
+	res := execShift(context.Background(), team.Config, Job{ID: "j", Agent: "developer", Prompt: "work", RunMinutes: 1, WorkDir: "work/developer"}, nil, nil)
+	if res.Status != "done" || res.Checked != "" {
+		t.Fatalf("a shift the human talks with goes on: %s %q", res.Status, res.Checked)
+	}
+	if strings.Contains(res.Output, "ROTA_PARK_BY") {
+		t.Fatal("no shift is given a time to put its work away")
 	}
 }
 

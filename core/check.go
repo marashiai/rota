@@ -11,10 +11,10 @@ import (
 	"time"
 )
 
-// An agent with extend works on past its run_minutes while it makes real progress: when they are
-// up, rota checks what the shift did since it began or was last checked, with triage_model, and
-// it goes on for another run_minutes, checked again, or ends when it is stuck, loops or waits on
-// nothing. A shift that cannot be checked goes on: only one known not to work ends.
+// A shift goes on while it makes real progress: every run_minutes rota checks what it did since it
+// began or was last checked, with triage_model, and it goes on for another run_minutes, checked
+// again, or ends when it is stuck, loops or waits on nothing. A shift the human is talking with
+// goes on unchecked, and one that cannot be checked goes on: only one known not to work ends.
 
 // runMinute is a minute of run_minutes; a test makes it shorter.
 var runMinute = time.Minute
@@ -135,8 +135,8 @@ func toolResultText(raw json.RawMessage) string {
 
 func oneLine(s string, n int) string { return FirstLine(strings.Join(strings.Fields(s), " "), n) }
 
-// checkShift asks triage_model whether a shift whose run_minutes are up works on: real progress
-// goes on, stuck, looping or idle ends. It goes on when it cannot be checked.
+// checkShift asks triage_model whether a shift works on: real progress goes on, stuck, looping or
+// idle ends. It goes on when it cannot be checked.
 func checkShift(ctx context.Context, c *Config, agent string, minutes int, did string) (goOn bool, why string) {
 	if c.TriageModel == "" || c.TriageModel == "off" {
 		return true, "not checked, as triage_model is off"
@@ -168,7 +168,7 @@ func checkShift(ctx context.Context, c *Config, agent string, minutes int, did s
 func checkPrompt(agent string, minutes int, did string) string {
 	return fmt.Sprintf(`You check a running shift of %s, an AI agent of a software team that works on its own. Its shift has run %d minutes, and rota decides now whether it goes on: it goes on while the agent does legitimate work, and ends when it does not.
 
-Legitimate work makes real progress on the agent's task: reading, writing or testing code, running or waiting on a long job it started and still needs (a test run, a recording, a build), reviewing, opening or updating pull requests, writing to teammates or the human as its work needs. Not legitimate: stuck, repeating the same failing step without changing anything, going round in a loop, idle or waiting on nothing, or work that serves no task.
+Legitimate work makes real progress on the agent's task: reading, writing or testing code, running or waiting on a long job it started and still needs (a test run, a recording, a build), reviewing, opening or updating pull requests, writing to teammates or the human as its work needs, talking with the human in the team chat (rota say, rota listen) or waiting for their answer (rota wait). Not legitimate: stuck, repeating the same failing step without changing anything, going round in a loop, idle or waiting on nothing, or work that serves no task.
 
 What it did since it began or was last checked, step by step (time, then the step):
 

@@ -497,11 +497,11 @@ func (s *schedule) eligible(a *Agent) (bool, string) {
 }
 
 // resumesNow says the agent's interrupted shift may resume now, outside its hours: it began in
-// them, and would still be running had the organizer not stopped it. A window the agent owns
-// ends its shift all the same.
+// them, and would still be running had the organizer not stopped it, up to its next check at
+// least. A window the agent owns ends its shift all the same.
 func (s *schedule) resumesNow(a *Agent) bool {
 	r, ok := s.toResume(a.Name)
-	return ok && s.asked[a.Name] && !a.OwnHours && s.now.Before(r.Began.Add(time.Duration(a.RunMinutes)*time.Minute))
+	return ok && s.asked[a.Name] && !a.OwnHours && s.now.Before(r.Began.Add(time.Duration(r.Minutes+a.RunMinutes)*time.Minute))
 }
 
 // waitsFor is the first of the agents a waits for (wait_for) that would start a shift now, as pick

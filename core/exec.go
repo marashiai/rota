@@ -31,13 +31,12 @@ type Job struct {
 	Repos      []string  `json:"repos,omitempty"`
 	Args       []string  `json:"args"`
 	Prompt     string    `json:"prompt"`
-	RunMinutes int       `json:"run_minutes"`
+	RunMinutes int       `json:"run_minutes"`        // rota checks the shift every run_minutes (check.go)
 	WorkDir    string    `json:"work_dir,omitempty"` // relative to the executor's root; default work/<agent>
 	EnvFile    string    `json:"env_file,omitempty"` // relative to the executor's root; default secrets/<agent>.env
 	GhUser     string    `json:"gh_user,omitempty"`  // GH_TOKEN comes from this account's gh login on the executor
 	LiveLog    string    `json:"live_log,omitempty"` // off | tools | all: what the executor reports live
 	Began      time.Time `json:"began,omitzero"`     // a resumed shift: when the shift it resumes began
-	Extend     bool      `json:"extend,omitempty"`   // at run_minutes, checked: real progress goes on (check.go)
 }
 
 // Result is what comes back: claude's raw stdout plus how the shift ended.
@@ -45,7 +44,7 @@ type Result struct {
 	ID      string    `json:"id"`
 	Output  string    `json:"output"`
 	Status  string    `json:"status"`            // done | failed | stopped | timeout | lost | busy
-	Checked string    `json:"checked,omitempty"` // a timeout: why rota's check ended it (extend)
+	Checked string    `json:"checked,omitempty"` // a timeout: why rota's check ended it
 	Limit   string    `json:"limit,omitempty"`   // limited: Claude's usage limit, as Claude said it (limit.go)
 	Until   time.Time `json:"until,omitzero"`    // limited: when it resets
 	Seconds int       `json:"seconds"`
@@ -75,8 +74,7 @@ func execShift(ctx context.Context, c *Config, job Job, onLine func(string), not
 		return failed(res, err)
 	}
 	if job.WorkDir != "" { // a shift on the organizer's machine: rota ask and rota wait reach its team
-		env = append(env, "ROTA_AGENT="+job.Agent, "ROTA_ROOT="+c.Root, "ROTA_CONFIG="+c.File,
-			"ROTA_PARK_BY="+time.Now().Add(time.Duration(job.RunMinutes)*time.Minute-parkMinutes*time.Minute).Format(time.RFC3339)) // rota wait stops waiting then
+		env = append(env, "ROTA_AGENT="+job.Agent, "ROTA_ROOT="+c.Root, "ROTA_CONFIG="+c.File)
 	}
 	if job.GhUser != "" && !hasEnv(env, "GH_TOKEN") {
 		out, err := probe(c, work, env, "gh", "auth", "token", "--user", job.GhUser)
@@ -123,37 +121,45 @@ func execShift(ctx context.Context, c *Config, job Job, onLine func(string), not
 	args := append([]string{"--settings", string(settings)}, job.Args...) // first: the flags at the end take every word after them
 	cctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	// The time limit: at run_minutes the shift ends, or, with extend, rota checks it, and one that
-	// makes real progress goes on for another run_minutes, checked again.
+	// Every run_minutes rota checks the shift: one that makes real progress goes on, checked again
+	// run_minutes later; one stuck, looping or idle ends. One the human is talking with goes on
+	// unchecked, as the talk is work. Nothing else here ends it: the organizer stops it when the
+	// team pool runs out or a window the agent owns ends.
 	var timedOut atomic.Bool
 	var checked string
 	done := &activity{}
 	go func() {
-		limit, from, worked := time.Duration(job.RunMinutes)*runMinute, time.Now(), 0
-		timer := time.NewTimer(limit)
-		defer timer.Stop()
+		every, from, began := time.Duration(job.RunMinutes)*runMinute, time.Now(), job.Began
+		if began.IsZero() {
+			began = from
+		}
+		check := time.NewTimer(every)
+		defer check.Stop()
 		for {
 			select {
 			case <-cctx.Done():
 				return
-			case <-timer.C:
+			case <-check.C:
 			}
-			worked += job.RunMinutes
-			if job.Extend {
-				now := time.Now()
-				goOn, why := checkShift(cctx, c, job.Agent, worked, done.since(from, now))
-				if cctx.Err() != nil {
-					return
-				}
-				if goOn {
-					logf("%s's shift checked after %s: it goes on, %s", job.Agent, minutesText(float64(worked)), why)
-					from = now
-					timer.Reset(limit)
-					continue
-				}
-				logf("%s's shift checked after %s: it ends, %s", job.Agent, minutesText(float64(worked)), why)
-				checked = why
+			now := time.Now()
+			worked := int(now.Sub(began) / runMinute)
+			if job.WorkDir != "" && c.Talking(job.Agent) {
+				logf("%s's shift goes on unchecked after %s: the human is talking with it", job.Agent, minutesText(float64(worked)))
+				check.Reset(every)
+				continue
 			}
+			goOn, why := checkShift(cctx, c, job.Agent, worked, done.since(from, now))
+			if cctx.Err() != nil {
+				return
+			}
+			if goOn {
+				logf("%s's shift checked after %s: it goes on, %s", job.Agent, minutesText(float64(worked)), why)
+				from = now
+				check.Reset(every)
+				continue
+			}
+			logf("%s's shift checked after %s: it ends, %s", job.Agent, minutesText(float64(worked)), why)
+			checked = why
 			timedOut.Store(true)
 			cancel()
 			return

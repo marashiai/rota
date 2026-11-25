@@ -313,11 +313,10 @@ func (t *Team) settleQuestions(repo string, items map[int]openItem, held []strin
 }
 
 // WaitAnswer waits for the answer to a question, at most max, no longer than answer_minutes
-// after it was asked, and not past end, when the shift must have its work put away: the answer,
-// or "" and whether waiting longer can still bring one. A question closed unanswered is an
+// after it was asked: the answer, or "" and whether waiting longer can still bring one. A question closed unanswered is an
 // error: ErrDismissed when the human dismissed it. It gives way to the human talking to the agent
 // in the chat: ErrTalk, and waiting again can still bring the answer.
-func (c *Config) WaitAnswer(id string, max time.Duration, end time.Time) (string, bool, error) {
+func (c *Config) WaitAnswer(id string, max time.Duration) (string, bool, error) {
 	if filepath.Base(id) != id {
 		return "", false, fmt.Errorf("no question %s", id)
 	}
@@ -343,7 +342,7 @@ func (c *Config) WaitAnswer(id string, max time.Duration, end time.Time) (string
 			return "", false, fmt.Errorf("question %s was withdrawn", id)
 		case c.talkWaits(q.Agent):
 			return "", true, ErrTalk
-		case time.Since(q.Asked) >= time.Duration(c.AnswerMinutes*float64(time.Minute)) || !end.IsZero() && time.Now().After(end):
+		case time.Since(q.Asked) >= time.Duration(c.AnswerMinutes*float64(time.Minute)):
 			return "", false, nil
 		case time.Since(start) >= max:
 			return "", true, nil

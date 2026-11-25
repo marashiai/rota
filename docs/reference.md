@@ -50,10 +50,11 @@ stays, as its rollout may still wait on you. Closed questions are kept in `quest
 
 When Claude stops a shift because its usage limit is reached (its 5-hour window, or its week), the shift is
 interrupted as by an update: what it left running goes on, no shift starts until the limit resets, when
-Claude says it does, and then it resumes where it left off. An agent with `extend: true` works past its `run_minutes` while it makes real progress: when they are up,
-rota checks what the shift did since it began or was last checked (with `triage_model`), and it goes on
-for another `run_minutes`, checked again, or ends when it is stuck, loops or waits on nothing; the log
-says which and why, and a shift that cannot be checked goes on. An agent with `until_done: true` runs shift after shift while each ends with `More: yes`,
+Claude says it does, and then it resumes where it left off. A shift has no time limit: it goes on while it
+makes real progress. Every `run_minutes` rota checks what the shift did since it began or was last checked
+(with `triage_model`), and it goes on for another `run_minutes`, checked again, or ends when it is stuck,
+loops or waits on nothing; the log says which and why. A shift the human is talking with in the team chat
+goes on unchecked, and one that cannot be checked (`triage_model: off`) goes on. An agent with `until_done: true` runs shift after shift while each ends with `More: yes`,
 then waits for one of its triggers, a note from you or your answer; `every` does not apply to it.
 
 Triggers (`on`) start an agent's shift on events, besides `every`: most on GitHub, in the repositories
@@ -713,7 +714,7 @@ to delete once it is not needed.
 
 ## Nothing waits forever
 
-Every external wait is bounded: a shift by `run_minutes`, cloning and pulling by 10 minutes, measuring
+Every external wait is bounded: a shift by rota's check every `run_minutes`, cloning and pulling by 10 minutes, measuring
 the work folder after a shift by 3 minutes (a shift being stopped is not measured), every
 short probe (the keychain, `gh`, `claude auth status`, git metadata, the login shell) by 10 seconds,
 the usage endpoint by a 15-second request timeout and a fixed number of retries, host connections by
@@ -767,11 +768,10 @@ not lost and not counted as an attempt. Every shift's Claude session is kept in 
 from its first event until it ends; when the organizer's stop ends it, the agent is asked to run at once
 (and again when the organizer starts), so that shift resumes the session where it stopped (`claude
 --resume`), on the same host, in the checkouts as they were (they are not synced), with the notes that
-came since and what is left of `run_minutes` across interruptions (at least 15, but never past the end of
-a window it owns). It resumes even outside its `hours`, as long as the shift would still be running had
-the organizer not stopped it (its start plus `run_minutes`): an update after its window does not cost it a
-day. Status says `ready to
-resume its interrupted shift`. A shift the operator stops, or that runs out of time or pool, starts over
+came since; it is checked as any shift, and still ends with a window it owns. It resumes even outside its
+`hours` up to `run_minutes` after it stopped, as the shift would still be running then had the organizer
+not stopped it: an update after its window does not cost it a day. Status says `ready to
+resume its interrupted shift`. A shift the operator stops, that its check ends, or that runs out of pool or hours, starts over
 as before.
 
 What a shift left running ends with it. A command the agent ran in the background, such as `nohup ./test-all >
@@ -843,7 +843,7 @@ The only limit on what the agents use, read from Claude itself:
   in the last 14 days, or has no `every` keeps all it has left; a paused one frees it all. What is held
   for higher priority is what they can still use, not all they have left. Status shows what is free and
   what each agent frees, and an agent running on it says so in its state.
-- **During a shift.** Nothing caps a shift but its `run_minutes` timeout, the end of a window it owns
+- **During a shift.** Nothing caps a shift but rota's check every `run_minutes`, the end of a window it owns
   (`own_hours`) and the pool: the organizer reads
   Claude's weekly window and stops the shift once the team has used the day's pool. Such a shift counts
   as a run, is not retried, and its journal entry says why it stopped. It reads more often the closer the

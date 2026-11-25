@@ -80,7 +80,7 @@ func triagePrompt(c *Config, a *Agent, r Run, res Result, attempt int) string {
 	outcome := r.Status
 	switch {
 	case r.Status == "timeout":
-		outcome = fmt.Sprintf("killed after %d minutes, its time limit (run_minutes)", a.RunMinutes)
+		outcome = "ended by rota's check of its progress, which found: " + res.Checked
 	case r.Status == "stopped":
 		outcome = "stopped by the human operator"
 	case r.Status == "no-json":
@@ -95,8 +95,8 @@ func triagePrompt(c *Config, a *Agent, r Run, res Result, attempt int) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "You are the organizer of a small team of AI agents that maintain one developer's software. "+
 		"The agent %q just had a shift that did not finish: %s. This was attempt %d of at most %d. "+
-		"The shift ran %d minutes of %d allowed and made %d turns.\n\n",
-		a.Name, outcome, attempt, c.MaxAttempts, r.Seconds/60, a.RunMinutes, r.Turns)
+		"The shift ran %d minutes and made %d turns.\n\n",
+		a.Name, outcome, attempt, c.MaxAttempts, r.Seconds/60, r.Turns)
 	fmt.Fprintf(&b, "The agent's role:\n%s\n\n", strings.TrimSpace(a.Role))
 	fmt.Fprintf(&b, "What it did, as far as it got (the last part):\n%s\n\n", shiftTail(res, 6000))
 	b.WriteString("Decide whether running the same shift again after a pause is likely to succeed, or whether it would repeat the failure and waste the team's share of Claude. " +

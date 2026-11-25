@@ -26,9 +26,6 @@ type resumable struct {
 	Host    string    `json:"host,omitempty"` // the joined host it ran on, where its session is
 }
 
-// resumeMinutes is the least a resumed shift gets, however little of run_minutes is left.
-const resumeMinutes = 15
-
 func (c *Config) resumeFile(agent string) string {
 	return c.Path(filepath.Join(resumeDir, agent+".json"))
 }
@@ -88,23 +85,19 @@ func sessionOf(output string) string {
 }
 
 // resumeJob turns a shift's job into the resumption of the interrupted one: the same agent
-// and settings, its Claude session, the notes that came since, and what is left of
-// run_minutes, but no more than window, the minutes left in a window the agent owns (0: none).
+// and settings, its Claude session and the notes that came since. It is checked as any shift,
+// and ends, the brief says, when ends, the end of a window the agent owns (zero: none), comes.
 // The checkouts are not synced: they hold the work in progress.
-func resumeJob(job Job, a *Agent, r resumable, inbox string, window int) Job {
+func resumeJob(job Job, r resumable, inbox string, ends time.Time) Job {
 	job.Args = withResume(job.Args, r.Session)
 	job.Began = r.Began
 	job.Repos = nil
-	job.RunMinutes = max(a.RunMinutes-r.Minutes, resumeMinutes)
-	if window > 0 {
-		job.RunMinutes = min(job.RunMinutes, window)
-	}
 	notes := ""
 	if inbox != "" {
 		notes = "\n\nNotes teammates left for you since:\n" + inbox
 	}
 	job.Prompt = expand(resumePrompt, map[string]string{"{began}": r.Began.Format("15:04"), "{minutes}": strconv.Itoa(r.Minutes),
-		"{run_minutes}": strconv.Itoa(job.RunMinutes), "{notes}": notes})
+		"{shift}": shiftText(job.RunMinutes, ends), "{notes}": notes})
 	return job
 }
 
@@ -123,7 +116,7 @@ func withResume(args []string, session string) []string {
 	return append(out, args[at:]...)
 }
 
-const resumePrompt = `Your shift that began at {began} stopped after {minutes} minutes: the organizer was stopped, and claude with it. It resumes now, in the same checkouts. What you ran in the background may still run or have finished: check before you run it again. Check where you were, finish the work, and end with your final message in the sections the brief asks for. You have {run_minutes} minutes.{notes}`
+const resumePrompt = `Your shift that began at {began} stopped after {minutes} minutes: the organizer was stopped, and claude with it. It resumes now, in the same checkouts. What you ran in the background may still run or have finished: check before you run it again. Check where you were, finish the work, and end with your final message in the sections the brief asks for. {shift}.{notes}`
 
 // resumeText is what the journal says of a shift that will resume.
 func resumeText(minutes int, why string) string {

@@ -111,7 +111,7 @@ func TestATalkHasTheAgentsWholeAttention(t *testing.T) {
 	if s.look(send); len(*sent) != 1 {
 		t.Fatalf("nothing else reaches the shift while they talk: %q", *sent)
 	}
-	h, err := team.Listen("qa", time.Second, time.Time{})
+	h, err := team.Listen("qa", time.Second)
 	if err != nil || len(h.Notes) != 1 || team.HeardText(h) != "the human: and why is that?\n" {
 		t.Fatalf("rota listen brings the human's next words: %+v %v", h, err)
 	}
@@ -119,17 +119,14 @@ func TestATalkHasTheAgentsWholeAttention(t *testing.T) {
 	if strings.Contains(inboxText(team, "qa"), "why is that") || !strings.Contains(inboxText(team, "qa"), "rebase on main") {
 		t.Fatalf("heard, they leave the inbox; the teammate's note waits: %s", inboxText(team, "qa"))
 	}
-	if h, err := team.Listen("qa", 30*time.Millisecond, time.Time{}); err != nil || !h.More {
+	if h, err := team.Listen("qa", 30*time.Millisecond); err != nil || !h.More {
 		t.Fatalf("nothing yet: %+v %v", h, err)
-	}
-	if h, err := team.Listen("qa", time.Second, time.Now().Add(-time.Second)); err != nil || !h.Park {
-		t.Fatalf("the shift must put its work away: %+v %v", h, err)
 	}
 	if err := team.ChatSay("qa", "Its migration is stuck. Back to the flaky tests.", true); err != nil || team.Talking("qa") {
 		t.Fatalf("its last words end the talk: %v", err)
 	}
 	busy()
-	if h, err := team.Listen("qa", time.Second, time.Time{}); err != nil || !h.Ended {
+	if h, err := team.Listen("qa", time.Second); err != nil || !h.Ended {
 		t.Fatalf("no talk: %+v %v", h, err)
 	}
 	if s.look(send); len(*sent) != 2 || !strings.Contains((*sent)[1], "from dev: rebase on main") || strings.Contains((*sent)[1], talkBegins) {
@@ -142,7 +139,7 @@ func TestATalkHasTheAgentsWholeAttention(t *testing.T) {
 	s.look(send)
 	s.taken(echo((*sent)[2]))
 	team.TalkMinutes = 0.0005
-	if h, err := team.Listen("qa", time.Second, time.Time{}); err != nil || !h.Quiet || team.Talking("qa") {
+	if h, err := team.Listen("qa", time.Second); err != nil || !h.Quiet || team.Talking("qa") {
 		t.Fatalf("quiet: the talk is over: %+v %v", h, err)
 	}
 	if m := lastChat(t, team); m.From != "" || m.To != "qa" || m.Answer != more.ID || !strings.Contains(m.Text, "qa went back to its work: neither of you said anything for") {
@@ -248,7 +245,7 @@ func TestTheAgentsWordsKeepATalk(t *testing.T) {
 	team.ChatSay("qa", "Back to work.", true)
 	team.ChatSend("@qa one more thing", nil)
 	s.look(send)
-	if h, err := team.Listen("qa", 30*time.Millisecond, time.Time{}); err != nil || !h.More || len(team.loadTalk("qa").Opening) != 0 {
+	if h, err := team.Listen("qa", 30*time.Millisecond); err != nil || !h.More || len(team.loadTalk("qa").Opening) != 0 {
 		t.Fatalf("it listens: %+v %v %+v", h, err, team.loadTalk("qa"))
 	}
 	os.Remove(team.talkFile("qa")) // a new shift
@@ -265,7 +262,7 @@ func TestTheAgentsWordsKeepATalk(t *testing.T) {
 		t.Fatal("answering the human's words of a minute ago begins a talk")
 	}
 	team.ChatSend("@qa great, thanks", nil)
-	if h, err := team.Listen("qa", time.Second, time.Time{}); err != nil || team.HeardText(h) != "the human: great, thanks\n" {
+	if h, err := team.Listen("qa", time.Second); err != nil || team.HeardText(h) != "the human: great, thanks\n" {
 		t.Fatalf("rota listen brings what the human writes next: %+v %v", h, err)
 	}
 }
@@ -279,16 +276,16 @@ func TestAWaitGivesWayToATalk(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, more, err := team.WaitAnswer(id, 30*time.Millisecond, time.Time{}); err != nil || !more {
+	if _, more, err := team.WaitAnswer(id, 30*time.Millisecond); err != nil || !more {
 		t.Fatalf("no answer yet: %v %v", more, err)
 	}
 	team.ChatSend("@qa what do you mean by which database?", nil)
 	s.look(send)
-	if _, more, err := team.WaitAnswer(id, time.Second, time.Time{}); !errors.Is(err, ErrTalk) || !more {
+	if _, more, err := team.WaitAnswer(id, time.Second); !errors.Is(err, ErrTalk) || !more {
 		t.Fatalf("it gives way to the talk: %v %v", more, err)
 	}
 	s.taken(echo((*sent)[0]))
-	if _, more, err := team.WaitAnswer(id, 30*time.Millisecond, time.Time{}); err != nil || !more {
+	if _, more, err := team.WaitAnswer(id, 30*time.Millisecond); err != nil || !more {
 		t.Fatalf("the first words taken, it waits again: %v %v", more, err)
 	}
 }
@@ -319,7 +316,7 @@ func TestTheJournalQuotesTheTalk(t *testing.T) {
 	waitFor(t, "the first words taken", func() bool { tk := team.loadTalk("dev"); return tk.Open && len(tk.Opening) == 0 })
 	team.ChatSend("@dev and the deploy?", nil)
 	team.LeaveNote("dev", "", "qa", "the tests pass again")
-	if h, err := team.Listen("dev", time.Second, time.Time{}); err != nil || len(h.Notes) != 1 {
+	if h, err := team.Listen("dev", time.Second); err != nil || len(h.Notes) != 1 {
 		t.Fatalf("heard: %+v %v", h, err)
 	}
 	if err := team.ChatSay("dev", "CI waits for a runner; the deploy is fine.", false); err != nil { // as rota say does
