@@ -285,6 +285,9 @@ func TestAsksFlagsAreItsOwn(t *testing.T) {
 	if got := flagsFirst(fs, []string{"reply", "20261108-1-ab", "use", "-dry", "now"}); strings.Join(got, " ") != "reply 20261108-1-ab use -dry now" {
 		t.Fatalf("an answer's words are its own: %v", got)
 	}
+	if got := flagsFirst(fs, []string{"work-order", "o/app#1 why", "--out", "o/app#2 why not", "-dry"}); strings.Join(got, " ") != "work-order o/app#1 why --out o/app#2 why not -dry" {
+		t.Fatalf("a work order's entries and --out are its own: %v", got)
+	}
 	fs = flag.NewFlagSet("rota", flag.ContinueOnError)
 	fs.Bool("dry", false, "")
 	if err := fs.Parse(flagsFirst(fs, []string{"run", "-dry", "errors"})); err != nil || fs.Lookup("dry").Value.String() != "true" || strings.Join(fs.Args(), " ") != "run errors" {

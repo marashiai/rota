@@ -671,7 +671,7 @@ func flagsFirst(fs *flag.FlagSet, args []string) []string {
 	var flags, rest []string
 	for i := 0; i < len(args); i++ {
 		a := args[i]
-		if len(rest) == 1 && (rest[0] == "ask" || rest[0] == "reply" || rest[0] == "say") { // their own words and flags
+		if len(rest) == 1 && (rest[0] == "ask" || rest[0] == "reply" || rest[0] == "say" || rest[0] == "work-order") { // their own words and flags
 			rest = append(rest, args[i:]...)
 			break
 		}
