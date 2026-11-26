@@ -12,8 +12,9 @@ import (
 
 // The Issues tab lists the team's open issues, as GitHub last listed them, each with where it
 // stands: a pull request open for it, and the labels it carries that have an emoji, and, for one in
-// the plan (plan.go), its place there and why. Which agent takes which issue is its role's
-// business: the tab names none.
+// the plan (plan.go), its place there and why, or why the plan leaves it out for now. Its labels
+// come in the labels setting's order, the rest after them, so the one it is ranked by (its
+// priority) comes first. Which agent takes which issue is its role's business: the tab names none.
 
 // OpenIssue is an open issue of the team's repositories, as the Issues tab lists it.
 type OpenIssue struct {
@@ -26,7 +27,8 @@ type OpenIssue struct {
 	Labels  []string
 	PRs     []string // the open pull requests for it, by Ref (owner/name#n)
 	Rank    int      // its place in the plan, from 1; 0 when the plan leaves it out
-	Why     string   // why the plan puts it there
+	Out     bool     // the plan leaves it out for now, saying why
+	Why     string   // why the plan puts it there, or leaves it out
 }
 
 func (i OpenIssue) listed() (string, string, []Mark, []string) {
@@ -60,10 +62,14 @@ var prMark = Mark{"🔧", "pull request", "a pull request is open for it"}
 // Issues are the team's open issues, as GitHub last listed them, in order (one of IssueOrders).
 func (t *Team) Issues(order string) []OpenIssue {
 	repos, labels, open := t.teamRepos(), t.Labels(), t.openWork()
+	plan := t.Plan()
 	planned := map[string]PlannedIssue{}
-	rank := map[string]int{}
-	for k, p := range t.Plan().Issues {
+	rank, out := map[string]int{}, map[string]int{} // from 1, by Ref
+	for k, p := range plan.Issues {
 		planned[p.Ref()], rank[p.Ref()] = p, k+1
+	}
+	for k, p := range plan.Out {
+		planned[p.Ref()], out[p.Ref()] = p, k+1
 	}
 	prs := map[string][]string{} // by issue
 	for repo, items := range open.Repos {
@@ -75,15 +81,18 @@ func (t *Team) Issues(order string) []OpenIssue {
 			}
 		}
 	}
-	var out []OpenIssue
+	var list []OpenIssue
 	for repo, items := range open.Repos {
 		for n, it := range items {
 			if it.PR {
 				continue
 			}
 			i := OpenIssue{Repo: repo, Number: n, Title: it.Title, Name: shortRef(repos, repo) + "#" + strconv.Itoa(n),
-				Created: it.Created, Labels: it.Labels, PRs: prs[repo+"#"+strconv.Itoa(n)]}
-			i.Rank, i.Why = rank[i.Ref()], planned[i.Ref()].Why
+				Created: it.Created, Labels: slices.Clone(it.Labels), PRs: prs[repo+"#"+strconv.Itoa(n)]}
+			i.Rank, i.Out, i.Why = rank[i.Ref()], out[i.Ref()] > 0, planned[i.Ref()].Why
+			slices.SortStableFunc(i.Labels, func(a, b string) int {
+				return cmp.Compare(labelRank(t.Config.Labels, a), labelRank(t.Config.Labels, b))
+			})
 			slices.SortFunc(i.PRs, compareRefs)
 			if len(i.PRs) > 0 {
 				i.Marks = append(i.Marks, prMark)
@@ -93,27 +102,28 @@ func (t *Team) Issues(order string) []OpenIssue {
 					i.Marks = append(i.Marks, Mark{l.Emoji, l.Name, strings.TrimSuffix(l.Name+": "+l.Description, ": ")})
 				}
 			}
-			out = append(out, i)
+			list = append(list, i)
 		}
 	}
 	byLabel := func(i OpenIssue) int { // the first of the labels setting's it carries
-		for r, l := range t.Config.Labels {
-			if hasLabel(i.Labels, l.Name) {
-				return r
-			}
+		if len(i.Labels) == 0 {
+			return len(t.Config.Labels)
 		}
-		return len(t.Config.Labels)
+		return labelRank(t.Config.Labels, i.Labels[0]) // they come in its order
 	}
 	newest := func(a, b OpenIssue) int {
 		return cmp.Or(b.Created.Compare(a.Created), cmp.Compare(a.Repo, b.Repo), cmp.Compare(b.Number, a.Number))
 	}
-	inPlan := func(i OpenIssue) int { // its place in the plan; those it leaves out after them all
-		if i.Rank == 0 {
-			return len(rank) + 1
+	inPlan := func(i OpenIssue) int { // its place in the plan; those it leaves out after them, then those it does not name
+		switch {
+		case i.Rank > 0:
+			return i.Rank
+		case i.Out:
+			return len(rank) + out[i.Ref()]
 		}
-		return i.Rank
+		return len(rank) + len(out) + 1
 	}
-	slices.SortFunc(out, func(a, b OpenIssue) int {
+	slices.SortFunc(list, func(a, b OpenIssue) int {
 		switch order {
 		case OrderPlan:
 			return cmp.Or(cmp.Compare(inPlan(a), inPlan(b)), newest(a, b))
@@ -124,7 +134,15 @@ func (t *Team) Issues(order string) []OpenIssue {
 		}
 		return newest(a, b)
 	})
-	return out
+	return list
+}
+
+// labelRank is a label's place in the labels setting; one it does not have comes after them all.
+func labelRank(labels []Label, name string) int {
+	if r := slices.IndexFunc(labels, func(l Label) bool { return strings.EqualFold(l.Name, name) }); r >= 0 {
+		return r
+	}
+	return len(labels)
 }
 
 // IssueText is an issue as GitHub has it now, to read in the pages: what it says and what was

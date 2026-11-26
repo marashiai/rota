@@ -9,9 +9,10 @@ import (
 	"time"
 )
 
-// The plan is the order an agent gives the open issues with rota work-order, each with why: it
-// replaces the last one, leaves out what GitHub does not list as an open issue, and is what the
-// Issues tab lists first, as planned, and what a role reads as {plan}.
+// The plan is the order an agent gives the open issues with rota work-order, each with why, and
+// those it leaves out for now, each with why: it replaces the last one, does not show what GitHub
+// does not list as an open issue, and is what the Issues tab lists first, as planned, and what a
+// role reads as {plan}.
 func TestThePlanOrdersTheOpenIssues(t *testing.T) {
 	root := t.TempDir()
 	write(t, filepath.Join(root, "rota.conf"), "usage: off\nlisten: off\n")
@@ -46,11 +47,14 @@ func TestThePlanOrdersTheOpenIssues(t *testing.T) {
 		"nope#1 because":             "no repository of the team",
 		"o/app#1 why\x00o/app#1 why": "twice",
 	} {
-		if _, err := team.SetWorkOrder("planner", strings.Split(entry, "\x00")); err == nil || !strings.Contains(err.Error(), want) {
+		if _, err := team.SetWorkOrder("planner", strings.Split(entry, "\x00"), nil); err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("%q: want an error about %q, got %v", entry, want, err)
 		}
 	}
-	unknown, err := team.SetWorkOrder("planner", []string{"api#7 every user waits 9 s to sign in", "o/app#3 a pull request, not an issue", "o/app#9 closed since", "app#1 crashes for one user a day"})
+	if _, err := team.SetWorkOrder("planner", []string{"app#1 why"}, []string{"o/app#1 why not"}); err == nil || !strings.Contains(err.Error(), "both in the order and left out") {
+		t.Errorf("an issue is in the order or left out of it, not both: %v", err)
+	}
+	unknown, err := team.SetWorkOrder("planner", []string{"api#7 every user waits 9 s to sign in", "o/app#3 a pull request, not an issue", "o/app#9 closed since", "app#1 crashes for one user a day"}, nil)
 	if err != nil || !reflect.DeepEqual(unknown, []string{"o/app#3", "o/app#9"}) {
 		t.Fatalf("what GitHub does not list as an open issue is said: %v %v", unknown, err)
 	}
@@ -82,8 +86,66 @@ func TestThePlanOrdersTheOpenIssues(t *testing.T) {
 	if got := team.planText(); !strings.HasPrefix(got, "none: every issue in the order planner gave") {
 		t.Fatalf("once the planned issues are closed, nothing is left of the plan: %q", got)
 	}
-	if _, err := team.SetWorkOrder("planner", nil); err != nil || team.Plan().By != "planner" || len(team.Plan().Issues) != 0 {
+	if _, err := team.SetWorkOrder("planner", nil, nil); err != nil || team.Plan().By != "planner" || len(team.Plan().Issues) != 0 {
 		t.Fatalf("an empty order replaces the last: %v %+v", err, team.Plan())
+	}
+}
+
+// The plan names the open issues the team does not take now too (--out), each with why: the
+// Issues tab lists them after the order, in the order given, then those it names neither way,
+// newest first; a role reads them after the order, as not to be taken. Each issue's labels come
+// in the labels setting's order, so its priority comes first, and by priority goes by it.
+func TestThePlanSaysWhyItLeavesAnIssueOut(t *testing.T) {
+	root := t.TempDir()
+	write(t, filepath.Join(root, "rota.conf"), "usage: off\nlisten: off\nlabels: priority:high B60205 Fix first; priority:low C2E0C6 Fix last\n")
+	write(t, filepath.Join(root, "agents", "planner.md"), "---\nenabled: true\nrepos: o/app, o/api\n---\nplan\n")
+	team := open(t, root)
+	day := func(d int) time.Time { return time.Date(2026, 11, d, 9, 0, 0, 0, time.UTC) }
+	b, _ := json.Marshal(openList{Time: time.Now(), Repos: map[string]map[int]openItem{
+		"o/app": {
+			1: {Title: "old crash", Created: day(1)},
+			2: {Title: "newest typo", Created: day(5)},
+			4: {Title: "slow page", Created: day(2), Labels: []string{"bug", "Priority:Low", "rota"}},
+		},
+		"o/api": {7: {Title: "slow login", Created: day(3)}},
+	}})
+	write(t, filepath.Join(root, ".open.json"), string(b))
+	names := func(is []OpenIssue) (out []string) {
+		for _, i := range is {
+			out = append(out, i.Name)
+		}
+		return out
+	}
+	unknown, err := team.SetWorkOrder("planner", []string{"api#7 High: every user waits 9 s to sign in."},
+		[]string{"app#4 Low: its fix waits for review in o/app#5.", "o/app#9 closed since", "app#1 None: waits for the human's answer."})
+	if err != nil || !reflect.DeepEqual(unknown, []string{"o/app#9"}) {
+		t.Fatalf("what GitHub does not list as an open issue is said: %v %v", unknown, err)
+	}
+	if p := team.Plan(); len(p.Issues) != 1 || len(p.Out) != 2 || p.Out[0].Ref() != "o/app#4" || p.Out[1].Why != "None: waits for the human's answer." {
+		t.Fatalf("the plan keeps those left out, in order, each with why: %+v", p)
+	}
+	issues := team.Issues(OrderPlan)
+	if got := names(issues); !reflect.DeepEqual(got, []string{"api#7", "app#4", "app#1", "app#2"}) {
+		t.Fatalf("as planned: the order, then those left out as given, then the rest newest first: %v", got)
+	}
+	if i := issues[1]; i.Rank != 0 || !i.Out || i.Why != "Low: its fix waits for review in o/app#5." || issues[3].Out || issues[0].Out {
+		t.Fatalf("one left out says why, and has no place: %+v", issues)
+	}
+	if got := issues[1].Labels; !reflect.DeepEqual(got, []string{"Priority:Low", "bug", "rota"}) {
+		t.Fatalf("its priority comes first among its labels: %v", got)
+	}
+	if got := names(team.Issues(OrderPriority)); !reflect.DeepEqual(got, []string{"app#4", "app#2", "api#7", "app#1"}) {
+		t.Fatalf("by priority goes by the labels setting: %v", got)
+	}
+	text := team.planText()
+	if !strings.Contains(text, "1. o/api#7 «slow login»: High: every user waits 9 s to sign in.\n\nLeft out of the order for now, not to be taken, most important first:\n- o/app#4 «slow page»: Low: its fix waits for review in o/app#5.\n- o/app#1 «old crash»: None: waits") {
+		t.Fatalf("a role reads those left out after the order:\n%s", text)
+	}
+	if _, err := team.SetWorkOrder("planner", nil, []string{"app#1 None: waits for the human's answer."}); err != nil {
+		t.Fatal(err)
+	}
+	if text := team.planText(); !strings.HasPrefix(text, "none: every issue in the order planner gave") || !strings.Contains(text, "\n- o/app#1 «old crash»") {
+		t.Fatalf("with none to take, a role still reads why the rest wait:\n%s", text)
 	}
 }
 

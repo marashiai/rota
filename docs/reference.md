@@ -180,12 +180,16 @@ if the branch has not moved since. One whose commits conflict with the merge, or
 hold a change a rebase would drop, is left as it is, and the merge's message says so: the base must then be
 merged into it. Whether the merged branch is deleted is the repository's own setting.
 
-`rota work-order "<repo>#<n> <why>"...` gives the order in which the team works on the open issues, most
-important first, each with why it comes there; it replaces the last order, and with no argument it clears
-it. A role reads it as `{plan}`: the issues GitHub still lists as open, in that order, each with its title
-and why. The Issues tab lists them as planned unless you choose another order: the plan's first, each
-with its place and why, then those it leaves out, newest first. The planner blueprint keeps this order,
-and the developer's works from it.
+`rota work-order "<repo>#<n> <why>"... [--out "<repo>#<n> <why>"]...` gives the order in which the team
+works on the open issues, most important first, each with why it comes there, and with `--out` each open
+issue the team does not take now, most important first too, each with why it waits (a pull request in
+review, your answer, a rollout) or is not worth doing; it replaces the last order, and with no argument
+it clears it. A role reads it as `{plan}`: the issues GitHub still lists as open, in that order, each
+with its title and why, then those left out. The Issues tab lists them as planned unless you choose
+another order: the plan's first, each with its place and why, then those it leaves out, each with a dash
+and why, then any it names neither way, newest first. An issue's labels show in the `labels` setting's
+order, so its priority comes first. The planner blueprint keeps this order, and the developer's works
+from it.
 
 `rota review-order "<repo>#<n> <why>"...` gives the order in which you review the open pull requests,
 most worth it first, each with one sentence on why it comes there; it replaces the last order, and
@@ -326,7 +330,7 @@ in the terminal, with or without the organizer running, with these pages:
    for (see `rota review-order`); Enter or `v` reviews one in gloss, the whole change and commit by commit (see
    "Reviewing pull requests"), and `q` there comes back.
 4. **Issues**: the open issues of the team's repositories, as planned (see `rota work-order`), each in
-   the plan with its place, and its why when it is open; `o` orders them newest first, oldest first, then by priority, and `r`, `m` and `L` narrow them as on Reviews, kept for the pages too. Enter or
+   the plan with its place, one left out with a dash, and its why when it is open; `o` orders them newest first, oldest first, then by priority, and `r`, `m` and `L` narrow them as on Reviews, kept for the pages too. Enter or
    `v` opens one on GitHub.
 5. **Journal**: by day, rendered; `[` and `]` jump between shifts, `/` finds.
 6. **Transcripts**: every shift with its outcome and turns; a running one follows its end (`f`), `x` shows

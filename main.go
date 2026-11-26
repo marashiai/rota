@@ -78,10 +78,12 @@ in an agent's shift:
                     first, each with why it comes there; it replaces the last one, and none
                     clears it. The Reviews tab lists each after the open pull requests it waits
                     for, whatever the order says
-  work-order "<repo>#<n> <why>"...
+  work-order "<repo>#<n> <why>"... [--out "<repo>#<n> <why>"]...
                     the order in which the team works on the open issues, most important
-                    first, each with why it comes there; it replaces the last one, and none
-                    clears it. Roles read it as {plan}; the Issues tab lists the issues in it
+                    first, each with why it comes there, and with --out each open issue the
+                    team does not take now, most important first too, with why; it replaces
+                    the last one, and none clears it. Roles read it as {plan}; the Issues tab
+                    lists the issues in it, then those left out
   ask <question> [--subject "<a few words>"] [--option "<answer>"]... [--recommend "<answer>"]
         [--step "<step>"]... [--importance high|low] [--about <repo>#<n>]
                     ask the human in their mail, which they read when they choose; prints the
@@ -384,17 +386,29 @@ func command(ctx context.Context, args []string, root, conf string, now time.Tim
 		if agent == "" {
 			return fmt.Errorf("rota work-order is for an agent's shift on the organizer's machine")
 		}
-		unknown, err := t.SetWorkOrder(agent, args[1:])
+		var order, out []string
+		for i := 1; i < len(args); i++ {
+			if args[i] != "--out" {
+				order = append(order, args[i])
+				continue
+			}
+			if i++; i == len(args) {
+				return fmt.Errorf(`--out needs "<repo>#<n> <why>"`)
+			}
+			out = append(out, args[i])
+		}
+		unknown, err := t.SetWorkOrder(agent, order, out)
 		if err != nil {
 			return err
 		}
-		if len(args) < 2 {
+		if len(order)+len(out) == 0 {
 			fmt.Println("no order: the team has no plan, and the Issues tab lists the open issues newest first.")
 			return nil
 		}
-		fmt.Printf("the plan holds %d issues in this order; roles read it as {plan}, and the Issues tab lists them first.\n", len(args)-1-len(unknown))
+		p := t.Plan()
+		fmt.Printf("the plan holds %d issues in this order and leaves %d out for now; roles read it as {plan}, and the Issues tab lists them in that order.\n", len(p.Issues), len(p.Out))
 		if len(unknown) > 0 {
-			fmt.Printf("GitHub did not list these as open issues when rota last asked, a few minutes ago at most; the plan leaves them out: %s\n", strings.Join(unknown, ", "))
+			fmt.Printf("GitHub did not list these as open issues when rota last asked, a few minutes ago at most; the plan does not show them: %s\n", strings.Join(unknown, ", "))
 		}
 		return nil
 	case "ask":

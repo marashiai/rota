@@ -13,7 +13,7 @@ import (
 )
 
 // issuesPage lists the team's open issues, as planned unless o chose another order, each with
-// where it stands and its place in the plan; ⏎ or v opens one on GitHub. r and m narrow the list to a repository and to a
+// where it stands and its place in the plan, or a dash when the plan leaves it out for now; ⏎ or v opens one on GitHub. r and m narrow the list to a repository and to a
 // mark, in turn, and L to the issues that carry every label ticked. What narrows and orders it is
 // kept until the human changes it, and the pages share it.
 func issuesPage() *browser {
@@ -84,6 +84,8 @@ func issuesPage() *browser {
 				}
 				if i.Rank > 0 {
 					label = sty(c.pal.Muted(), strconv.Itoa(i.Rank)+".") + " " + label
+				} else if i.Out {
+					label = sty(c.pal.Muted(), "–") + " " + label
 				}
 				out = append(out, item{i.Ref(), label})
 			}
@@ -98,6 +100,8 @@ func issuesPage() *browser {
 			}
 			if i.Rank > 0 {
 				text += "**No. " + strconv.Itoa(i.Rank) + " in the plan:** " + i.Why + "\n\n"
+			} else if i.Out {
+				text += "**Left out of the plan for now:** " + i.Why + "\n\n"
 			}
 			if !i.Created.IsZero() {
 				text += "**Opened:** " + i.Created.Local().Format("Mon 2 Jan 2006, 15:04") + "\n\n"

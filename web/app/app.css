@@ -310,6 +310,7 @@ input:focus-visible,textarea:focus-visible{outline:none}
 .th .plan{margin:10px 0 0;font-size:14px;color:var(--ink2)}
 .prow .t3{font-size:13px;color:var(--ink2);margin-top:3px;line-height:1.35}
 .prow .rank{display:inline-block;min-width:1.6em;margin-right:6px;padding:0 5px;border-radius:9px;background:var(--fill);color:var(--ink2);font-size:12px;font-weight:650;text-align:center;vertical-align:1px}
+.prow .rank.out{background:none;color:var(--ink3)}
 .prow .nest{width:2px;flex:none;background:var(--line);margin:0 6px 0 18px;align-self:stretch;border-radius:1px}
 
 /* ---------- desktop: top bar with search, folders, list, reading pane ---------- */

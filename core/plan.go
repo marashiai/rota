@@ -4,21 +4,25 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
 )
 
 // The plan is the order the team works on its open issues in: an agent, the planner, gives it with
-// rota work-order, most important first, each with why it comes there. It replaces the last one;
-// none clears it. The Issues tab lists the issues in that order unless the human chose another,
-// each with its why, those it leaves out after them, newest first; a role reads it as {plan}.
+// rota work-order, most important first, each with why it comes there, and the open issues the
+// team does not take now after them (--out), most important first too, each with why it waits.
+// It replaces the last one; none clears it. The Issues tab lists the issues in that order unless
+// the human chose another, each with its why, then those the plan names neither way, newest first;
+// a role reads it as {plan}.
 
 // workOrder is the order an agent gave last, most important first.
 type workOrder struct {
 	By     string        `json:"by"`
 	Time   time.Time     `json:"time"`
 	Issues []reviewEntry `json:"issues"`
+	Out    []reviewEntry `json:"out,omitempty"` // the open issues not taken now, most important first, each with why
 }
 
 // Plan is the order an agent gave last of the open issues, as GitHub last listed them: one closed
@@ -27,6 +31,7 @@ type Plan struct {
 	By     string    // the agent that gave it; "" when none has
 	Time   time.Time // when
 	Issues []PlannedIssue
+	Out    []PlannedIssue // the open issues it leaves out for now, most important first, each with why
 }
 
 // PlannedIssue is an open issue in the plan.
@@ -72,15 +77,26 @@ func (t *Team) orderEntries(entries []string, what string, wanted func(it openIt
 }
 
 // SetWorkOrder replaces the order in which the team works on the open issues with agent's: each
-// entry is "<repository>#<n> <why>", most important first. It returns those GitHub did not last
-// list as open issues, which the plan leaves out.
-func (t *Team) SetWorkOrder(agent string, entries []string) ([]string, error) {
-	issues, unknown, err := t.orderEntries(entries, "issue", func(it openItem) bool { return !it.PR })
+// entry is "<repository>#<n> <why>", most important first, and each of out one the team does not
+// take now, with why. It returns those GitHub did not last list as open issues, which the plan
+// does not show.
+func (t *Team) SetWorkOrder(agent string, entries, out []string) ([]string, error) {
+	isIssue := func(it openItem) bool { return !it.PR }
+	issues, unknown, err := t.orderEntries(entries, "issue", isIssue)
 	if err != nil {
 		return nil, err
 	}
-	b, _ := json.MarshalIndent(workOrder{By: agent, Time: time.Now(), Issues: issues}, "", "  ")
-	return unknown, writeWhole(t.Path(planFile), append(b, '\n'))
+	left, unknownOut, err := t.orderEntries(out, "issue", isIssue)
+	if err != nil {
+		return nil, err
+	}
+	for _, e := range left {
+		if slices.ContainsFunc(issues, func(i reviewEntry) bool { return i.Ref == e.Ref }) {
+			return nil, fmt.Errorf("%s is both in the order and left out of it", e.Ref)
+		}
+	}
+	b, _ := json.MarshalIndent(workOrder{By: agent, Time: time.Now(), Issues: issues, Out: left}, "", "  ")
+	return append(unknown, unknownOut...), writeWhole(t.Path(planFile), append(b, '\n'))
 }
 
 // Plan is the order an agent gave last, of the issues GitHub last listed as open.
@@ -89,35 +105,42 @@ func (t *Team) Plan() Plan {
 	if b, err := os.ReadFile(t.Path(planFile)); err == nil {
 		json.Unmarshal(b, &o)
 	}
-	p := Plan{By: o.By, Time: o.Time}
 	open := t.openWork()
-	for _, e := range o.Issues {
-		repo, num, _ := strings.Cut(e.Ref, "#")
-		n, _ := strconv.Atoi(num)
-		it, ok := open.Repos[repo][n]
-		if !ok || it.PR {
-			continue
+	stillOpen := func(entries []reviewEntry) (out []PlannedIssue) {
+		for _, e := range entries {
+			repo, num, _ := strings.Cut(e.Ref, "#")
+			n, _ := strconv.Atoi(num)
+			if it, ok := open.Repos[repo][n]; ok && !it.PR {
+				out = append(out, PlannedIssue{Repo: repo, Number: n, Title: it.Title, Why: e.Why})
+			}
 		}
-		p.Issues = append(p.Issues, PlannedIssue{Repo: repo, Number: n, Title: it.Title, Why: e.Why})
+		return out
 	}
-	return p
+	return Plan{By: o.By, Time: o.Time, Issues: stillOpen(o.Issues), Out: stillOpen(o.Out)}
 }
 
 // planText is the plan as a role reads it, {plan}: the open issues in the order the agent gave,
-// each with its why.
+// each with its why, then those it leaves out for now, each with why.
 func (t *Team) planText() string {
 	p := t.Plan()
 	if p.By == "" {
 		return "none: no agent has ordered the open issues yet (rota work-order)"
 	}
 	given := p.By + " gave at " + p.Time.Local().Format("Mon 2 Jan 15:04")
-	if len(p.Issues) == 0 {
-		return "none: every issue in the order " + given + " is closed"
-	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "the open issues in the order %s, most important first:", given)
-	for i, it := range p.Issues {
-		fmt.Fprintf(&b, "\n%d. %s «%s»: %s", i+1, it.Ref(), it.Title, it.Why)
+	if len(p.Issues) == 0 {
+		b.WriteString("none: every issue in the order " + given + " is closed")
+	} else {
+		fmt.Fprintf(&b, "the open issues in the order %s, most important first:", given)
+		for i, it := range p.Issues {
+			fmt.Fprintf(&b, "\n%d. %s «%s»: %s", i+1, it.Ref(), it.Title, it.Why)
+		}
+	}
+	if len(p.Out) > 0 {
+		b.WriteString("\n\nLeft out of the order for now, not to be taken, most important first:")
+		for _, it := range p.Out {
+			fmt.Fprintf(&b, "\n- %s «%s»: %s", it.Ref(), it.Title, it.Why)
+		}
 	}
 	return b.String()
 }
