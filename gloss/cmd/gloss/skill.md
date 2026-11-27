@@ -24,6 +24,9 @@ Write for a reviewer reading on a phone:
   **Check:**, **Decide:**, **Rollout:**, **Not verified:**, **Risk:**, **My choice:**.
 - Leave out how the code works beyond one clause, which review round found what, and anything the
   diff already says. Keep every path, number, command and issue number exact.
+- The reviewer remembers no numbers. Say what a rule, decision or other pull request is, in a few
+  words, then its number: "the rule from #861 (a message skips an open optional question)", never
+  "#861's rule" alone.
 - A note on the whole change stays under 150 words; a note on a hunk under 60; a note on a
   commit under 40.
 - Ask in a full sentence ("Say if you want it to answer 404."), not a fragment ("404?").
