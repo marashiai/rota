@@ -91,6 +91,17 @@ func TestParseDiff(t *testing.T) {
 	}
 }
 
+func TestAFileWithoutHunksHasAnEmptyListInJSON(t *testing.T) {
+	files := ParseDiff(twoFiles)
+	for _, f := range files[3:] { // the rename and the binary file
+		b, _ := json.Marshal(f)
+		var got struct{ Hunks []Hunk }
+		if err := json.Unmarshal(b, &got); err != nil || got.Hunks == nil {
+			t.Errorf("%s: %s", f.Path, b)
+		}
+	}
+}
+
 func TestALineCarriesItsSpansInJSON(t *testing.T) {
 	b, _ := json.Marshal(Line{Kind: '+', New: 1, Text: "func", Spans: []Span{{Kind: "k", Start: 0, Len: 4}}})
 	if want := `{"k":"+","new":1,"text":"func","hl":[{"k":"k","s":0,"n":4}]}`; string(b) != want {

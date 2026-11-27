@@ -103,6 +103,9 @@ func ParseDiff(text string) []File {
 			if f.Status != "renamed" {
 				f.OldPath = ""
 			}
+			if f.Hunks == nil {
+				f.Hunks = []Hunk{} // a binary file, a pure rename or a mode change: "hunks": [], not null, which the page cannot loop over
+			}
 			files = append(files, *f)
 		}
 		f, h = nil, nil
