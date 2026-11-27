@@ -132,7 +132,10 @@
     const key = diffKey(v);
     if (S.files[key] || S.loading[key]) return;
     S.loading[key] = true;
-    api('diff/' + key + '?hl') // ?hl: a diff the browser kept from before the spans came would show plain
+    // ?v changes with what a diff holds, so the browser does not use one it kept from an older gloss: ?hl
+    // when the spans came (one kept from before would show plain), ?v=2 when a file with no hunks got
+    // an empty list of them (one kept from before has null there, and the page stops at it)
+    api('diff/' + key + '?v=2')
       .then(r => { S.files[key] = r.files || []; if (S.rv && diffKey(S.view) === key) render(); })
       .catch(e => status(e.message, true))
       .finally(() => { delete S.loading[key]; });
