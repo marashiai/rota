@@ -210,7 +210,8 @@ function people(t) {
 const TAG = {ask: ['Question', 'ask'], do: ['To do', 'do'], digest: ['Report', 'digest']};
 const PRTAG = {review: ['Review', 'review'], waiting: ['Waiting', 'wait'], approved: ['Approved', 'ok'], open: ['In progress', 'wait']};
 function kindTag(t) {
-  const tag = t.pr ? PRTAG[t.pr.state] || PRTAG.open : TAG[t.kind];
+  const closed = (t.kind === 'ask' || t.kind === 'do') && !t.qid; // answered, dismissed or withdrawn: nothing to answer any more
+  const tag = t.pr ? PRTAG[t.pr.state] || PRTAG.open : closed ? ['Closed', 'wait'] : TAG[t.kind];
   return tag ? `<span class="k k-${tag[1]}">${tag[0]}</span>` : ''; // a plain message needs none
 }
 function whyOf(t) {
@@ -681,8 +682,14 @@ function agentPage() {
     ${working && A.live ? `<div class="live">$ ${esc(A.live)}</div>` : ''}
     <div class="seg" role="tablist">${[['messages', 'Messages'], ['runs', 'Runs'], ['role', 'Role'], ['settings', 'Settings']].map(([v, l]) => `<button role="tab" class="${S.aTab === v ? 'on' : ''}" data-atab="${v}">${l}</button>`).join('')}</div></div>`;
   if (S.aTab === 'messages') {
-    const ts = M.threads.filter(t => t.msgs.some(m => m.from === name || m.to === name)).sort((a, b) => b.at.localeCompare(a.at));
-    h += ts.length ? ts.map(row).join('') : `<div class="empty"><b>No messages with ${n} yet</b></div>`;
+    // what still needs you (its open questions, to-dos and reviews, as the inbox orders them), then what
+    // you wait for it to answer, then the rest, newest first: headed once there is more than the rest
+    const ts = M.threads.filter(t => t.msgs.some(m => m.from === name || m.to === name)), newest = (a, b) => b.at.localeCompare(a.at);
+    const needs = ts.filter(t => t.box === 'inbox').sort(byRank), owed = ts.filter(t => t.box === 'waiting').sort(newest);
+    const rest = ts.filter(t => t.box !== 'inbox' && t.box !== 'waiting').sort(newest), headed = needs.length + owed.length > 0;
+    h += ts.length ? [['Needs you', needs], [`You wait for ${name}`, owed], ['Earlier', rest]].filter(([, g]) => g.length)
+      .map(([l, g]) => (headed ? `<div class="sec">${esc(l)}<span>${g.length}</span></div>` : '') + g.map(row).join('')).join('')
+      : `<div class="empty"><b>No messages with ${n} yet</b></div>`;
   }
   if (S.aTab === 'runs') {
     h += (A.reports || []).map(r => `<a class="row run2" href="${esc(r.url)}"><div class="rtxt"><div class="l1"><span class="from">Report: ${esc(r.name)}</span><span class="time">${esc(when(r.at))}</span></div></div></a>`).join('');

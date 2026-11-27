@@ -521,7 +521,9 @@ alike. It is where you use rota:
   agent's shift first, as one runs at a time; outside its hours; its share of the team pool used, or
   the rest kept for higher priority; the team paused; or a Run now you asked for, and what holds it.
   Each agent has a page:
-  Message, Run now or Stop, Pause or Resume; its Messages; its Runs, each with its report and its
+  Message, Run now or Stop, Pause or Resume; its Messages: first what of it still needs you, its
+  questions and to-dos you have not answered and its pull requests waiting for your review, then what
+  you wait for it to answer, then the rest; its Runs, each with its report and its
   transcript (following a running one), and the reports it keeps for you; its Role, edited in place; and
   its Settings: on or off, when it runs, Importance, model, and Advanced with every setting.
 - **Settings**: how the inbox behaves, notifications (Chat and Messages, and each device), the voice
